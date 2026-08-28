@@ -1,0 +1,8 @@
+# SPDX-FileCopyrightText: 2026 ByteDance Ltd. and/or its affiliates
+# SPDX-License-Identifier: Apache-2.0
+
+# Route project-wide reviews to the repository maintainers.
+* @jdpraveen @PICO-XR-Dev
+
+# Changes to repository automation and ownership rules require the same owners.
+/.github/ @jdpraveen @PICO-XR-Dev

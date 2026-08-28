@@ -6,7 +6,7 @@
 - A single class, `ByteDance::pjson`, represents any JSON value (null, bool,
   number, string, array, or object) and provides an ergonomic
   `obj["key"][i] = value` style API.
-- Licensed under Apache-2.0; please keep credit to the author, Praveen Babu J D.
+- Licensed under Apache-2.0;
 - Current source version: **1.0.0** (`pjson::getVersion()` / the
   `PJSON_VERSION` macro). This version remains unreleased until the
   `release-1.0.0` tag is published.

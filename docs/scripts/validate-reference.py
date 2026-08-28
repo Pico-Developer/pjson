@@ -1,0 +1,521 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+"""Validate that Doxygen emitted pjson's complete public API surface."""
+
+from __future__ import annotations
+
+import argparse
+import collections
+import sys
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+
+# ---- Required public documentation surface -----------------------------
+
+REQUIRED_COMPOUNDS = {
+    "ByteDance",
+    "ByteDance::pjson",
+    "ByteDance::pjson::Allocator",
+    "ByteDance::pjson::ValueDeleter",
+    "ByteDance::pjson::ParseOptions",
+    "ByteDance::pjson::ParseError",
+    "ByteDance::pjson::PointerError",
+    "ByteDance::pjson::PatchError",
+    "ByteDance::pjson::PatchOptions",
+    "ByteDance::pjson::SerializeOptions",
+    "ByteDance::pjson::StringView",
+    "ByteDance::pjson::SaxHandler",
+    "ByteDance::pjson::SchemaError",
+    "ByteDance::pjson::SchemaOptions",
+}
+
+# Baseline overload counts make accidental omissions visible. APIs whose exact
+# shape is part of the breaking-contract check are also listed below by type.
+REQUIRED_MEMBERS = {
+    "getVersion": 1,
+    "parse": 8,
+    "parseStream": 4,
+    "parseSax": 4,
+    "parseSaxStream": 2,
+    "toString": 2,
+    "write": 2,
+    "getType": 1,
+    "isNull": 1,
+    "isString": 1,
+    "isNumber": 1,
+    "isInt": 1,
+    "isDouble": 1,
+    "isBool": 1,
+    "isArray": 1,
+    "isObject": 1,
+    "getAllocator": 1,
+    "canSwap": 1,
+    "tryGet": 20,
+    "size": 1,
+    "empty": 1,
+    "clear": 1,
+    "keys": 1,
+    "hasKey": 2,
+    "hasIndex": 1,
+    "find": 6,
+    "escapePointerToken": 1,
+    "findPointer": 8,
+    "operator[]": 3,
+    "operator=": 11,
+    "operator+=": 9,
+    "erase": 3,
+    "applyPatch": 2,
+    "applyMergePatch": 2,
+    "operator==": 1,
+    "operator!=": 1,
+    "validate": 2,
+}
+
+REMOVED_PUBLIC_MEMBERS = {
+    "PJSONARRAY",
+    "PJSONMAP",
+    "getInt64",
+    "getDouble",
+    "getBool",
+    "getString",
+    "getArray",
+    "getMap",
+    "getIfExist",
+    "getArrayValues",
+    "getInt64Or",
+    "getDoubleOr",
+    "getBoolOr",
+    "getStringOr",
+    "at",
+    "EncodeForJSON",
+    "EncodeBase64ForJSON",
+    "DecodeFromJSON",
+    "DecodeBase64FromJSON",
+}
+
+EXPECTED_PUBLIC_ENUMS = {
+    ("ByteDance::pjson", "jsonType"): {
+        "jsonNull",
+        "jsonString",
+        "jsonNumberInt",
+        "jsonNumberDouble",
+        "jsonBoolean",
+        "jsonArray",
+        "jsonObject",
+    },
+    ("ByteDance::pjson::Allocator", "AllocationKind"): {
+        "NodeAllocation",
+        "StringAllocation",
+        "ArrayAllocation",
+        "ObjectAllocation",
+    },
+    ("ByteDance::pjson::ParseOptions", "DuplicateKeyPolicy"): {
+        "RejectDuplicateKeys",
+        "KeepFirstDuplicate",
+        "KeepLastDuplicate",
+    },
+    ("ByteDance::pjson::PointerError", "Code"): {
+        "Ok",
+        "InvalidSyntax",
+        "InvalidEscape",
+        "MissingTarget",
+        "ExpectedContainer",
+        "InvalidArrayIndex",
+        "ArrayIndexOutOfRange",
+        "AppendTokenNotAllowed",
+        "AllocationFailure",
+        "InternalError",
+    },
+    ("ByteDance::pjson::PatchError", "Code"): {
+        "Ok",
+        "InvalidPatchDocument",
+        "OperationNotObject",
+        "MissingOp",
+        "MissingPath",
+        "MissingFrom",
+        "MissingValue",
+        "InvalidOp",
+        "InvalidPath",
+        "InvalidFrom",
+        "TargetMissing",
+        "InvalidArrayIndex",
+        "ArrayIndexOutOfRange",
+        "MoveRootNotAllowed",
+        "MoveIntoDescendant",
+        "TestFailed",
+        "ResourceLimit",
+        "AllocationFailure",
+        "InternalError",
+    },
+    ("ByteDance::pjson::SerializeOptions", "KeyOrder"): {
+        "AscendingKeys",
+        "DescendingKeys",
+    },
+}
+
+EXPECTED_PARAMETER_TYPES = {
+    "tryGet": {
+        ("int64_t&",),
+        ("double&",),
+        ("bool&",),
+        ("std::string&",),
+        ("StringView&",),
+        ("const std::string&", "int64_t&"),
+        ("const std::string&", "double&"),
+        ("const std::string&", "bool&"),
+        ("const std::string&", "std::string&"),
+        ("const std::string&", "StringView&"),
+        ("const char*", "int64_t&"),
+        ("const char*", "double&"),
+        ("const char*", "bool&"),
+        ("const char*", "std::string&"),
+        ("const char*", "StringView&"),
+        ("int", "int64_t&"),
+        ("int", "double&"),
+        ("int", "bool&"),
+        ("int", "std::string&"),
+        ("int", "StringView&"),
+    },
+    "toString": {(), ("const SerializeOptions&",)},
+    "write": {
+        ("std::ostream&",),
+        ("std::ostream&", "const SerializeOptions&"),
+    },
+    "applyPatch": {
+        ("const pjson&", "const PatchOptions&"),
+        ("const pjson&", "PatchError&", "const PatchOptions&"),
+    },
+    "applyMergePatch": {
+        ("const pjson&", "const PatchOptions&"),
+        ("const pjson&", "PatchError&", "const PatchOptions&"),
+    },
+    "operator=": {
+        ("const pjson&",),
+        ("pjson&&",),
+        ("const std::string&",),
+        ("const char*",),
+        ("const bool",),
+        ("const int64_t",),
+        ("const double",),
+        ("const std::vector<std::string>&",),
+        ("const std::vector<bool>&",),
+        ("const std::vector<int64_t>&",),
+        ("const std::vector<double>&",),
+    },
+    "operator+=": {
+        ("const std::string&",),
+        ("const char*",),
+        ("const bool",),
+        ("const int64_t",),
+        ("const double",),
+        ("const std::vector<std::string>&",),
+        ("const std::vector<bool>&",),
+        ("const std::vector<int64_t>&",),
+        ("const std::vector<double>&",),
+    },
+}
+
+REQUIRED_PUBLIC_FIELDS = {
+    "ByteDance::pjson::PatchOptions": {
+        "maxOperations",
+        "maxClonedNodes",
+        "maxClonedBytes",
+        "maxWork",
+    },
+    "ByteDance::pjson::SerializeOptions": {
+        "pretty",
+        "indentWidth",
+        "indentCharacter",
+        "escapeNonAscii",
+        "keyOrder",
+        "maxOutputBytes",
+    },
+}
+
+REQUIRED_GUIDE_PAGES = {
+    "custom-allocators",
+    "migration-nlohmann-json",
+    "migration-rapidjson",
+}
+REQUIRED_DEFINES = {
+    "PJSON_VERSION",
+    "PJSON_VERSION_MAJOR",
+    "PJSON_VERSION_MINOR",
+    "PJSON_VERSION_PATCH",
+}
+REQUIRED_ALLOCATOR_MEMBERS = {
+    "AllocationKind": 1,
+    "allocate": 1,
+    "deallocate": 1,
+}
+
+
+def fail(messages: list[str]) -> int:
+    """Emit all validation failures together and return a failing status."""
+    for message in messages:
+        print(f"documentation validation: {message}", file=sys.stderr)
+    return 1
+
+
+def undocumented_public_members(definition):
+    """List public XML members that have neither brief nor detailed prose."""
+    undocumented = []
+    for member in definition.findall(".//memberdef[@prot='public']"):
+        if member.get("kind") not in {"function", "typedef", "enum", "variable"}:
+            continue
+        prose = "".join(member.find("briefdescription").itertext()).strip()
+        prose += "".join(member.find("detaileddescription").itertext()).strip()
+        if not prose:
+            undocumented.append(member.findtext("name", default="?"))
+    return undocumented
+
+
+def normalized_xml_type(node) -> str:
+    """Return a stable spelling for a Doxygen XML type element."""
+    if node is None:
+        return ""
+    value = " ".join("".join(node.itertext()).split())
+    for before, after in (("< ", "<"), (" >", ">"), (" &&", "&&"),
+                          (" &", "&"), (" *", "*")):
+        value = value.replace(before, after)
+    return value
+
+
+def parameter_types(member) -> tuple[str, ...]:
+    """Return the normalized parameter-type tuple for one XML member."""
+    return tuple(normalized_xml_type(param.find("type")) for param in member.findall("param"))
+
+
+def signature(name: str, parameters: tuple[str, ...]) -> str:
+    """Format a normalized signature for a validation diagnostic."""
+    return f"{name}({', '.join(parameters)})"
+
+
+def main() -> int:
+    """Validate generated Doxygen XML/HTML against the required API surface."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--xml", required=True, type=Path)
+    parser.add_argument("--html", required=True, type=Path)
+    args = parser.parse_args()
+
+    index_path = args.xml / "index.xml"
+    html_index = args.html / "index.html"
+    missing_files = [str(path) for path in (index_path, html_index) if not path.is_file()]
+    if missing_files:
+        return fail(["missing generated file " + path for path in missing_files])
+
+    index = ET.parse(index_path).getroot()
+    compounds = {
+        node.findtext("name", default=""): node
+        for node in index.findall("compound")
+    }
+    errors: list[str] = []
+
+    for name in sorted(REQUIRED_COMPOUNDS - compounds.keys()):
+        errors.append(f"missing public compound {name}")
+
+    pjson_node = compounds.get("ByteDance::pjson")
+    members: collections.Counter[str] = collections.Counter()
+    if pjson_node is not None:
+        members.update(node.findtext("name", default="") for node in pjson_node.findall("member"))
+        refid = pjson_node.get("refid", "")
+        class_xml = args.xml / f"{refid}.xml"
+        class_html = args.html / f"{refid}.html"
+        if not class_xml.is_file():
+            errors.append(f"missing class XML {class_xml.name}")
+        if not class_html.is_file():
+            errors.append(f"missing class HTML {class_html.name}")
+        if class_xml.is_file():
+            definition = ET.parse(class_xml).getroot()
+            undocumented = undocumented_public_members(definition)
+            if undocumented:
+                errors.append("undocumented public members: " + ", ".join(undocumented))
+
+    for name, minimum in REQUIRED_MEMBERS.items():
+        if members[name] < minimum:
+            errors.append(f"{name}: expected at least {minimum} overload(s), found {members[name]}")
+
+    def compound_definition(name: str):
+        """Load one compound XML definition when its index entry exists."""
+        node = compounds.get(name)
+        if node is None:
+            return None
+        path = args.xml / f"{node.get('refid', '')}.xml"
+        return ET.parse(path).getroot() if path.is_file() else None
+
+    allocator_definition = compound_definition("ByteDance::pjson::Allocator")
+    if allocator_definition is not None:
+        undocumented = undocumented_public_members(allocator_definition)
+        if undocumented:
+            errors.append(
+                "undocumented Allocator members: " + ", ".join(undocumented)
+            )
+        allocator_members = collections.Counter(
+            member.findtext("name", default="")
+            for member in allocator_definition.findall(".//memberdef[@prot='public']")
+        )
+        for name, minimum in REQUIRED_ALLOCATOR_MEMBERS.items():
+            if allocator_members[name] < minimum:
+                errors.append(
+                    f"Allocator::{name}: expected at least {minimum}, "
+                    f"found {allocator_members[name]}"
+                )
+    deleter_definition = compound_definition("ByteDance::pjson::ValueDeleter")
+    if deleter_definition is not None:
+        undocumented = undocumented_public_members(deleter_definition)
+        if undocumented:
+            errors.append(
+                "undocumented ValueDeleter members: " + ", ".join(undocumented)
+            )
+        if not deleter_definition.findall(".//memberdef[@prot='public'][name='operator()']"):
+            errors.append("missing ValueDeleter::operator()")
+
+    for compound_name, expected_fields in REQUIRED_PUBLIC_FIELDS.items():
+        definition = compound_definition(compound_name)
+        if definition is None:
+            continue
+        actual_fields = {
+            member.findtext("name", default="")
+            for member in definition.findall(".//memberdef[@kind='variable'][@prot='public']")
+        }
+        for field in sorted(expected_fields - actual_fields):
+            errors.append(f"missing public field {compound_name}::{field}")
+
+    if members["unique_ptr"] < 1:
+        errors.append("missing allocator-aware pjson::unique_ptr typedef")
+    if members["pjson"] < 6:
+        errors.append("pjson: expected six allocator/default constructors")
+    if members["swap"] < 1 or members["copyFrom"] < 1:
+        errors.append("missing allocator-sensitive swap/copyFrom API")
+
+    pjson_definition = compound_definition("ByteDance::pjson")
+    if pjson_definition is not None:
+        public_members = pjson_definition.findall(".//memberdef[@prot='public']")
+        public_names = collections.Counter(
+            member.findtext("name", default="") for member in public_members
+        )
+        for name in sorted(REMOVED_PUBLIC_MEMBERS):
+            if public_names[name]:
+                errors.append(f"removed public member is still documented: {name}")
+
+        for name, expected in EXPECTED_PARAMETER_TYPES.items():
+            actual = {
+                parameter_types(member)
+                for member in public_members
+                if member.findtext("name", default="") == name
+            }
+            for parameters in sorted(expected - actual):
+                errors.append(f"missing public signature {signature(name, parameters)}")
+            for parameters in sorted(actual - expected):
+                errors.append(f"unexpected public signature {signature(name, parameters)}")
+
+        for member in public_members:
+            if member.findtext("name", default="") == "tryGet":
+                result_type = normalized_xml_type(member.find("type"))
+                if result_type != "bool":
+                    errors.append(
+                        f"{signature('tryGet', parameter_types(member))} "
+                        f"returns {result_type}, expected bool"
+                    )
+
+        dom_parse_members = [
+            member
+            for member in public_members
+            if member.findtext("name", default="") in {"parse", "parseStream"}
+        ]
+        for member in dom_parse_members:
+            result_type = normalized_xml_type(member.find("type"))
+            if result_type not in {"unique_ptr", "pjson::unique_ptr"}:
+                name = member.findtext("name", default="")
+                errors.append(
+                    f"{signature(name, parameter_types(member))} returns {result_type}, "
+                    "expected pjson::unique_ptr"
+                )
+
+        constructors = [
+            member.findtext("argsstring", default="")
+            for member in pjson_definition.findall(".//memberdef[@prot='public']")
+            if member.findtext("name", default="") == "pjson"
+        ]
+        allocator_constructors = [signature for signature in constructors if "Allocator &" in signature]
+        if len(allocator_constructors) < 3:
+            errors.append(
+                f"allocator-aware constructors: expected three signatures, "
+                f"found {len(allocator_constructors)}"
+            )
+
+        parse_signatures = [
+            member.findtext("argsstring", default="")
+            for member in pjson_definition.findall(".//memberdef[@prot='public']")
+            if member.findtext("name", default="") in {"parse", "parseStream"}
+        ]
+        allocator_signatures = [signature for signature in parse_signatures if "Allocator &" in signature]
+        if len(allocator_signatures) < 6:
+            errors.append(
+                f"allocator-aware parse APIs: expected six signatures, "
+                f"found {len(allocator_signatures)}"
+            )
+
+    # Pin every public enum nested anywhere under pjson. Scanning all public
+    # pjson compounds, rather than only the currently expected owners, also
+    # makes a newly added enum fail until the reference contract is updated.
+    actual_public_enums: dict[tuple[str, str], set[str]] = {}
+    for compound_name in sorted(compounds):
+        if compound_name != "ByteDance::pjson" and not compound_name.startswith(
+            "ByteDance::pjson::"
+        ):
+            continue
+        definition = compound_definition(compound_name)
+        if definition is None:
+            continue
+        compound = definition.find("compounddef")
+        if compound is None or compound.get("prot") != "public":
+            continue
+        for member in definition.findall(".//memberdef[@kind='enum'][@prot='public']"):
+            enum_name = member.findtext("name", default="")
+            actual_public_enums[(compound_name, enum_name)] = {
+                value.findtext("name", default="")
+                for value in member.findall("enumvalue")
+            }
+
+    for owner, enum_name in sorted(EXPECTED_PUBLIC_ENUMS.keys() - actual_public_enums.keys()):
+        errors.append(f"missing public enum {owner}::{enum_name}")
+    for owner, enum_name in sorted(actual_public_enums.keys() - EXPECTED_PUBLIC_ENUMS.keys()):
+        errors.append(f"unexpected public enum {owner}::{enum_name}")
+    for key in sorted(EXPECTED_PUBLIC_ENUMS.keys() & actual_public_enums.keys()):
+        owner, enum_name = key
+        expected_values = EXPECTED_PUBLIC_ENUMS[key]
+        actual_values = actual_public_enums[key]
+        for value in sorted(expected_values - actual_values):
+            errors.append(f"missing {owner}::{enum_name} value {value}")
+        for value in sorted(actual_values - expected_values):
+            errors.append(f"unexpected {owner}::{enum_name} value {value}")
+
+    pages = {name for name, node in compounds.items() if node.get("kind") == "page"}
+    for name in sorted(REQUIRED_GUIDE_PAGES - pages):
+        errors.append(f"missing guide page {name}")
+
+    all_members = collections.Counter(
+        member.findtext("name", default="")
+        for compound in index.findall("compound")
+        for member in compound.findall("member")
+    )
+    for name in sorted(REQUIRED_DEFINES):
+        if all_members[name] == 0:
+            errors.append(f"missing public version macro {name}")
+
+    if errors:
+        return fail(errors)
+
+    public_count = sum(members.values())
+    print(
+        f"documentation validation: OK ({public_count} pjson index entries, "
+        f"{len(REQUIRED_COMPOUNDS)} required compounds, "
+        f"{len(REQUIRED_GUIDE_PAGES)} guide pages)"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

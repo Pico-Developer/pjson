@@ -1,0 +1,28 @@
+# SPDX-FileCopyrightText: 2026 ByteDance Ltd. and/or its affiliates
+# SPDX-License-Identifier: Apache-2.0
+
+# JSON structure and literals
+lbrace="{"
+rbrace="}"
+lbracket="["
+rbracket="]"
+colon=":"
+comma=","
+quote="\""
+true="true"
+false="false"
+null="null"
+unicode="\\u0000"
+
+# Supported schema vocabulary
+type="\"type\""
+properties="\"properties\""
+items="\"items\""
+required="\"required\""
+pattern="\"pattern\""
+enum="\"enum\""
+const="\"const\""
+allof="\"allOf\""
+anyof="\"anyOf\""
+oneof="\"oneOf\""
+not="\"not\""

@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+
+# Compute prefix relative to this metadata file so an installed tree remains
+# usable after relocation and with non-default library directories.
+prefix=${pcfiledir}/@PJSON_PC_PREFIX_FROM_PCFILEDIR@
+exec_prefix=${prefix}
+libdir=${prefix}/@CMAKE_INSTALL_LIBDIR@
+includedir=${prefix}/@CMAKE_INSTALL_INCLUDEDIR@
+
+Name: pjson
+Description: @PROJECT_DESCRIPTION@
+Version: @PROJECT_VERSION@
+Libs: -L${libdir} -lpjson
+Cflags: -I${includedir}

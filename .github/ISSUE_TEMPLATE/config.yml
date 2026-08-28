@@ -1,0 +1,14 @@
+# SPDX-FileCopyrightText: 2026 ByteDance Ltd. and/or its affiliates
+# SPDX-License-Identifier: Apache-2.0
+
+blank_issues_enabled: false
+contact_links:
+  - name: Report a Code of Conduct incident
+    url: https://github.com/Pico-Developer/pjson/security/advisories/new
+    about: Contact maintainers privately and identify the report as a conduct incident.
+  - name: Report a security vulnerability
+    url: https://github.com/Pico-Developer/pjson/security/advisories/new
+    about: Report suspected vulnerabilities privately; do not open a public issue.
+  - name: Read the documentation
+    url: https://github.com/Pico-Developer/pjson/tree/main/docs
+    about: Check the tutorials and usage guidance before filing an issue.

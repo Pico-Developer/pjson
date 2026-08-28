@@ -1,0 +1,40 @@
+# clang-format configuration for pjson.
+# Tuned to match the existing hand-written style so applying it is low-churn:
+# 4-space indentation, members indented inside the namespace, pointers bound to
+# the type, and constructor initializer lists broken before the comma.
+---
+Language:        Cpp
+BasedOnStyle:    LLVM
+Standard:        c++11
+
+# Indentation
+IndentWidth:     4
+TabWidth:        4
+UseTab:          Never
+ContinuationIndentWidth: 4
+NamespaceIndentation: All
+AccessModifierOffset: -4
+IndentCaseLabels: true
+
+# Braces / wrapping
+ColumnLimit:     100
+BreakBeforeBraces: Attach
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: false
+
+# Pointers / references bind to the type: `pjson* p`, `const std::string& s`.
+PointerAlignment: Left
+
+# Constructor initializer lists: one per line, comma first (matches the source).
+BreakConstructorInitializers: BeforeComma
+ConstructorInitializerIndentWidth: 8
+PackConstructorInitializers: Never
+
+# Misc
+SortIncludes:    CaseInsensitive
+SpaceAfterCStyleCast: false
+FixNamespaceComments: true
+MaxEmptyLinesToKeep: 1
+KeepEmptyLinesAtTheStartOfBlocks: false

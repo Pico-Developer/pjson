@@ -1,0 +1,2 @@
+{"a":1}
+[{"op":"add","path":"/b","value":[true,false,null]}]

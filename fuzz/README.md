@@ -1,0 +1,83 @@
+<!-- SPDX-FileCopyrightText: 2026 ByteDance Ltd. and/or its affiliates -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+
+# Coverage-guided fuzzing
+
+## Harnesses
+
+The fuzz build provides four Clang/libFuzzer targets:
+
+- `pjson_fuzz_parse` exercises strict DOM parsing only, while varying
+  duplicate-key policy and bounded parse budgets across the same bytes.
+- `pjson_fuzz_stream` compares DOM, buffered stream, SAX-buffer, and chunked
+  SAX-stream behavior under the same option variants.
+- `pjson_fuzz_schema` parses a schema and instance and verifies agreement
+  between both validation overloads. Its input is `schema`, one newline byte,
+  then `instance`; inputs without a newline are split at their midpoint.
+- `pjson_fuzz_patch` splits its input into `document` and `patch`, then drives
+  RFC 6902 JSON Patch when the second half parses as an array, otherwise RFC
+  7396 Merge Patch. It checks atomic failure and stable serialization after
+  success.
+
+Inputs under `corpus/patch/` intentionally cover both successful and failing
+patch documents so coverage includes rollback and diagnostic paths.
+
+## Bounded local smoke
+
+Run the bounded smoke used in CI with:
+
+```sh
+./build.sh --fuzz --auto
+```
+
+On Linux and macOS, `build.sh --fuzz` probes for a usable Clang/libFuzzer
+toolchain, configures `-DPJSON_BUILD_FUZZERS=ON`, builds all four harnesses,
+and replays each checked-in seed corpus with deterministic bounds:
+
+- `-runs=1000`
+- `-seed=1337`
+- `-max_len=4096`
+- `-timeout=5`
+
+Checked-in seeds are read-only inputs under `corpus/`; generated corpus entries
+and failure artifacts go under the ignored `out/fuzz-corpus/` and
+`out/fuzz-artifacts/` trees. To preserve a useful failure or coverage
+discovery, minimize it and copy the result into the matching checked-in corpus
+with a descriptive name.
+
+## Build integrations
+
+Direct CMake builds use `-DPJSON_BUILD_FUZZERS=ON`.
+
+Local libFuzzer builds rely on Clang plus a working `-fsanitize=fuzzer` runtime:
+
+```sh
+cmake -S . -B out/build-fuzz \
+  -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DPJSON_BUILD_TESTS=OFF \
+  -DPJSON_BUILD_EXAMPLES=OFF \
+  -DPJSON_BUILD_BENCHMARKS=OFF \
+  -DPJSON_BUILD_FUZZERS=ON
+cmake --build out/build-fuzz --parallel --target \
+  pjson_fuzz_parse pjson_fuzz_stream pjson_fuzz_schema pjson_fuzz_patch
+```
+
+External-engine builds pass linker input through the cache variable
+`PJSON_FUZZING_ENGINE`. When that variable is non-empty, `fuzz/CMakeLists.txt`
+does not require Clang's bundled libFuzzer runtime and instead splits the
+provided shell-style engine string before linking each harness. This is the
+path used by repository-local OSS-Fuzz integration:
+
+```sh
+cmake -S . -B out/build-fuzz \
+  -DPJSON_BUILD_TESTS=OFF \
+  -DPJSON_BUILD_EXAMPLES=OFF \
+  -DPJSON_BUILD_BENCHMARKS=OFF \
+  -DPJSON_BUILD_FUZZERS=ON \
+  -DPJSON_FUZZING_ENGINE="${LIB_FUZZING_ENGINE}"
+```
+
+Repository-local OSS-Fuzz wiring is under `../oss-fuzz/`. Its build script
+configures `PJSON_BUILD_FUZZERS=ON`, passes
+`PJSON_FUZZING_ENGINE="${LIB_FUZZING_ENGINE}"`, builds all four harnesses, and
+packages per-target seed corpora from `fuzz/corpus/{parse,stream,schema,patch}`.

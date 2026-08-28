@@ -1,0 +1,2 @@
+{"keep":1,"arr":[10,20]}
+[{"op":"replace","path":"/keep","value":9},{"op":"remove","path":"/missing"}]

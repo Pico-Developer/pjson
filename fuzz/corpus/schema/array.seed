@@ -1,0 +1,2 @@
+{"type":"array","items":{"type":"integer"},"minItems":1}
+[1,2,3]

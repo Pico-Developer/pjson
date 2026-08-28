@@ -1,0 +1,2 @@
+{"obj":{"a":1},"arr":["x","y","z"]}
+[{"op":"copy","from":"/obj/a","path":"/obj/b"},{"op":"move","from":"/arr/0","path":"/arr/2"},{"op":"test","path":"/obj/b","value":1}]

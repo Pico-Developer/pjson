@@ -1,0 +1,337 @@
+# SPDX-License-Identifier: Apache-2.0
+
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  licensing:
+    name: REUSE licensing compliance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Validate SPDX and license metadata
+        run: |
+          python3 -m pip install --disable-pip-version-check reuse==6.2.0
+          reuse lint
+
+  fuzz:
+    name: libFuzzer bounded smoke
+    runs-on: ubuntu-latest
+    env:
+      CC: clang
+      CXX: clang++
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install Clang
+        run: sudo apt-get update && sudo apt-get install -y clang
+
+      - name: Build and replay fuzz corpora
+        shell: bash
+        run: ./build.sh --fuzz --auto
+
+  distribution:
+    name: Distribution smoke tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Validate relocatable CMake and pkg-config packages
+        shell: bash
+        run: |
+          cmake \
+            -DPJSON_SOURCE_DIR="${GITHUB_WORKSPACE}" \
+            -DPJSON_WORK_DIR="${RUNNER_TEMP}/pjson-package-smoke" \
+            -DPJSON_INSTALL_LIBDIR=lib64 \
+            -DPJSON_REQUIRE_PKG_CONFIG=ON \
+            -P cmake/RunInstallConsumer.cmake
+
+      - name: Validate shared-library package
+        shell: bash
+        run: |
+          cmake \
+            -DPJSON_SOURCE_DIR="${GITHUB_WORKSPACE}" \
+            -DPJSON_WORK_DIR="${RUNNER_TEMP}/pjson-package-shared-smoke" \
+            -DPJSON_BUILD_SHARED_LIBS=ON \
+            -DPJSON_REQUIRE_PKG_CONFIG=ON \
+            -P cmake/RunInstallConsumer.cmake
+
+  conan:
+    name: Conan 2 package consumer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install Conan
+        run: |
+          python3 -m pip install --disable-pip-version-check conan==2.31.2
+          conan --version
+
+      - name: Create and test package
+        run: |
+          conan profile detect --force
+          conan create . -s build_type=Release --build=missing
+
+  vcpkg:
+    name: vcpkg overlay package consumer
+    runs-on: ubuntu-latest
+    env:
+      VCPKG_ROOT: ${{ runner.temp }}/vcpkg
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Bootstrap pinned vcpkg
+        run: |
+          git clone --depth 1 --branch 2026.07.29 \
+            https://github.com/microsoft/vcpkg.git "${VCPKG_ROOT}"
+          test "$(git -C "${VCPKG_ROOT}" rev-parse HEAD)" = \
+            9e593bb18ea69cc5095e012465dcd675a822ed0d
+          "${VCPKG_ROOT}/bootstrap-vcpkg.sh" -disableMetrics
+
+      - name: Build overlay port
+        run: >-
+          "${VCPKG_ROOT}/vcpkg" install pjson
+          --overlay-ports="${GITHUB_WORKSPACE}/packaging/vcpkg/ports"
+
+      - name: Build and run installed-package consumer
+        run: |
+          cmake \
+            -S tests/install-consumer \
+            -B "${RUNNER_TEMP}/pjson-vcpkg-consumer" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+          cmake --build "${RUNNER_TEMP}/pjson-vcpkg-consumer" --parallel
+          ctest \
+            --test-dir "${RUNNER_TEMP}/pjson-vcpkg-consumer" \
+            --output-on-failure
+
+  build-test:
+    name: Build and test (${{ matrix.os }} / ${{ matrix.toolchain }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            toolchain: gcc
+            cc: gcc
+            cxx: g++
+          - os: ubuntu-latest
+            toolchain: clang
+            cc: clang
+            cxx: clang++
+          - os: macos-latest
+            toolchain: clang
+            cc: clang
+            cxx: clang++
+    env:
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install GCC
+        if: matrix.os == 'ubuntu-latest' && matrix.toolchain == 'gcc'
+        run: sudo apt-get update && sudo apt-get install -y g++
+
+      - name: Install Clang
+        if: matrix.os == 'ubuntu-latest' && matrix.toolchain == 'clang'
+        run: sudo apt-get update && sudo apt-get install -y clang
+
+      - name: Build and run tests
+        shell: bash
+        run: ./build.sh --clean --test --debug-only --auto
+
+      - name: Assert every harness case is registered with CTest
+        shell: bash
+        run: |
+          registered=$(ctest --test-dir out/build-debug -N | sed -n 's/Total Tests: //p')
+          discovered=$(./out/debug/bin/pjsontest --list-tests | wc -l | tr -d ' ')
+          test "$registered" -gt 0
+          test "$registered" = "$discovered"
+
+  msvc:
+    name: Build and test (Windows / MSVC)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        with:
+          arch: x64
+
+      - name: Configure
+        run: cmake -S . -B out/build-msvc -A x64
+
+      - name: Build
+        run: cmake --build out/build-msvc --config Debug --parallel
+
+      - name: Run tests
+        run: ctest --test-dir out/build-msvc -C Debug --output-on-failure
+
+      - name: Assert all CTest cases are registered
+        shell: pwsh
+        run: |
+          $registered = (ctest --test-dir out/build-msvc -C Debug -N |
+            Select-String 'Total Tests: (\d+)').Matches.Groups[1].Value
+          $runner = Get-ChildItem -Path out/build-msvc -Recurse -Filter pjsontest.exe |
+            Select-Object -First 1
+          if (-not $runner) { throw "pjsontest.exe was not produced" }
+          $discovered = (& $runner.FullName --list-tests | Measure-Object -Line).Lines
+          if ([int]$registered -le 0) { throw "No CTest cases were registered" }
+          if ([int]$registered -ne [int]$discovered) {
+            throw "CTest registered $registered cases, harness discovered $discovered"
+          }
+
+  format:
+    name: Format check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install clang-format
+        run: sudo apt-get update && sudo apt-get install -y clang-format
+
+      - name: Check formatting
+        shell: bash
+        run: ./build.sh --check --release-only --auto
+
+  tidy:
+    name: Clang-tidy
+    runs-on: ubuntu-latest
+    env:
+      CC: clang
+      CXX: clang++
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install clang-tidy toolchain
+        run: sudo apt-get update && sudo apt-get install -y clang clang-tidy
+
+      - name: Run clang-tidy
+        shell: bash
+        run: ./build.sh --clean --debug-only --tidy --auto
+
+  benchmark:
+    name: Benchmark smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Build and run baseline benchmarks
+        shell: bash
+        run: ./build.sh --clean --bench --release-only --auto
+
+  benchmark-compare:
+    name: Benchmark comparison smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Cache benchmark dependencies
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: .benchmark-deps
+          key: ${{ runner.os }}-benchmark-deps-v3.11.3-v1.1.0-v3.12.2
+
+      - name: Build and run comparison benchmarks
+        shell: bash
+        run: ./build.sh --clean --bench-compare --release-only --auto
+
+  conformance:
+    name: Conformance corpus
+    runs-on: ubuntu-latest
+    env:
+      CC: clang
+      CXX: clang++
+      PJSON_JSONTESTSUITE_DIR: ${{ github.workspace }}/.test-corpora/JSONTestSuite
+      PJSON_JSON_SCHEMA_TEST_SUITE_DIR: ${{ github.workspace }}/.test-corpora/JSON-Schema-Test-Suite
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install Clang
+        run: sudo apt-get update && sudo apt-get install -y clang
+
+      - name: Cache JSONTestSuite corpus
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: .test-corpora/JSONTestSuite
+          key: ${{ runner.os }}-jsontestsuite-${{ hashFiles('scripts/fetch-json-test-suite.sh') }}
+
+      - name: Cache JSON Schema corpus
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: .test-corpora/JSON-Schema-Test-Suite
+          key: ${{ runner.os }}-json-schema-suite-${{ hashFiles('scripts/fetch-json-schema-test-suite.sh') }}
+
+      - name: Fetch JSONTestSuite
+        shell: bash
+        run: ./scripts/fetch-json-test-suite.sh
+
+      - name: Fetch JSON-Schema-Test-Suite
+        shell: bash
+        run: ./scripts/fetch-json-schema-test-suite.sh
+
+      - name: Build test binary
+        shell: bash
+        run: ./build.sh --clean --debug-only --auto
+
+      - name: Run conformance tests
+        shell: bash
+        run: >-
+          ctest --test-dir out/build-debug --output-on-failure
+          -R '^pjson\.(conformance_|schema_official_)'
+
+  lsan:
+    name: Linux ASan/UBSan/LSan
+    runs-on: ubuntu-latest
+    env:
+      CC: clang
+      CXX: clang++
+      ASAN_OPTIONS: detect_leaks=1
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+      PJSON_JSONTESTSUITE_DIR: ${{ github.workspace }}/.test-corpora/JSONTestSuite
+      PJSON_JSON_SCHEMA_TEST_SUITE_DIR: ${{ github.workspace }}/.test-corpora/JSON-Schema-Test-Suite
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install Clang
+        run: sudo apt-get update && sudo apt-get install -y clang
+
+      - name: Cache JSONTestSuite corpus
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: .test-corpora/JSONTestSuite
+          key: ${{ runner.os }}-jsontestsuite-${{ hashFiles('scripts/fetch-json-test-suite.sh') }}
+
+      - name: Cache JSON Schema corpus
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: .test-corpora/JSON-Schema-Test-Suite
+          key: ${{ runner.os }}-json-schema-suite-${{ hashFiles('scripts/fetch-json-schema-test-suite.sh') }}
+
+      - name: Fetch JSONTestSuite
+        shell: bash
+        run: ./scripts/fetch-json-test-suite.sh
+
+      - name: Fetch JSON-Schema-Test-Suite
+        shell: bash
+        run: ./scripts/fetch-json-schema-test-suite.sh
+
+      - name: Run sanitized test suite
+        shell: bash
+        run: ./build.sh --clean --asan --test --auto
+
+      - name: Run pathological input tests explicitly
+        shell: bash
+        run: ctest --test-dir out/build-debug --output-on-failure -R '^pjson\.pathological_'

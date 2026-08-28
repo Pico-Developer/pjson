@@ -1,0 +1,10 @@
+# SPDX-FileCopyrightText: 2026 ByteDance Ltd. and/or its affiliates
+# SPDX-License-Identifier: Apache-2.0
+
+[libfuzzer]
+# Bound generated inputs so routine mutations emphasize parser state coverage.
+max_len = 4096
+# Stop one input if parsing does not complete within five seconds.
+timeout = 5
+# Leave enough headroom for sanitizer overhead while catching runaway growth.
+rss_limit_mb = 2048

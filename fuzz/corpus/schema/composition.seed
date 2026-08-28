@@ -1,0 +1,2 @@
+{"allOf":[{"type":"number"},{"minimum":0}],"not":{"const":13}}
+12.5

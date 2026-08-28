@@ -1,0 +1,13 @@
+:root {
+  --primary-color: #5a45c7;
+  --primary-dark-color: #4433a3;
+  --primary-light-color: #7463d8;
+}
+
+.contents {
+  max-width: 76rem;
+}
+
+code, .fragment {
+  font-variant-ligatures: none;
+}

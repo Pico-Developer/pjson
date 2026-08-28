@@ -1,0 +1,28 @@
+version = 1
+
+# Supply the project license metadata only when a file does not already carry
+# complete SPDX information. This preserves complete per-file notices,
+# including any third-party notices added in the future.
+[[annotations]]
+path = ["**"]
+precedence = "closest"
+SPDX-FileCopyrightText = "ByteDance Ltd. and/or its affiliates"
+SPDX-License-Identifier = "Apache-2.0"
+
+# Fuzz seeds are first-party test data. Keep their machine-consumed bytes free
+# of embedded comments and make their licensing unambiguous through REUSE's
+# supported external annotation mechanism.
+[[annotations]]
+path = ["fuzz/corpus/**"]
+precedence = "override"
+SPDX-FileCopyrightText = "ByteDance Ltd. and/or its affiliates"
+SPDX-License-Identifier = "Apache-2.0"
+
+# Contributor Covenant 2.1 is adapted here with project-specific reporting
+# instructions. Preserve the upstream attribution and license independently of
+# the Apache-2.0 license used by pjson's first-party material.
+[[annotations]]
+path = ["CODE_OF_CONDUCT.md"]
+precedence = "override"
+SPDX-FileCopyrightText = "2014 Coraline Ada Ehmke"
+SPDX-License-Identifier = "CC-BY-4.0"

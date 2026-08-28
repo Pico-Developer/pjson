@@ -1,0 +1,86 @@
+# SPDX-FileCopyrightText: 2026 ByteDance Ltd. and/or its affiliates
+# SPDX-License-Identifier: Apache-2.0
+
+name: Bug report
+description: Report reproducible incorrect behavior in pjson
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve pjson. Search existing issues before filing a
+        report. For a suspected vulnerability, stop here and follow SECURITY.md
+        instead of posting details publicly.
+
+  - type: input
+    id: version
+    attributes:
+      label: pjson version
+      description: Provide a release version, tag, or full commit hash.
+      placeholder: "1.0.0 or commit abcdef1234..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: behavior
+    attributes:
+      label: What happened?
+      description: Describe the actual behavior and the result you expected.
+      placeholder: |
+        Actual behavior:
+        Expected behavior:
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Provide the smallest complete program or input that reproduces the problem.
+      render: cpp
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: >-
+        Include the OS, architecture, compiler and version, CMake version, and
+        relevant build flags.
+      placeholder: |
+        OS and architecture:
+        Compiler and version:
+        CMake version:
+        Build type and flags:
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and diagnostics
+      description: >-
+        Paste relevant compiler output, sanitizer reports, stack traces, or
+        parser errors. Remove secrets and personal data.
+      render: shell
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add anything else that may help, such as a regression range or workaround.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submission checklist
+      options:
+        - label: I searched existing issues for the same problem.
+          required: true
+        - label: I can reproduce this with a supported version or the current `main` branch.
+          required: true
+        - label: >-
+            This report does not contain confidential vulnerability details,
+            credentials, personal data, or other secrets.
+          required: true

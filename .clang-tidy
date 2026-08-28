@@ -1,0 +1,49 @@
+# clang-tidy configuration for pjson.
+#
+# build.sh promotes enabled findings to errors so regressions fail CI. The check
+# set favors real bugs and portability over stylistic noise.
+#
+# A few checks are disabled deliberately:
+#   *-magic-numbers            the parser/base64 tables are inherently numeric
+#   *-avoid-c-arrays           the static lookup tables are C arrays on purpose
+#   *-else-after-return        the existing style uses else-after-return freely
+#   *-braces-around-statements matches the compact single-line style
+#   *-macro-usage              the value-array setter/append macros are intentional
+#   *-exception-escape         iterative teardown (dtor/move) uses a heap
+#                              work-list whose push_back may throw bad_alloc;
+#                              terminating on OOM during teardown is intended
+#   performance-noexcept-move-constructor
+#                              cross-allocator move assignment may allocate and
+#                              deliberately provides the strong guarantee
+Checks: >
+  bugprone-*,
+  performance-*,
+  portability-*,
+  clang-analyzer-*,
+  misc-*,
+  modernize-use-nullptr,
+  modernize-use-override,
+  readability-misleading-indentation,
+  readability-non-const-parameter,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-signed-char-misuse,
+  -bugprone-exception-escape,
+  -misc-no-recursion,
+  -misc-non-private-member-variables-in-classes,
+  -misc-const-correctness,
+  -misc-include-cleaner,
+  -performance-enum-size,
+  -performance-noexcept-move-constructor,
+  -cppcoreguidelines-*,
+  -readability-magic-numbers,
+  -readability-braces-around-statements,
+  -readability-else-after-return,
+  -modernize-avoid-c-arrays,
+  -cppcoreguidelines-avoid-magic-numbers
+
+WarningsAsErrors: ''
+
+# Only lint this project's own headers, not system/STL headers pulled in.
+HeaderFilterRegex: 'pjson(lib|test)/'
+
+FormatStyle: file

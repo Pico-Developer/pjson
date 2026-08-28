@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: 2026 ByteDance Ltd. and/or its affiliates
+# SPDX-License-Identifier: Apache-2.0
+
+# Project identity and escalation contact shown by OSS-Fuzz.
+homepage: "https://github.com/Pico-Developer/pjson"
+language: c++
+primary_contact: "jdpraveen@bytedance.com"
+main_repo: "https://github.com/Pico-Developer/pjson.git"
+
+# Configurations exercised by the hosted builder matrix.
+fuzzing_engines:
+  - libfuzzer
+sanitizers:
+  - address
+  - undefined
+architectures:
+  - x86_64

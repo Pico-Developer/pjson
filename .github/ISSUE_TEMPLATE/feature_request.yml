@@ -1,0 +1,71 @@
+# SPDX-FileCopyrightText: 2026 ByteDance Ltd. and/or its affiliates
+# SPDX-License-Identifier: Apache-2.0
+
+name: Feature request
+description: Propose a new capability or a deliberate behavior change
+title: "[Feature]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please describe the user problem before prescribing an API. Significant
+        changes should be discussed before implementation.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and motivation
+      description: What use case is difficult or impossible today, and who is affected?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: >-
+        Describe the behavior or API you would like and include a short usage
+        example where useful.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Describe current workarounds and other designs you considered.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: compatibility
+    attributes:
+      label: Compatibility impact
+      description: >-
+        Select the closest expected impact; maintainers will make the final
+        versioning decision.
+      options:
+        - Backward-compatible addition
+        - Behavior change with compatibility risk
+        - Breaking API or ABI change
+        - Unsure
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: >-
+        Add links, prior art, performance data, or constraints such as C++11
+        and supported toolchains.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submission checklist
+      options:
+        - label: I searched existing issues for similar requests.
+          required: true
+        - label: I described the underlying use case, not only a preferred implementation.
+          required: true

@@ -85,10 +85,12 @@ jobs:
   vcpkg:
     name: vcpkg overlay package consumer
     runs-on: ubuntu-latest
-    env:
-      VCPKG_ROOT: ${{ runner.temp }}/vcpkg
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Configure vcpkg path
+        shell: bash
+        run: echo "VCPKG_ROOT=${RUNNER_TEMP}/vcpkg" >> "${GITHUB_ENV}"
 
       - name: Bootstrap pinned vcpkg
         run: |
@@ -335,3 +337,36 @@ jobs:
       - name: Run pathological input tests explicitly
         shell: bash
         run: ctest --test-dir out/build-debug --output-on-failure -R '^pjson\.pathological_'
+
+  required:
+    name: Required CI checks
+    if: always()
+    needs:
+      - licensing
+      - fuzz
+      - distribution
+      - conan
+      - vcpkg
+      - build-test
+      - msvc
+      - format
+      - tidy
+      - benchmark
+      - benchmark-compare
+      - conformance
+      - lsan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every CI job to succeed
+        env:
+          REQUIRED_RESULTS: ${{ toJSON(needs) }}
+        shell: bash
+        run: |
+          if jq -e 'all(.[]; .result == "success")' <<<"${REQUIRED_RESULTS}"; then
+            exit 0
+          fi
+
+          jq -r 'to_entries[] | select(.value.result != "success") |
+            "::error title=Required CI job did not succeed::\(.key): \(.value.result)"' \
+            <<<"${REQUIRED_RESULTS}"
+          exit 1

@@ -191,5 +191,7 @@ CountingAllocator storage;
 - The hook covers persistent DOM nodes and wrapper objects, not every allocation
   made by their standard-library internals or temporary algorithms.
 
-Return to the [tutorial index](README.md), or consult the
+Return to the
+[tutorial index](https://github.com/Pico-Developer/pjson/blob/main/docs/README.md),
+or consult the
 [browsable API reference](https://pico-developer.github.io/pjson/).

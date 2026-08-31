@@ -55,7 +55,7 @@ int main() {
     // These limits bound traversal and reference work. Known string formats,
     // such as the date above, are checked because validateFormats is enabled.
     pjson::SchemaOptions options;
-    options.maxValidationDepth = 512;
+    options.maxValidationDepth = 128;
     options.maxRefResolutions = 1024;
     options.validateFormats = true;
     std::cout << "good is valid: " << (good->validate(*schema, options) ? "yes" : "no") << "\n";

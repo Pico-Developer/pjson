@@ -76,6 +76,17 @@
  */
 
 /**
+ * @struct ByteDance::pjson::SchemaOptions
+ * @brief Bounds schema-validation work and controls optional format checks.
+ *
+ * Recursive validation depth defaults to an absolute hard ceiling of 128. A
+ * zero value selects that ceiling, and larger values are clamped to it so no
+ * caller configuration can make recursive keyword evaluation exceed the
+ * conservative native-stack bound. Other zero-valued validation budgets retain their
+ * documented hard ceilings; only regex byte limits use zero as unlimited.
+ */
+
+/**
  * @struct ByteDance::pjson::PatchOptions
  * @brief Bounds JSON Patch and Merge Patch transactional amplification.
  *

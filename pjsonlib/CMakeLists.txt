@@ -87,8 +87,13 @@ install(FILES
 # prefix. This keeps the metadata valid after an installed tree is relocated,
 # including when CMAKE_INSTALL_LIBDIR is changed to lib64 or a nested path.
 set(PJSON_INSTALL_PKGCONFIGDIR "${CMAKE_INSTALL_LIBDIR}/pkgconfig")
-file(RELATIVE_PATH PJSON_PC_PREFIX_FROM_PCFILEDIR
-    "/${PJSON_INSTALL_PKGCONFIGDIR}" "/")
+# Keep this calculation lexical and relative.  Synthesizing a root with a
+# leading slash is not a native absolute path on Windows, so file(RELATIVE_PATH)
+# rejects it during configuration.
+set(PJSON_PC_PREFIX_FROM_PCFILEDIR ".")
+cmake_path(RELATIVE_PATH PJSON_PC_PREFIX_FROM_PCFILEDIR
+    BASE_DIRECTORY "${PJSON_INSTALL_PKGCONFIGDIR}")
+cmake_path(NORMAL_PATH PJSON_PC_PREFIX_FROM_PCFILEDIR)
 configure_file(
     "${CMAKE_CURRENT_LIST_DIR}/../cmake/pjson.pc.in"
     "${CMAKE_CURRENT_BINARY_DIR}/pjson.pc"

@@ -137,7 +137,7 @@ pjson::SchemaOptions options;
 options.maxRegexPatternBytes = 256;
 options.maxRegexSubjectBytes = 4096;
 options.allowUnsafeRegex = false;
-options.maxValidationDepth = 512;
+options.maxValidationDepth = 128;
 options.maxRefResolutions = 1024;
 options.maxValidationWork = 1000000;
 options.maxErrors = 100;
@@ -151,6 +151,8 @@ These are the defaults. A zero regex byte limit disables that individual regex
 limit and should be reserved for trusted input. Zero for the validation-depth,
 reference-resolution, work, or error-count budget retains that budget's
 documented hard ceiling rather than disabling it.
+Validation depth has an absolute hard ceiling of 128; larger configured values
+are clamped to 128 to bound native-stack use during recursive keyword evaluation.
 `SchemaOptions::trustedRegex()` disables both regex byte limits and permits
 unsafe regular expressions while retaining all other defaults. Set
 `validateFormats = false` when known formats should act only as annotations.

@@ -100,4 +100,5 @@ jobs:
         run: |
           gh release upload "${RELEASE_TAG}" \
             pjson-api-reference.tar.gz \
-            pjson-api-reference.tar.gz.sha256
+            pjson-api-reference.tar.gz.sha256 \
+            --repo "${GITHUB_REPOSITORY}"

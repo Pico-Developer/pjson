@@ -4,9 +4,8 @@
 # Versioning Policy
 
 pjson uses [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html). The
-current source/development version is **1.0.0**, which remains unreleased until
-the `release-1.0.0` tag is published. The latest published tag is `release-0.0.3`;
-historical `0.0.x` releases predate this stability policy.
+current stable version is **1.0.0**. Historical `0.0.x` releases used a
+`release-` tag prefix and predate this stability policy.
 
 ## Version meaning
 
@@ -60,11 +59,11 @@ is a release-blocking defect.
 
 ## Tags and pre-releases
 
-Release tags follow the repository's established
-`release-MAJOR.MINOR.PATCH` form, for example `release-1.0.0`. Pre-release
-identifiers use Semantic Versioning syntax, for example
-`release-1.1.0-rc.1`. Published tags are immutable; a correction is released
-under a new version rather than moving an existing tag.
+Release tags use the plain Semantic Versioning `MAJOR.MINOR.PATCH` form, for
+example `1.0.0`. Pre-release identifiers use Semantic Versioning syntax, for
+example `1.1.0-rc.1`. Historical `0.0.x` tags retain their original `release-`
+prefix. Published tags are immutable; a correction is released under a new
+version rather than moving an existing tag.
 
 Development happens on `main`. Until a release tag is published, its changes
 remain under the `Unreleased` heading in `CHANGELOG.md`.

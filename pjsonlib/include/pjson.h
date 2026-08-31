@@ -302,8 +302,8 @@ namespace ByteDance {
             size_t maxRegexPatternBytes; // 0 = unlimited (default: 256)
             size_t maxRegexSubjectBytes; // 0 = unlimited (default: 4096)
             bool allowUnsafeRegex;       // default false
-            /// Recursive validation depth (default and absolute hard ceiling: 128).
-            /// Zero selects 128, and larger values are clamped to 128.
+            /// Recursive validation depth (default and absolute hard ceiling: 64).
+            /// Zero selects 64, and larger values are clamped to 64.
             size_t maxValidationDepth;
             /// Resolved references (default 1024); zero selects the hard ceiling of 1024.
             size_t maxRefResolutions;

@@ -281,7 +281,7 @@ typedef pjsonImpl::ParseCtx ParseCtx;
 // its logical depth below a conservative stack-safe ceiling even when callers
 // request a larger value. Consecutive local references are resolved iteratively
 // but continue to consume this same logical-depth budget.
-static const size_t kSchemaValidationDepthHardLimit = 128;
+static const size_t kSchemaValidationDepthHardLimit = 64;
 
 namespace {
     //===------------------------------------------------------------------===//

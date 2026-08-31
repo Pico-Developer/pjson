@@ -937,12 +937,13 @@ Notes:
   limits pattern and subject sizes and rejects unsafe expressions.
 - `SchemaOptions` defaults `maxRegexPatternBytes` to 256,
   `maxRegexSubjectBytes` to 4096, `allowUnsafeRegex` to `false`,
-  `maxValidationDepth` to 512, `maxRefResolutions` to 1024,
+  `maxValidationDepth` to 64, `maxRefResolutions` to 1024,
   `maxValidationWork` to 1,000,000, `maxErrors` to 100, and
   `validateFormats` to `true`. Zero removes only a regex byte limit; zero for a
   validation, reference, work, or error budget retains its documented hard
-  ceiling. `trustedRegex()` removes only the regex limits/safety screen; reserve
-  it for trusted schemas and data.
+  ceiling. Validation depth has an absolute hard ceiling of 64, so larger
+  configured values are clamped to 64. `trustedRegex()` removes only the regex
+  limits/safety screen; reserve it for trusted schemas and data.
 
 This is the documented pjson subset, not a complete JSON Schema draft. See
 [the schema tutorial](docs/06-schema-validation.md) and the

@@ -68,6 +68,10 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases follow
 - Correct schema Unicode-length counting, numeric-bound and `multipleOf`
   precision behavior, malformed keyword handling, format validation, and
   speculative combinator error reporting.
+- Prevent schema-validation stack exhaustion by resolving consecutive local
+  references iteratively and enforcing a conservative recursive-depth ceiling.
+- Make relocatable pkg-config metadata generation portable to Windows and
+  nested installation library directories.
 - Preserve destination state and structured errors on allocation, output-budget,
   and Patch/Merge Patch failures.
 

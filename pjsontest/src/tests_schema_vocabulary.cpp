@@ -284,20 +284,55 @@ TEST(schema_vocab_ref_resolution_budget) {
     CHECK(hasMessageContaining(errors, "budget"));
 }
 
+TEST(schema_vocab_ref_chain_still_obeys_depth_budget) {
+    pjson::SchemaOptions opts = optionsWithDepthBudget(4);
+    opts.maxRefResolutions = 16;
+    const pjson schema = makeReferenceChainSchema(4);
+    pjson instance;
+    instance = int64_t(1);
+
+    std::vector<pjson::SchemaError> errors;
+    CHECK(!instance.validate(schema, errors, opts));
+    CHECK(hasMessageContaining(errors, "depth"));
+    CHECK(hasMessageContaining(errors, "budget"));
+}
+
 TEST(schema_vocab_ref_zero_depth_uses_hard_ceiling) {
     pjson::SchemaOptions opts = optionsWithDepthBudget(0);
-    const pjson schema = makeNestedPropertySchema(520);
-    const pjson instance = makeNestedPropertyInstance(520);
+    CHECK_EQ(pjson::SchemaOptions().maxValidationDepth, size_t(64));
+    const pjson schema = makeNestedPropertySchema(64);
+    const pjson instance = makeNestedPropertyInstance(64);
 
     std::vector<pjson::SchemaError> errors;
     CHECK(!instance.validate(schema, errors, opts));
     CHECK(hasMessageContaining(errors, "depth"));
 }
 
+TEST(schema_vocab_ref_requested_depth_is_clamped_to_hard_ceiling) {
+    pjson::SchemaOptions opts = optionsWithDepthBudget(2048);
+    const pjson withinLimitSchema = makeNestedPropertySchema(63);
+    const pjson withinLimitInstance = makeNestedPropertyInstance(63);
+    const pjson schema = makeNestedPropertySchema(64);
+    const pjson instance = makeNestedPropertyInstance(64);
+
+    CHECK(withinLimitInstance.validate(withinLimitSchema, opts));
+    std::vector<pjson::SchemaError> errors;
+    CHECK(!instance.validate(schema, errors, opts));
+    CHECK(hasMessageContaining(errors, "depth"));
+}
+
+TEST(schema_vocab_ref_zero_resolution_budget_allows_hard_ceiling) {
+    pjson::SchemaOptions opts = optionsWithRefBudget(0);
+    const pjson schema = makeBranchingWorkSchema(10);
+    pjson instance;
+    instance = int64_t(1);
+
+    CHECK(instance.validate(schema, opts));
+}
+
 TEST(schema_vocab_ref_zero_resolution_budget_uses_hard_ceiling) {
     pjson::SchemaOptions opts = optionsWithRefBudget(0);
-    opts.maxValidationDepth = 2048;
-    const pjson schema = makeReferenceChainSchema(1030);
+    const pjson schema = makeBranchingWorkSchema(11);
     pjson instance;
     instance = int64_t(1);
 
@@ -676,7 +711,7 @@ TEST(schema_additional_properties_large_object_stays_within_work_budget) {
 
 TEST(schema_validation_zero_work_budget_uses_hard_ceiling) {
     pjson::SchemaOptions opts = optionsWithWorkBudget(0);
-    opts.maxValidationDepth = 128;
+    opts.maxValidationDepth = 64;
     opts.maxRefResolutions = 2000000;
     const pjson schema = makeBranchingWorkSchema(20);
     pjson instance;

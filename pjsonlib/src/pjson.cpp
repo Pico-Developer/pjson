@@ -277,6 +277,12 @@ typedef pjson::ParseError ParseError;
 typedef pjson::SaxHandler SaxHandler;
 typedef pjsonImpl::ParseCtx ParseCtx;
 
+// Schema validation still uses native recursion for applicator keywords. Keep
+// its logical depth below a conservative stack-safe ceiling even when callers
+// request a larger value. Consecutive local references are resolved iteratively
+// but continue to consume this same logical-depth budget.
+static const size_t kSchemaValidationDepthHardLimit = 64;
+
 namespace {
     //===------------------------------------------------------------------===//
     // Parse diagnostics and SAX cursor adapters
@@ -1212,7 +1218,7 @@ pjson::SchemaOptions::SchemaOptions()
         : maxRegexPatternBytes(256)
         , maxRegexSubjectBytes(4096)
         , allowUnsafeRegex(false)
-        , maxValidationDepth(512)
+        , maxValidationDepth(kSchemaValidationDepthHardLimit)
         , maxRefResolutions(1024)
         , maxValidationWork(1000000)
         , maxErrors(100)
@@ -5276,22 +5282,34 @@ namespace {
     // Balances the shared recursion counter across every return and exception.
     struct SchemaDepthGuard {
         pjsonImpl::SchemaValidationCtx& ctx;
+        size_t levels;
         explicit SchemaDepthGuard(pjsonImpl::SchemaValidationCtx& aCtx)
-                : ctx(aCtx) {
+                : ctx(aCtx)
+                , levels(1) {
             ++ctx.depth;
         }
-        ~SchemaDepthGuard() { --ctx.depth; }
+        void enterResolvedReference() {
+            ++ctx.depth;
+            ++levels;
+        }
+        ~SchemaDepthGuard() { ctx.depth -= levels; }
     };
 
-    // Keeps one (instance, resolved-schema) pair active only for its recursive call.
+    // Keeps every iteratively resolved (instance, schema) pair active until the
+    // terminal schema has been evaluated, matching nested-call cycle semantics.
     struct ActiveRefGuard {
         std::vector<std::pair<const pjson*, const pjson*>>& refs;
-        ActiveRefGuard(std::vector<std::pair<const pjson*, const pjson*>>& aRefs, const pjson* node,
-                       const pjson* schema)
-                : refs(aRefs) {
+        const size_t initialSize;
+        explicit ActiveRefGuard(std::vector<std::pair<const pjson*, const pjson*>>& aRefs)
+                : refs(aRefs)
+                , initialSize(aRefs.size()) {}
+        void push(const pjson* node, const pjson* schema) {
             refs.push_back(std::make_pair(node, schema));
         }
-        ~ActiveRefGuard() { refs.pop_back(); }
+        ~ActiveRefGuard() {
+            while (refs.size() > initialSize)
+                refs.pop_back();
+        }
     };
 
     // Aborts all remaining branches and ensures a budget failure reaches the
@@ -5314,7 +5332,9 @@ namespace {
     }
 
     size_t validationDepthLimit(const SchemaOptions& options) {
-        return options.maxValidationDepth == 0 ? size_t(512) : options.maxValidationDepth;
+        const size_t requested = options.maxValidationDepth == 0 ? kSchemaValidationDepthHardLimit
+                                                                 : options.maxValidationDepth;
+        return std::min(requested, kSchemaValidationDepthHardLimit);
     }
 
     size_t validationRefLimit(const SchemaOptions& options) {
@@ -5513,75 +5533,87 @@ bool pjsonImpl::_validateCtx(const pjson& aNode, const pjson& aSchema, const std
         return false;
     }
     SchemaDepthGuard depthGuard(aCtx);
+    ActiveRefGuard activeRefGuard(aCtx.activeRefs);
+    const pjson* currentSchema = &aSchema;
 
-    // A boolean schema accepts (true) or rejects (false) everything.
-    if (aSchema.isBool()) {
-        if (!pjsonImpl::_boolean(aSchema)) {
-            aErrors.push_back(SchemaError(aPath, "schema is false; no value is valid here"));
-            return false;
-        }
-        return true;
-    }
-    // Only object schemas carry keywords; anything else is treated as "accept".
-    if (!aSchema.isObject()) {
-        return true;
-    }
-
-    const size_t before = aErrors.size();
-
-    // Draft-07 treats an object containing $ref as a reference object: all
-    // sibling keywords are ignored. Only same-document fragment references
-    // are supported; percent-decoding precedes RFC 6901 token decoding.
-    if (const pjson* ref = aSchema.find("$ref")) {
-        if (ref->isString()) {
-            const std::string refText = pjsonImpl::_string(*ref);
-            if (refText.empty() || refText[0] == '#') {
-                if (aCtx.refResolutions >= validationRefLimit(aCtx.options)) {
-                    failValidationBudget(aCtx, aErrors, aPath,
-                                         "schema $ref resolution budget exceeded");
-                    return false;
-                }
-                ++aCtx.refResolutions;
-
-                std::string pointer;
-                const std::string fragment = refText.empty() ? std::string() : refText.substr(1);
-                if (!decodeSchemaFragment(fragment, pointer)) {
-                    aErrors.push_back(
-                        SchemaError(aPath, "malformed local $ref fragment: " + refText));
-                    return false;
-                }
-
-                pjson::PointerError pointerError;
-                const pjson* target = aCtx.rootSchema.findPointer(pointer, pointerError);
-                if (target == nullptr) {
-                    const bool malformed =
-                        pointerError.code == pjson::PointerError::InvalidSyntax ||
-                        pointerError.code == pjson::PointerError::InvalidEscape ||
-                        pointerError.code == pjson::PointerError::InvalidArrayIndex ||
-                        pointerError.code == pjson::PointerError::AppendTokenNotAllowed;
-                    aErrors.push_back(
-                        SchemaError(aPath, std::string(malformed ? "malformed" : "unresolved") +
-                                               " local $ref: " + refText));
-                    return false;
-                }
-
-                const std::pair<const pjson*, const pjson*> active(&aNode, target);
-                if (std::find(aCtx.activeRefs.begin(), aCtx.activeRefs.end(), active) !=
-                    aCtx.activeRefs.end()) {
-                    aErrors.push_back(SchemaError(aPath, "local $ref cycle detected: " + refText));
-                    return false;
-                }
-                ActiveRefGuard refGuard(aCtx.activeRefs, &aNode, target);
-                return _validateCtx(aNode, *target, aPath, aErrors, aCtx);
+    // Resolve consecutive local references without consuming native stack.
+    // Each hop still behaves like a logical _validateCtx invocation: it charges
+    // work, enters the depth budget, and keeps its active pair until the final
+    // target has been evaluated. Draft-07 reference objects ignore siblings.
+    for (;;) {
+        // A boolean schema accepts (true) or rejects (false) everything.
+        if (currentSchema->isBool()) {
+            if (!pjsonImpl::_boolean(*currentSchema)) {
+                aErrors.push_back(SchemaError(aPath, "schema is false; no value is valid here"));
+                return false;
             }
+            return true;
+        }
+        // Only object schemas carry keywords; anything else is treated as "accept".
+        if (!currentSchema->isObject())
+            return true;
 
+        // Draft-07 treats an object containing a string $ref as a reference
+        // object: all sibling keywords are ignored. Only same-document fragment
+        // references are supported; percent-decoding precedes RFC 6901 decoding.
+        const pjson* ref = currentSchema->find("$ref");
+        if (ref == nullptr || !ref->isString())
+            break;
+
+        const std::string refText = pjsonImpl::_string(*ref);
+        if (!refText.empty() && refText[0] != '#') {
             aErrors.push_back(SchemaError(aPath, "non-local $ref is not supported: " + refText));
             return false;
         }
+        if (aCtx.refResolutions >= validationRefLimit(aCtx.options)) {
+            failValidationBudget(aCtx, aErrors, aPath, "schema $ref resolution budget exceeded");
+            return false;
+        }
+        ++aCtx.refResolutions;
+
+        std::string pointer;
+        const std::string fragment = refText.empty() ? std::string() : refText.substr(1);
+        if (!decodeSchemaFragment(fragment, pointer)) {
+            aErrors.push_back(SchemaError(aPath, "malformed local $ref fragment: " + refText));
+            return false;
+        }
+
+        pjson::PointerError pointerError;
+        const pjson* target = aCtx.rootSchema.findPointer(pointer, pointerError);
+        if (target == nullptr) {
+            const bool malformed = pointerError.code == pjson::PointerError::InvalidSyntax ||
+                                   pointerError.code == pjson::PointerError::InvalidEscape ||
+                                   pointerError.code == pjson::PointerError::InvalidArrayIndex ||
+                                   pointerError.code == pjson::PointerError::AppendTokenNotAllowed;
+            aErrors.push_back(
+                SchemaError(aPath, std::string(malformed ? "malformed" : "unresolved") +
+                                       " local $ref: " + refText));
+            return false;
+        }
+
+        const std::pair<const pjson*, const pjson*> active(&aNode, target);
+        if (std::find(aCtx.activeRefs.begin(), aCtx.activeRefs.end(), active) !=
+            aCtx.activeRefs.end()) {
+            aErrors.push_back(SchemaError(aPath, "local $ref cycle detected: " + refText));
+            return false;
+        }
+        activeRefGuard.push(&aNode, target);
+
+        if (!chargeValidationWork(aCtx, aErrors, aPath))
+            return false;
+        if (aCtx.depth >= validationDepthLimit(aCtx.options)) {
+            failValidationBudget(aCtx, aErrors, aPath, "schema validation depth budget exceeded");
+            return false;
+        }
+        depthGuard.enterResolvedReference();
+        currentSchema = target;
     }
 
+    const pjson& schema = *currentSchema;
+    const size_t before = aErrors.size();
+
     // ---- type ----
-    if (const pjson* t = aSchema.find("type")) {
+    if (const pjson* t = schema.find("type")) {
         if (t->isString()) {
             if (!_typeMatches(aNode, pjsonImpl::_string(*t))) {
                 aErrors.push_back(SchemaError(aPath, "expected type " + pjsonImpl::_string(*t) +
@@ -5612,7 +5644,7 @@ bool pjsonImpl::_validateCtx(const pjson& aNode, const pjson& aSchema, const std
     }
 
     // ---- const ----
-    if (const pjson* cst = aSchema.find("const")) {
+    if (const pjson* cst = schema.find("const")) {
         bool equal = false;
         if (!_equalWithBudget(aNode, *cst, aCtx, aErrors, aPath, equal))
             return false;
@@ -5622,7 +5654,7 @@ bool pjsonImpl::_validateCtx(const pjson& aNode, const pjson& aSchema, const std
     }
 
     // ---- enum ----
-    if (const pjson* en = aSchema.find("enum")) {
+    if (const pjson* en = schema.find("enum")) {
         if (en->isArray()) {
             bool found = false;
             for (const pjson* opt : pjsonImpl::_array(*en)) {
@@ -5642,14 +5674,14 @@ bool pjsonImpl::_validateCtx(const pjson& aNode, const pjson& aSchema, const std
 
     // ---- numeric constraints ----
     if (aNode.isNumber()) {
-        if (const pjson* m = aSchema.find("minimum")) {
+        if (const pjson* m = schema.find("minimum")) {
             if (m->isNumber() && _compareNumbers(aNode, *m) < 0) {
                 addSchemaError(aCtx, aErrors, aPath,
                                "value " + formatNumber(aNode) + " is below minimum " +
                                    formatNumber(*m));
             }
         }
-        if (const pjson* m = aSchema.find("maximum")) {
+        if (const pjson* m = schema.find("maximum")) {
             const int comparison = m->isNumber() ? _compareNumbers(aNode, *m) : 2;
             if (comparison != 2 && comparison > 0) {
                 addSchemaError(aCtx, aErrors, aPath,
@@ -5657,7 +5689,7 @@ bool pjsonImpl::_validateCtx(const pjson& aNode, const pjson& aSchema, const std
                                    formatNumber(*m));
             }
         }
-        if (const pjson* m = aSchema.find("exclusiveMinimum")) {
+        if (const pjson* m = schema.find("exclusiveMinimum")) {
             const int comparison = m->isNumber() ? _compareNumbers(aNode, *m) : 2;
             if (comparison <= 0) {
                 addSchemaError(aCtx, aErrors, aPath,
@@ -5665,7 +5697,7 @@ bool pjsonImpl::_validateCtx(const pjson& aNode, const pjson& aSchema, const std
                                    " is not greater than exclusiveMinimum " + formatNumber(*m));
             }
         }
-        if (const pjson* m = aSchema.find("exclusiveMaximum")) {
+        if (const pjson* m = schema.find("exclusiveMaximum")) {
             const int comparison = m->isNumber() ? _compareNumbers(aNode, *m) : 2;
             if (comparison != 2 && comparison >= 0) {
                 addSchemaError(aCtx, aErrors, aPath,
@@ -5673,7 +5705,7 @@ bool pjsonImpl::_validateCtx(const pjson& aNode, const pjson& aSchema, const std
                                    " is not less than exclusiveMaximum " + formatNumber(*m));
             }
         }
-        if (const pjson* m = aSchema.find("multipleOf")) {
+        if (const pjson* m = schema.find("multipleOf")) {
             if (m->isNumber() && !isExactMultiple(aNode, *m)) {
                 addSchemaError(aCtx, aErrors, aPath,
                                "value " + formatNumber(aNode) + " is not a multiple of " +
@@ -5688,7 +5720,7 @@ bool pjsonImpl::_validateCtx(const pjson& aNode, const pjson& aSchema, const std
         size_t length = 0;
         if (!unicodeLength(s, aCtx, aErrors, aPath, length))
             return false;
-        if (const pjson* m = aSchema.find("minLength")) {
+        if (const pjson* m = schema.find("minLength")) {
             size_t bound = 0;
             bool aboveRange = false;
             if (schemaSize(*m, bound, aboveRange) && (aboveRange || length < bound))
@@ -5696,7 +5728,7 @@ bool pjsonImpl::_validateCtx(const pjson& aNode, const pjson& aSchema, const std
                                "string length " + std::to_string(length) + " is below minLength " +
                                    formatNumber(*m));
         }
-        if (const pjson* m = aSchema.find("maxLength")) {
+        if (const pjson* m = schema.find("maxLength")) {
             size_t bound = 0;
             bool aboveRange = false;
             if (schemaSize(*m, bound, aboveRange) && !aboveRange && length > bound)
@@ -5704,7 +5736,7 @@ bool pjsonImpl::_validateCtx(const pjson& aNode, const pjson& aSchema, const std
                                "string length " + std::to_string(length) + " is above maxLength " +
                                    formatNumber(*m));
         }
-        if (const pjson* p = aSchema.find("pattern")) {
+        if (const pjson* p = schema.find("pattern")) {
             if (p->isString()) {
                 const std::string pattern = pjsonImpl::_string(*p);
                 bool matches = false;
@@ -5714,7 +5746,7 @@ bool pjsonImpl::_validateCtx(const pjson& aNode, const pjson& aSchema, const std
             }
         }
         if (aCtx.options.validateFormats) {
-            if (const pjson* format = aSchema.find("format")) {
+            if (const pjson* format = schema.find("format")) {
                 if (format->isString()) {
                     bool known = false;
                     if (!knownFormatValid(pjsonImpl::_string(*format), s, known) && known)
@@ -5729,7 +5761,7 @@ bool pjsonImpl::_validateCtx(const pjson& aNode, const pjson& aSchema, const std
     // ---- array constraints ----
     if (aNode.isArray()) {
         const PJSONARRAY& arr = *aNode._uValue._pValueArray;
-        if (const pjson* m = aSchema.find("minItems")) {
+        if (const pjson* m = schema.find("minItems")) {
             size_t bound = 0;
             bool aboveRange = false;
             if (schemaSize(*m, bound, aboveRange) && (aboveRange || arr.size() < bound))
@@ -5737,7 +5769,7 @@ bool pjsonImpl::_validateCtx(const pjson& aNode, const pjson& aSchema, const std
                                "array has " + std::to_string(arr.size()) +
                                    " items, below minItems " + formatNumber(*m));
         }
-        if (const pjson* m = aSchema.find("maxItems")) {
+        if (const pjson* m = schema.find("maxItems")) {
             size_t bound = 0;
             bool aboveRange = false;
             if (schemaSize(*m, bound, aboveRange) && !aboveRange && arr.size() > bound)
@@ -5745,7 +5777,7 @@ bool pjsonImpl::_validateCtx(const pjson& aNode, const pjson& aSchema, const std
                                "array has " + std::to_string(arr.size()) +
                                    " items, above maxItems " + formatNumber(*m));
         }
-        if (const pjson* u = aSchema.find("uniqueItems")) {
+        if (const pjson* u = schema.find("uniqueItems")) {
             if (u->isBool() && pjsonImpl::_boolean(*u)) {
                 bool dup = false;
                 for (size_t i = 0; i < arr.size() && !dup; ++i) {
@@ -5764,7 +5796,7 @@ bool pjsonImpl::_validateCtx(const pjson& aNode, const pjson& aSchema, const std
                 }
             }
         }
-        if (const pjson* items = aSchema.find("items")) {
+        if (const pjson* items = schema.find("items")) {
             if (items->isArray()) {
                 const PJSONARRAY& tuple = pjsonImpl::_array(*items);
                 const size_t count = std::min(arr.size(), tuple.size());
@@ -5789,7 +5821,7 @@ bool pjsonImpl::_validateCtx(const pjson& aNode, const pjson& aSchema, const std
     if (aNode.isObject()) {
         const PJSONMAP& obj = *aNode._uValue._pValueMap;
 
-        if (const pjson* req = aSchema.find("required")) {
+        if (const pjson* req = schema.find("required")) {
             if (req->isArray()) {
                 for (const pjson* k : pjsonImpl::_array(*req)) {
                     if (!chargeLoopWork(aCtx, aErrors, aPath))
@@ -5801,7 +5833,7 @@ bool pjsonImpl::_validateCtx(const pjson& aNode, const pjson& aSchema, const std
                 }
             }
         }
-        if (const pjson* m = aSchema.find("minProperties")) {
+        if (const pjson* m = schema.find("minProperties")) {
             size_t bound = 0;
             bool aboveRange = false;
             if (schemaSize(*m, bound, aboveRange) && (aboveRange || obj.size() < bound))
@@ -5809,7 +5841,7 @@ bool pjsonImpl::_validateCtx(const pjson& aNode, const pjson& aSchema, const std
                                "object has " + std::to_string(obj.size()) +
                                    " properties, below minProperties " + formatNumber(*m));
         }
-        if (const pjson* m = aSchema.find("maxProperties")) {
+        if (const pjson* m = schema.find("maxProperties")) {
             size_t bound = 0;
             bool aboveRange = false;
             if (schemaSize(*m, bound, aboveRange) && !aboveRange && obj.size() > bound)
@@ -5818,7 +5850,7 @@ bool pjsonImpl::_validateCtx(const pjson& aNode, const pjson& aSchema, const std
                                    " properties, above maxProperties " + formatNumber(*m));
         }
 
-        const pjson* props = aSchema.find("properties");
+        const pjson* props = schema.find("properties");
         if (props && props->isObject()) {
             for (const auto& kv : pjsonImpl::_object(*props)) {
                 if (!chargeLoopWork(aCtx, aErrors, aPath))
@@ -5833,7 +5865,7 @@ bool pjsonImpl::_validateCtx(const pjson& aNode, const pjson& aSchema, const std
             }
         }
 
-        const pjson* patternProps = aSchema.find("patternProperties");
+        const pjson* patternProps = schema.find("patternProperties");
         // A set avoids the prior O(properties * matches) membership scan when
         // additionalProperties is evaluated after patternProperties.
         std::set<std::string> patternMatched;
@@ -5856,7 +5888,7 @@ bool pjsonImpl::_validateCtx(const pjson& aNode, const pjson& aSchema, const std
             }
         }
 
-        if (const pjson* propertyNames = aSchema.find("propertyNames")) {
+        if (const pjson* propertyNames = schema.find("propertyNames")) {
             for (const auto& kv : obj) {
                 if (!chargeLoopWork(aCtx, aErrors, aPath))
                     return false;
@@ -5869,7 +5901,7 @@ bool pjsonImpl::_validateCtx(const pjson& aNode, const pjson& aSchema, const std
             }
         }
 
-        const pjson* dependentRequired = aSchema.find("dependentRequired");
+        const pjson* dependentRequired = schema.find("dependentRequired");
         if (dependentRequired && dependentRequired->isObject()) {
             for (const auto& dependency : pjsonImpl::_object(*dependentRequired)) {
                 if (!chargeLoopWork(aCtx, aErrors, aPath))
@@ -5889,7 +5921,7 @@ bool pjsonImpl::_validateCtx(const pjson& aNode, const pjson& aSchema, const std
             }
         }
 
-        const pjson* dependencies = aSchema.find("dependencies");
+        const pjson* dependencies = schema.find("dependencies");
         if (dependencies && dependencies->isObject()) {
             for (const auto& dependency : pjsonImpl::_object(*dependencies)) {
                 if (!chargeLoopWork(aCtx, aErrors, aPath))
@@ -5916,7 +5948,7 @@ bool pjsonImpl::_validateCtx(const pjson& aNode, const pjson& aSchema, const std
             }
         }
 
-        if (const pjson* addl = aSchema.find("additionalProperties")) {
+        if (const pjson* addl = schema.find("additionalProperties")) {
             for (const auto& kv : obj) {
                 if (!chargeLoopWork(aCtx, aErrors, aPath))
                     return false;
@@ -5946,7 +5978,7 @@ bool pjsonImpl::_validateCtx(const pjson& aNode, const pjson& aSchema, const std
     // are speculative: branches validate into scratch vectors so only the
     // combinator-level outcome is exposed to callers. Budget aborts bypass that
     // isolation through failValidationBudget and stop all remaining work.
-    if (const pjson* allOf = aSchema.find("allOf")) {
+    if (const pjson* allOf = schema.find("allOf")) {
         if (allOf->isArray()) {
             for (const pjson* sub : pjsonImpl::_array(*allOf)) {
                 if (!chargeLoopWork(aCtx, aErrors, aPath))
@@ -5957,7 +5989,7 @@ bool pjsonImpl::_validateCtx(const pjson& aNode, const pjson& aSchema, const std
             }
         }
     }
-    if (const pjson* anyOf = aSchema.find("anyOf")) {
+    if (const pjson* anyOf = schema.find("anyOf")) {
         if (anyOf->isArray()) {
             bool any = false;
             for (const pjson* sub : pjsonImpl::_array(*anyOf)) {
@@ -5977,7 +6009,7 @@ bool pjsonImpl::_validateCtx(const pjson& aNode, const pjson& aSchema, const std
             }
         }
     }
-    if (const pjson* oneOf = aSchema.find("oneOf")) {
+    if (const pjson* oneOf = schema.find("oneOf")) {
         if (oneOf->isArray()) {
             int matches = 0;
             for (const pjson* sub : pjsonImpl::_array(*oneOf)) {
@@ -5996,7 +6028,7 @@ bool pjsonImpl::_validateCtx(const pjson& aNode, const pjson& aSchema, const std
             }
         }
     }
-    const pjson* nots = aSchema.find("not");
+    const pjson* nots = schema.find("not");
     if (nots != nullptr && (nots->isBool() || nots->isObject())) {
         std::vector<SchemaError> scratch;
         SchemaErrorSink scratchSink(scratch, aCtx, false);

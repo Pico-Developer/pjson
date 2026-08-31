@@ -121,15 +121,15 @@ run_checked("pjson package install"
 file(RENAME "${stage_prefix}" "${relocated_prefix}")
 
 file(GLOB_RECURSE config_files LIST_DIRECTORIES FALSE
-    "${relocated_prefix}/*/cmake/pjson/pjsonConfig.cmake")
+    "${relocated_prefix}/*/pjsonConfig.cmake")
 file(GLOB_RECURSE version_files LIST_DIRECTORIES FALSE
-    "${relocated_prefix}/*/cmake/pjson/pjsonConfigVersion.cmake")
+    "${relocated_prefix}/*/pjsonConfigVersion.cmake")
 file(GLOB_RECURSE target_files LIST_DIRECTORIES FALSE
-    "${relocated_prefix}/*/cmake/pjson/pjsonTargets.cmake")
+    "${relocated_prefix}/*/pjsonTargets.cmake")
 file(GLOB_RECURSE package_cmake_files LIST_DIRECTORIES FALSE
-    "${relocated_prefix}/*/cmake/pjson/*.cmake")
+    "${relocated_prefix}/*/pjson/*.cmake")
 file(GLOB_RECURSE pc_files LIST_DIRECTORIES FALSE
-    "${relocated_prefix}/*/pkgconfig/pjson.pc")
+    "${relocated_prefix}/*/pjson.pc")
 file(GLOB_RECURSE library_files LIST_DIRECTORIES FALSE
     "${relocated_prefix}/libpjson.*"
     "${relocated_prefix}/libpjson*.dylib"
@@ -143,6 +143,19 @@ foreach(required_files IN ITEMS config_files version_files target_files pc_files
 endforeach()
 if(NOT EXISTS "${relocated_prefix}/include/pjson.h")
     message(FATAL_ERROR "Installed package is missing include/pjson.h")
+endif()
+list(GET pc_files 0 pc_file)
+get_filename_component(pc_dir "${pc_file}" DIRECTORY)
+file(RELATIVE_PATH pc_dir_from_prefix "${relocated_prefix}" "${pc_dir}")
+set(expected_pc_prefix ".")
+cmake_path(RELATIVE_PATH expected_pc_prefix
+    BASE_DIRECTORY "${pc_dir_from_prefix}")
+cmake_path(NORMAL_PATH expected_pc_prefix)
+file(STRINGS "${pc_file}" pc_prefix_line REGEX "^prefix=")
+if(NOT pc_prefix_line STREQUAL
+   "prefix=\${pcfiledir}/${expected_pc_prefix}")
+    message(FATAL_ERROR
+        "Installed pkg-config prefix is not relative to pcfiledir: ${pc_prefix_line}")
 endif()
 foreach(metadata_file IN LISTS package_cmake_files pc_files)
     file(READ "${metadata_file}" metadata_contents)
@@ -183,8 +196,6 @@ if(NOT DEFINED PJSON_PKG_CONFIG_EXECUTABLE OR
     find_program(PJSON_PKG_CONFIG_EXECUTABLE NAMES pkg-config pkgconf)
 endif()
 if(PJSON_PKG_CONFIG_EXECUTABLE)
-    list(GET pc_files 0 pc_file)
-    get_filename_component(pc_dir "${pc_file}" DIRECTORY)
     run_checked("relocated pkg-config validation"
         "${CMAKE_COMMAND}" -E env
         "PKG_CONFIG_PATH=${pc_dir}"

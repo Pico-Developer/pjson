@@ -19,6 +19,7 @@
 #include "test_harness.h"
 #include "test_util.h"
 
+#include <algorithm>
 #include <new>
 #include <sstream>
 #include <stdexcept>

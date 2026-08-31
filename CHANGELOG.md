@@ -9,6 +9,8 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases follow
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-08-31
+
 ### Added
 
 - Introduced the versioned C++11 API for pjson 1.0, including compile-time
@@ -117,7 +119,8 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases follow
 
 - Initial pjson source release.
 
-[Unreleased]: https://github.com/Pico-Developer/pjson/compare/release-0.0.3...HEAD
+[Unreleased]: https://github.com/Pico-Developer/pjson/compare/1.0.0...HEAD
+[1.0.0]: https://github.com/Pico-Developer/pjson/compare/release-0.0.3...1.0.0
 [0.0.3]: https://github.com/Pico-Developer/pjson/compare/release-0.0.2...release-0.0.3
 [0.0.2]: https://github.com/Pico-Developer/pjson/compare/release-0.0.1...release-0.0.2
 [0.0.1]: https://github.com/Pico-Developer/pjson/releases/tag/release-0.0.1

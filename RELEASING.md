@@ -4,7 +4,7 @@
 # Release Process
 
 This checklist is for project maintainers. Releases use Semantic Versioning and
-the `release-MAJOR.MINOR.PATCH` tag convention described in
+the `MAJOR.MINOR.PATCH` tag convention described in
 [`VERSIONING.md`](VERSIONING.md).
 
 ## 1. Prepare the release
@@ -146,8 +146,8 @@ out, create an annotated tag. Sign it when the maintainer has a configured,
 project-recognized signing key.
 
 ```sh
-git tag -a release-X.Y.Z -m "pjson X.Y.Z"
-git push origin release-X.Y.Z
+git tag -a X.Y.Z -m "pjson X.Y.Z"
+git push origin X.Y.Z
 ```
 
 Create a GitHub release from that exact tag. Use `pjson X.Y.Z` as the title and

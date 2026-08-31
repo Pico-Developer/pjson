@@ -5,14 +5,12 @@
 
 ## Supported versions
 
-Once 1.0.0 is published, pjson intends to provide security fixes for the current
-stable release line. The `1.0.0` source is currently under development, so there
-is no supported stable line until `release-1.0.0` is published. Reports against
-`main` are welcome and fixes are released as soon as practical.
+pjson provides security fixes for the current stable release line. Reports
+against `main` are also welcome and fixes are released as soon as practical.
 
 | Version | Supported |
 | --- | --- |
-| `main` / 1.0.0 development | Pre-release reports accepted |
+| 1.0.x | Yes |
 | 0.0.x | No |
 
 Users of an unsupported version should upgrade before reporting a problem that

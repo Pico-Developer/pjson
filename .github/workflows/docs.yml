@@ -89,12 +89,15 @@ jobs:
           path: reference-html
 
       - name: Package release documentation
-        run: tar -C reference-html -czf pjson-api-reference.tar.gz .
+        run: |
+          tar -C reference-html -czf pjson-api-reference.tar.gz .
+          sha256sum pjson-api-reference.tar.gz > pjson-api-reference.tar.gz.sha256
 
-      - name: Attach documentation archive
+      - name: Attach documentation archive and checksum
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: >-
-          gh release upload "${RELEASE_TAG}"
-          pjson-api-reference.tar.gz
+        run: |
+          gh release upload "${RELEASE_TAG}" \
+            pjson-api-reference.tar.gz \
+            pjson-api-reference.tar.gz.sha256

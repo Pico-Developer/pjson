@@ -17,7 +17,7 @@ jobs:
     name: REUSE licensing compliance
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Validate SPDX and license metadata
         run: |
@@ -31,7 +31,7 @@ jobs:
       CC: clang
       CXX: clang++
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install Clang
         run: sudo apt-get update && sudo apt-get install -y clang
@@ -44,7 +44,7 @@ jobs:
     name: Distribution smoke tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Validate relocatable CMake and pkg-config packages
         shell: bash
@@ -70,7 +70,7 @@ jobs:
     name: Conan 2 package consumer
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install Conan
         run: |
@@ -86,7 +86,7 @@ jobs:
     name: vcpkg overlay package consumer
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Configure vcpkg path
         shell: bash
@@ -140,7 +140,7 @@ jobs:
       CC: ${{ matrix.cc }}
       CXX: ${{ matrix.cxx }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install GCC
         if: matrix.os == 'ubuntu-latest' && matrix.toolchain == 'gcc'
@@ -166,7 +166,7 @@ jobs:
     name: Build and test (Windows / MSVC)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Configure
         run: cmake -S . -B out/build-msvc -A x64
@@ -195,7 +195,7 @@ jobs:
     name: Format check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install clang-format
         run: sudo apt-get update && sudo apt-get install -y clang-format
@@ -211,7 +211,7 @@ jobs:
       CC: clang
       CXX: clang++
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install clang-tidy toolchain
         run: sudo apt-get update && sudo apt-get install -y clang clang-tidy
@@ -224,7 +224,7 @@ jobs:
     name: Benchmark smoke test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Build and run baseline benchmarks
         shell: bash
@@ -234,10 +234,10 @@ jobs:
     name: Benchmark comparison smoke test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Cache benchmark dependencies
-        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .benchmark-deps
           key: ${{ runner.os }}-benchmark-deps-v3.11.3-v1.1.0-v3.12.2
@@ -255,19 +255,19 @@ jobs:
       PJSON_JSONTESTSUITE_DIR: ${{ github.workspace }}/.test-corpora/JSONTestSuite
       PJSON_JSON_SCHEMA_TEST_SUITE_DIR: ${{ github.workspace }}/.test-corpora/JSON-Schema-Test-Suite
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install Clang
         run: sudo apt-get update && sudo apt-get install -y clang
 
       - name: Cache JSONTestSuite corpus
-        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .test-corpora/JSONTestSuite
           key: ${{ runner.os }}-jsontestsuite-${{ hashFiles('scripts/fetch-json-test-suite.sh') }}
 
       - name: Cache JSON Schema corpus
-        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .test-corpora/JSON-Schema-Test-Suite
           key: ${{ runner.os }}-json-schema-suite-${{ hashFiles('scripts/fetch-json-schema-test-suite.sh') }}
@@ -301,19 +301,19 @@ jobs:
       PJSON_JSONTESTSUITE_DIR: ${{ github.workspace }}/.test-corpora/JSONTestSuite
       PJSON_JSON_SCHEMA_TEST_SUITE_DIR: ${{ github.workspace }}/.test-corpora/JSON-Schema-Test-Suite
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install Clang
         run: sudo apt-get update && sudo apt-get install -y clang
 
       - name: Cache JSONTestSuite corpus
-        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .test-corpora/JSONTestSuite
           key: ${{ runner.os }}-jsontestsuite-${{ hashFiles('scripts/fetch-json-test-suite.sh') }}
 
       - name: Cache JSON Schema corpus
-        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .test-corpora/JSON-Schema-Test-Suite
           key: ${{ runner.os }}-json-schema-suite-${{ hashFiles('scripts/fetch-json-schema-test-suite.sh') }}

@@ -172,6 +172,22 @@ namespace {
         return std::string();
     }
 
+    // Draft 2020-12 lives under tests/draft2020-12 in the same pinned corpus. It
+    // shares the manifest-driven runner; only the directory and ledger differ.
+    std::string resolveDraft2020Dir() {
+        const std::string configured = configuredSchemaSuiteDir();
+        if (configured.empty()) {
+            return std::string();
+        }
+        if (isDirectory(joinPath(configured, "tests/draft2020-12"))) {
+            return joinPath(configured, "tests/draft2020-12");
+        }
+        if (isDirectory(joinPath(configured, "draft2020-12"))) {
+            return joinPath(configured, "draft2020-12");
+        }
+        return std::string();
+    }
+
     // Central compatibility ledger: unsupported upstream coverage is skipped with a reason, and
     // selected-group files fail if the upstream descriptions drift away from this manifest.
     std::vector<FileRule> manifest() {
@@ -331,6 +347,185 @@ namespace {
         ipv6Rule.reason = "supported format";
         rules.push_back(ipv6Rule);
 
+        return rules;
+    }
+
+
+    // Draft 2020-12 conformance ledger. Generated from a full-suite measurement:
+    // supported keyword files run whole; files/groups needing deferred features
+    // ($id/URI and remote $ref -> SCHEMA-004, unevaluated* -> SCHEMA-003,
+    // $vocabulary/custom metaschema -> SCHEMA-001, Unicode \\p{} regex, and the
+    // annotation-only format default) are skipped with a concrete reason.
+    std::vector<FileRule> manifest2020() {
+        std::vector<FileRule> rules;
+        FileRule r;
+        r = FileRule(); r.relativePath = "additionalProperties.json"; r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords"; rules.push_back(r);
+        r = FileRule(); r.relativePath = "allOf.json"; r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords"; rules.push_back(r);
+        r = FileRule(); r.relativePath = "anchor.json"; r.mode = SkipWholeFile;
+        r.reason = "requires $anchor plus $id base resolution"; rules.push_back(r);
+        r = FileRule(); r.relativePath = "anyOf.json"; r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords"; rules.push_back(r);
+        r = FileRule(); r.relativePath = "boolean_schema.json"; r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords"; rules.push_back(r);
+        r = FileRule(); r.relativePath = "const.json"; r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords"; rules.push_back(r);
+        r = FileRule(); r.relativePath = "contains.json"; r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords"; rules.push_back(r);
+        r = FileRule(); r.relativePath = "content.json"; r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords"; rules.push_back(r);
+        r = FileRule(); r.relativePath = "default.json"; r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords"; rules.push_back(r);
+        r = FileRule(); r.relativePath = "defs.json"; r.mode = SkipWholeFile;
+        r.reason = "requires metaschema remote $ref validation"; rules.push_back(r);
+        r = FileRule(); r.relativePath = "dependentRequired.json"; r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords"; rules.push_back(r);
+        r = FileRule(); r.relativePath = "dependentSchemas.json"; r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords"; rules.push_back(r);
+        r = FileRule(); r.relativePath = "dynamicRef.json"; r.mode = SkipWholeFile;
+        r.reason = "requires $dynamicRef/$dynamicAnchor resolution"; rules.push_back(r);
+        r = FileRule(); r.relativePath = "enum.json"; r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords"; rules.push_back(r);
+        r = FileRule(); r.relativePath = "exclusiveMaximum.json"; r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords"; rules.push_back(r);
+        r = FileRule(); r.relativePath = "exclusiveMinimum.json"; r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords"; rules.push_back(r);
+        r = FileRule(); r.relativePath = "format.json"; r.mode = RunSelectedGroups; r.reason = "";
+        r.groups.push_back(GroupRule{"email format", true, "supported"});
+        r.groups.push_back(GroupRule{"idn-email format", true, "supported"});
+        r.groups.push_back(GroupRule{"regex format", true, "supported"});
+        r.groups.push_back(GroupRule{"ipv4 format", false, "pjson asserts formats by default; 2020-12 default dialect treats format as annotation-only"});
+        r.groups.push_back(GroupRule{"ipv6 format", false, "pjson asserts formats by default; 2020-12 default dialect treats format as annotation-only"});
+        r.groups.push_back(GroupRule{"idn-hostname format", true, "supported"});
+        r.groups.push_back(GroupRule{"hostname format", true, "supported"});
+        r.groups.push_back(GroupRule{"date format", false, "pjson asserts formats by default; 2020-12 default dialect treats format as annotation-only"});
+        r.groups.push_back(GroupRule{"date-time format", false, "pjson asserts formats by default; 2020-12 default dialect treats format as annotation-only"});
+        r.groups.push_back(GroupRule{"time format", false, "pjson asserts formats by default; 2020-12 default dialect treats format as annotation-only"});
+        r.groups.push_back(GroupRule{"json-pointer format", true, "supported"});
+        r.groups.push_back(GroupRule{"relative-json-pointer format", true, "supported"});
+        r.groups.push_back(GroupRule{"iri format", true, "supported"});
+        r.groups.push_back(GroupRule{"iri-reference format", true, "supported"});
+        r.groups.push_back(GroupRule{"uri format", true, "supported"});
+        r.groups.push_back(GroupRule{"uri-reference format", true, "supported"});
+        r.groups.push_back(GroupRule{"uri-template format", true, "supported"});
+        r.groups.push_back(GroupRule{"uuid format", false, "pjson asserts formats by default; 2020-12 default dialect treats format as annotation-only"});
+        r.groups.push_back(GroupRule{"duration format", true, "supported"});
+        rules.push_back(r);
+        r = FileRule(); r.relativePath = "if-then-else.json"; r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords"; rules.push_back(r);
+        r = FileRule(); r.relativePath = "infinite-loop-detection.json"; r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords"; rules.push_back(r);
+        r = FileRule(); r.relativePath = "items.json"; r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords"; rules.push_back(r);
+        r = FileRule(); r.relativePath = "maxContains.json"; r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords"; rules.push_back(r);
+        r = FileRule(); r.relativePath = "maxItems.json"; r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords"; rules.push_back(r);
+        r = FileRule(); r.relativePath = "maxLength.json"; r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords"; rules.push_back(r);
+        r = FileRule(); r.relativePath = "maxProperties.json"; r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords"; rules.push_back(r);
+        r = FileRule(); r.relativePath = "maximum.json"; r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords"; rules.push_back(r);
+        r = FileRule(); r.relativePath = "minContains.json"; r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords"; rules.push_back(r);
+        r = FileRule(); r.relativePath = "minItems.json"; r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords"; rules.push_back(r);
+        r = FileRule(); r.relativePath = "minLength.json"; r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords"; rules.push_back(r);
+        r = FileRule(); r.relativePath = "minProperties.json"; r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords"; rules.push_back(r);
+        r = FileRule(); r.relativePath = "minimum.json"; r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords"; rules.push_back(r);
+        r = FileRule(); r.relativePath = "multipleOf.json"; r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords"; rules.push_back(r);
+        r = FileRule(); r.relativePath = "not.json"; r.mode = RunSelectedGroups; r.reason = "";
+        r.groups.push_back(GroupRule{"not", true, "supported"});
+        r.groups.push_back(GroupRule{"not multiple types", true, "supported"});
+        r.groups.push_back(GroupRule{"not more complex schema", true, "supported"});
+        r.groups.push_back(GroupRule{"forbidden property", true, "supported"});
+        r.groups.push_back(GroupRule{"forbid everything with empty schema", true, "supported"});
+        r.groups.push_back(GroupRule{"forbid everything with boolean schema true", true, "supported"});
+        r.groups.push_back(GroupRule{"allow everything with boolean schema false", true, "supported"});
+        r.groups.push_back(GroupRule{"double negation", true, "supported"});
+        r.groups.push_back(GroupRule{"collect annotations inside a 'not', even if collection is disabled", false, "requires annotation collection semantics"});
+        rules.push_back(r);
+        r = FileRule(); r.relativePath = "oneOf.json"; r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords"; rules.push_back(r);
+        r = FileRule(); r.relativePath = "pattern.json"; r.mode = RunSelectedGroups; r.reason = "";
+        r.groups.push_back(GroupRule{"pattern validation", true, "supported"});
+        r.groups.push_back(GroupRule{"pattern is not anchored", true, "supported"});
+        r.groups.push_back(GroupRule{"pattern with Unicode property escape requires unicode mode", false, "std::regex ECMAScript lacks Unicode property escapes (\\\\p{...})"});
+        rules.push_back(r);
+        r = FileRule(); r.relativePath = "patternProperties.json"; r.mode = RunSelectedGroups; r.reason = "";
+        r.groups.push_back(GroupRule{"patternProperties validates properties matching a regex", true, "supported"});
+        r.groups.push_back(GroupRule{"multiple simultaneous patternProperties are validated", true, "supported"});
+        r.groups.push_back(GroupRule{"regexes are not anchored by default and are case sensitive", true, "supported"});
+        r.groups.push_back(GroupRule{"patternProperties with boolean schemas", true, "supported"});
+        r.groups.push_back(GroupRule{"patternProperties with null valued instance properties", true, "supported"});
+        r.groups.push_back(GroupRule{"patternProperties with Unicode property escape", false, "std::regex ECMAScript lacks Unicode property escapes (\\\\p{...})"});
+        rules.push_back(r);
+        r = FileRule(); r.relativePath = "prefixItems.json"; r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords"; rules.push_back(r);
+        r = FileRule(); r.relativePath = "properties.json"; r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords"; rules.push_back(r);
+        r = FileRule(); r.relativePath = "propertyNames.json"; r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords"; rules.push_back(r);
+        r = FileRule(); r.relativePath = "ref.json"; r.mode = RunSelectedGroups; r.reason = "";
+        r.groups.push_back(GroupRule{"root pointer ref", true, "supported"});
+        r.groups.push_back(GroupRule{"relative pointer ref to object", true, "supported"});
+        r.groups.push_back(GroupRule{"relative pointer ref to array", true, "supported"});
+        r.groups.push_back(GroupRule{"escaped pointer ref", true, "supported"});
+        r.groups.push_back(GroupRule{"nested refs", true, "supported"});
+        r.groups.push_back(GroupRule{"ref applies alongside sibling keywords", false, "requires $id/URI base or remote reference resolution"});
+        r.groups.push_back(GroupRule{"remote ref, containing refs itself", false, "requires $id/URI base or remote reference resolution"});
+        r.groups.push_back(GroupRule{"property named $ref that is not a reference", true, "supported"});
+        r.groups.push_back(GroupRule{"property named $ref, containing an actual $ref", true, "supported"});
+        r.groups.push_back(GroupRule{"$ref to boolean schema true", true, "supported"});
+        r.groups.push_back(GroupRule{"$ref to boolean schema false", true, "supported"});
+        r.groups.push_back(GroupRule{"Recursive references between schemas", false, "requires $id/URI base or remote reference resolution"});
+        r.groups.push_back(GroupRule{"refs with quote", true, "supported"});
+        r.groups.push_back(GroupRule{"ref creates new scope when adjacent to keywords", false, "requires $id/URI base or remote reference resolution"});
+        r.groups.push_back(GroupRule{"naive replacement of $ref with its destination is not correct", true, "supported"});
+        r.groups.push_back(GroupRule{"refs with relative uris and defs", false, "requires $id/URI base or remote reference resolution"});
+        r.groups.push_back(GroupRule{"relative refs with absolute uris and defs", false, "requires $id/URI base or remote reference resolution"});
+        r.groups.push_back(GroupRule{"$id must be resolved against nearest parent, not just immediate parent", false, "requires $id/URI base or remote reference resolution"});
+        r.groups.push_back(GroupRule{"order of evaluation: $id and $ref", false, "requires $id/URI base or remote reference resolution"});
+        r.groups.push_back(GroupRule{"order of evaluation: $id and $anchor and $ref", false, "requires $id/URI base or remote reference resolution"});
+        r.groups.push_back(GroupRule{"order of evaluation: $id and $ref on nested schema", false, "requires $id/URI base or remote reference resolution"});
+        r.groups.push_back(GroupRule{"simple URN base URI with $ref via the URN", false, "requires $id/URI base or remote reference resolution"});
+        r.groups.push_back(GroupRule{"simple URN base URI with JSON pointer", true, "supported"});
+        r.groups.push_back(GroupRule{"URN base URI with NSS", true, "supported"});
+        r.groups.push_back(GroupRule{"URN base URI with r-component", true, "supported"});
+        r.groups.push_back(GroupRule{"URN base URI with q-component", true, "supported"});
+        r.groups.push_back(GroupRule{"URN base URI with URN and JSON pointer ref", false, "requires $id/URI base or remote reference resolution"});
+        r.groups.push_back(GroupRule{"URN base URI with URN and anchor ref", false, "requires $id/URI base or remote reference resolution"});
+        r.groups.push_back(GroupRule{"URN ref with nested pointer ref", false, "requires $id/URI base or remote reference resolution"});
+        r.groups.push_back(GroupRule{"ref to if", false, "requires $id/URI base or remote reference resolution"});
+        r.groups.push_back(GroupRule{"ref to then", false, "requires $id/URI base or remote reference resolution"});
+        r.groups.push_back(GroupRule{"ref to else", false, "requires $id/URI base or remote reference resolution"});
+        r.groups.push_back(GroupRule{"ref with absolute-path-reference", false, "requires $id/URI base or remote reference resolution"});
+        r.groups.push_back(GroupRule{"$id with file URI still resolves pointers - *nix", true, "supported"});
+        r.groups.push_back(GroupRule{"$id with file URI still resolves pointers - windows", true, "supported"});
+        r.groups.push_back(GroupRule{"empty tokens in $ref json-pointer", true, "supported"});
+        rules.push_back(r);
+        r = FileRule(); r.relativePath = "refRemote.json"; r.mode = SkipWholeFile;
+        r.reason = "requires remote schema resolution"; rules.push_back(r);
+        r = FileRule(); r.relativePath = "required.json"; r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords"; rules.push_back(r);
+        r = FileRule(); r.relativePath = "type.json"; r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords"; rules.push_back(r);
+        r = FileRule(); r.relativePath = "unevaluatedItems.json"; r.mode = SkipWholeFile;
+        r.reason = "requires unevaluatedItems annotation propagation"; rules.push_back(r);
+        r = FileRule(); r.relativePath = "unevaluatedProperties.json"; r.mode = SkipWholeFile;
+        r.reason = "requires unevaluatedProperties annotation propagation"; rules.push_back(r);
+        r = FileRule(); r.relativePath = "uniqueItems.json"; r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords"; rules.push_back(r);
+        r = FileRule(); r.relativePath = "vocabulary.json"; r.mode = RunSelectedGroups; r.reason = "";
+        r.groups.push_back(GroupRule{"schema that uses custom metaschema with with no validation vocabulary", false, "requires $vocabulary negotiation and custom metaschema resolution"});
+        r.groups.push_back(GroupRule{"ignore unrecognized optional vocabulary", true, "supported"});
+        rules.push_back(r);
         return rules;
     }
 
@@ -524,25 +719,17 @@ namespace {
 
 } // namespace
 
-TEST(schema_official_draft7_optional) {
-    const std::string draft7Dir = resolveDraft7Dir();
-    if (draft7Dir.empty()) {
-        std::printf("    INFO JSON-Schema-Test-Suite skipped; set "
-                    "PJSON_JSON_SCHEMA_TEST_SUITE_DIR or run "
-                    "scripts/fetch-json-schema-test-suite.sh\n");
-        CHECK(true);
-        return;
-    }
-
+// Shared manifest-driven runner used by both the draft7 and draft2020-12 gates.
+static void runOfficialSuite(const std::string& suiteDir, const std::vector<FileRule>& rules,
+                             const char* dialectLabel) {
     RunSummary summary;
-    const std::vector<FileRule> rules = manifest();
     for (size_t i = 0; i < rules.size(); ++i) {
-        const std::string path = joinPath(draft7Dir, rules[i].relativePath);
+        const std::string path = joinPath(suiteDir, rules[i].relativePath);
         summary.filesVisited += 1;
 
         if (!isRegularFile(path)) {
             recordFailure("official schema suite file missing",
-                          std::string(rules[i].relativePath) + " under " + draft7Dir);
+                          std::string(rules[i].relativePath) + " under " + suiteDir);
             continue;
         }
 
@@ -571,12 +758,37 @@ TEST(schema_official_draft7_optional) {
         }
     }
 
-    std::printf("    INFO official schema suite visited %llu files (%llu whole-file skips), "
+    std::printf("    INFO official %s suite visited %llu files (%llu whole-file skips), "
                 "ran %llu groups / %llu cases, skipped %llu groups / %llu cases\n",
+                dialectLabel,
                 static_cast<unsigned long long>(summary.filesVisited),
                 static_cast<unsigned long long>(summary.filesSkipped),
                 static_cast<unsigned long long>(summary.groupsRun),
                 static_cast<unsigned long long>(summary.casesRun),
                 static_cast<unsigned long long>(summary.groupsSkipped),
                 static_cast<unsigned long long>(summary.casesSkipped));
+}
+
+TEST(schema_official_draft7_optional) {
+    const std::string draft7Dir = resolveDraft7Dir();
+    if (draft7Dir.empty()) {
+        std::printf("    INFO JSON-Schema-Test-Suite skipped; set "
+                    "PJSON_JSON_SCHEMA_TEST_SUITE_DIR or run "
+                    "scripts/fetch-json-schema-test-suite.sh\n");
+        CHECK(true);
+        return;
+    }
+    runOfficialSuite(draft7Dir, manifest(), "draft7");
+}
+
+TEST(schema_official_draft2020_optional) {
+    const std::string dir = resolveDraft2020Dir();
+    if (dir.empty()) {
+        std::printf("    INFO draft2020-12 JSON-Schema-Test-Suite skipped; set "
+                    "PJSON_JSON_SCHEMA_TEST_SUITE_DIR or run "
+                    "scripts/fetch-json-schema-test-suite.sh\n");
+        CHECK(true);
+        return;
+    }
+    runOfficialSuite(dir, manifest2020(), "draft2020-12");
 }

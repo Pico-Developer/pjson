@@ -269,12 +269,18 @@ CMake, Conan, and vcpkg manifests (a configure-time mismatch is a hard error).
 ## 12. Verification
 
 ### PJSON-TEST-001..005 — Partially implemented / already satisfied
-JSONTestSuite and the JSON-Schema-Test-Suite (draft-07) are pinned and wired;
-sanitizer, differential, and fuzz jobs exist. This pass added the two mandatory
-regressions (embedded-NUL access; ancestor/descendant move under sanitizers) and
-new differential front-end tests, and every compiled case remains individually
-registered with CTest (483 cases). The `draft2020-12` conformance gate is
-deferred with the full-dialect work (SCHEMA-006).
+JSONTestSuite and the JSON-Schema-Test-Suite are pinned and wired; sanitizer,
+differential, and fuzz jobs exist. This pass added the two mandatory regressions
+(embedded-NUL access; ancestor/descendant move under sanitizers) and new
+differential front-end tests, and every compiled case remains individually
+registered with CTest. A manifest-driven `draft2020-12` conformance gate
+(`schema_official_draft2020_optional`) now runs alongside the existing draft-07
+gate: supported-keyword files run whole, and each file/group needing a deferred
+feature (URI/`$id` and remote `$ref`, `unevaluated*`, `$vocabulary`/custom
+metaschema, Unicode `\p{}` regex, annotation-only `format`) is skipped with a
+concrete reason so coverage cannot silently shrink. Measured baseline: 924
+draft2020-12 cases pass across 241 groups, 90 cases skipped across 28 groups.
+Full unconditional 2020-12 conformance stays deferred with SCHEMA-001/003/004.
 
 ## 13. Documentation and governance
 

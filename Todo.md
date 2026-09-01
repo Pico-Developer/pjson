@@ -25,17 +25,24 @@ remaining, larger items are tracked here.
 
 **What is done:** `if`/`then`/`else`, `prefixItems`,
 `contains`/`minContains`/`maxContains`, `dependentSchemas`, a strict
-fail-closed subset mode (`pJsonSchemaValidator::Options::strict()`), and a
+fail-closed subset mode (`pJsonSchemaValidator::Options::strict()`), a
 compiled/immutable validator object: schema validation now lives in the external
 `ByteDance::pJsonSchemaValidator` class (`<pjson_schema.h>` / `pjson_schema.cpp`)
-that consumes only pjson's public API and is constructed once per schema.
+that consumes only pjson's public API and is constructed once per schema, and a
+manifest-driven `draft2020-12` conformance gate
+(`schema_official_draft2020_optional`, SCHEMA-006) that runs the pinned
+JSON-Schema-Test-Suite: supported-keyword files run whole and every deferred
+feature is skipped with a concrete reason (measured baseline 924 cases pass /
+90 skipped).
 
-**What remains (PJSON-SCHEMA-001/003/004/006):**
-`$schema`/dialect negotiation, `$id`/`$anchor`/`$dynamicAnchor`/`$dynamicRef`,
-`unevaluatedItems`/`unevaluatedProperties`, `$vocabulary`, an external resolver
-callback with cycle/byte/work budgets, and the pinned `draft2020-12`
-`JSON-Schema-Test-Suite` conformance gate in CI. Until these land, docs must
-keep saying "documented subset" and must not claim general 2020-12 conformance.
+**What remains (PJSON-SCHEMA-001/003/004):**
+`$schema`/dialect negotiation and `$vocabulary`,
+`$id`/`$anchor`/`$dynamicAnchor`/`$dynamicRef` with URI base resolution,
+`unevaluatedItems`/`unevaluatedProperties`, and an external resolver callback
+with cycle/byte/work budgets for remote references. As each lands, flip its
+skipped groups in the draft2020-12 manifest to enabled. Until all land, docs
+must keep saying "documented subset" and must not claim general 2020-12
+conformance.
 
 ### [ ] NUM-3-HARDENING — Prove finite double conversion (PJSON-NUM-003)
 

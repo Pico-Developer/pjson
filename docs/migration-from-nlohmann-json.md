@@ -28,72 +28,74 @@ sources; generated documentation and examples are explanatory.
 | nlohmann/json | pjson | Important difference |
 |---|---|---|
 | `json j;` | `pjson j;` | Both start as JSON `null`. |
-| `json::object()` / `json::array()` | `j.resetTo(pjson::jsonObject)` / `j.resetTo(pjson::jsonArray)` | pjson has no object/array factory. |
-| `json::parse(text)` | `pjson::parse(text)` | Returns `pjson::unique_ptr`; failure is an empty pointer. |
-| `json::parse(text, nullptr, false)` | `pjson::parse(text, error)` | Inspect the pointer and optional `ParseError`; there is no discarded value. |
-| `input >> j` or `json::parse(input)` | `pjson::parseStream(input)` | Builds a DOM and buffers the complete input. |
+| `json::object()` / `json::array()` | `pjson::object()` / `pjson::array()` | Factories return an empty object/array value. |
+| `json::parse(text)` | `pjson::parse(text)` | Returns a `pjson` value; failure yields JSON `null`. |
+| `json::parse(text, nullptr, false)` | `pjson::parse(text, error)` | Pass a `ParseError` to detect failure vs. a real `null`. |
+| `input >> j` or `json::parse(input)` | `pjson::parseStream(input, error)` | Builds a DOM and buffers the complete input. |
 | `j.dump()` | `j.toString()` | Compact output. |
 | `j.dump(indent, ch, ensure_ascii)` | `j.toString(options)` | Configure a `SerializeOptions` value explicitly. |
 | `out << j` | `j.write(out[, options])` | Returns `void`; inspect stream state. |
-| `j.is_null()`, `is_string()`, ... | `j.isNull()`, `isString()`, ... | pjson distinguishes signed `int64_t` and `double`; there is no unsigned kind. |
+| `j.is_null()`, `is_string()`, ... | `j.isNull()`, `isString()`, ... | pjson has signed `int64_t`, unsigned `uint64_t`, and `double` numeric kinds. |
 | `j.get<T>()` | `j.tryGet(out)` | Exact-type extraction writes an out-parameter and returns `false` on mismatch. |
 | `j.get_ref<const std::string&>()` | `j.tryGet(pjson::StringView&)` | The view is borrowed and mutation-sensitive. |
-| `j.contains(key)` | `j.hasKey(key)` | Non-mutating; false on a non-object. |
+| `j.contains(key)` | `j.contains(key)` / `j.hasKey(key)` | Non-mutating; false on a non-object. |
 | `j.find(key)` | `j.find(key)` | pjson returns a borrowed pointer or `nullptr`, not an iterator. |
+| `j.at(key)` | `j.at(key)` | Checked, non-vivifying; throws `std::out_of_range` when absent. |
 | `j.value(key, fallback)` | `tryGet`, then choose the fallback | The fallback remains application logic. |
 | `j[key] = value` | `j[key] = value` | pjson `operator[]` is a builder and may replace the receiver's type. |
-| `j.push_back(value)` | `j[static_cast<int>(j.size())] = value` | Indexed builder access grows an array. |
+| `j.push_back(value)` | `j.pushBack(value)` | Promotes to an array and appends a value. |
 | `j.erase(key/index)` | `j.erase(key/index)` | Returns `bool`; an array index is `size_t`. |
-| range iteration | `size()` + `find(index)`, or `keys()` + `find(key)` | No public raw-container access. |
+| range iteration | `forEachMember`/`forEachElement`, or `size()` + `find(index)` | No public raw-container access. |
 | `json::sax_parse(...)` | `pjson::parseSax(...)` / `parseSaxStream(...)` | `parseSaxStream()` is the incremental stream path. |
 | `j = j.patch(patch)` | `j.applyPatch(patch[, error][, options])` | Mutates atomically; `PatchOptions` bounds amplification. |
 | `j.merge_patch(patch)` | `j.applyMergePatch(patch[, error][, options])` | Atomic RFC 7396 with the same limits. |
-| external JSON Schema library | `value.validate(schema[, errors][, options])` | Implements only the documented subset. |
+| external JSON Schema library | `pJsonSchemaValidator v(schema[, options]); v.validate(value[, errors])` | Standalone validator; implements only the documented subset. |
 
 ## Parsing and ownership
 
-### Every DOM parse returns `pjson::unique_ptr`
+### Every DOM parse returns a `pjson` value
 
-All DOM parse and stream-parse overloads return `pjson::unique_ptr`, including
-those using the default allocator. An empty pointer means failure. The custom
-deleter destroys the complete tree through the allocator recorded by its root.
-Do not call `delete` on the pointer or convert it to a differently-deletered
-smart pointer.
+All DOM parse and stream-parse overloads return a `pjson` **by value** that owns
+its subtree and frees it on destruction — no smart pointer, no `delete`. The
+terse overloads return JSON `null` on failure; pass a `ParseError` to tell
+failure apart from a successfully parsed literal `null`. Move the value to
+transfer ownership into another document.
 
 ```cpp
 pjson::ParseError error;
-pjson::unique_ptr document = pjson::parse(text, error);
-if (!document) {
+pjson document = pjson::parse(text, error);
+if (!error.ok) {
     report(error.message, error.offset, error.line, error.column);
     return;
 }
-consume(*document);
+consume(document);
 ```
 
 The `(const char*, size_t)` overload parses exactly the supplied byte span,
 including embedded NUL bytes. `parseStream()` buffers one complete document.
 Pass `pjson&` or `const pjson&` when code only borrows the parsed document, and
-move the `pjson::unique_ptr` to transfer root ownership.
+`std::move` the returned value to transfer ownership into another tree.
 
 Allocator-aware overloads take a borrowed `pjson::Allocator&`. That allocator
-must outlive the returned root and every descendant. A directly constructed
-root remains caller-owned; a parser-created root is owned by
-`pjson::unique_ptr`. SAX parsing builds no persistent DOM and has no allocator
-overload.
+must outlive the returned value and every descendant. A directly constructed
+root remains caller-owned; a parser-created value is bound to, and freed
+through, the allocator passed to `parse()`. SAX parsing builds no persistent DOM
+and has no allocator overload.
 
 ### `ParseError` is reset on every reporting call
 
 `ParseError::offset` is a zero-based byte offset. `line` and `column` are
-one-based, and `column` counts bytes. Every parse overload that accepts a
-`ParseError&` resets all fields before doing work. Success leaves:
+one-based, and `column` counts bytes. `code` is a stable machine-facing
+category. Every parse overload that accepts a `ParseError&` resets all fields
+before doing work. Success leaves:
 
 ```text
-ok == true, offset == 0, line == 1, column == 1, message.empty()
+ok == true, code == None, offset == 0, line == 1, column == 1, message.empty()
 ```
 
-Failure sets `ok == false` and describes the first error. It is safe to reuse
-one error object across calls; never infer failure from an old message. Test
-the returned pointer first, or `ok` for SAX parsing.
+Failure sets `ok == false`, a stable `code`, and describes the first error. It
+is safe to reuse one error object across calls; never infer failure from an old
+message. Test `error.ok` after every parse.
 
 ### Parsing always enforces RFC 8259
 
@@ -126,9 +128,10 @@ To preserve nlohmann/json's usual keep-last behavior without weakening RFC
 8259 validation:
 
 ```cpp
+pjson::ParseError error;
 pjson::ParseOptions options;
 options.duplicateKeys = pjson::ParseOptions::KeepLastDuplicate;
-auto document = pjson::parse(text, options);
+pjson document = pjson::parse(text, error, options);
 ```
 
 ## Reading without mutation
@@ -148,7 +151,7 @@ Use `find(key)` and `find(index)` for borrowed node access. Both return
 document. Negative indexes count from the end.
 
 ```cpp
-const pjson& root = *document;
+const pjson& root = document;
 
 std::string name;
 if (root.tryGet("name", name))
@@ -174,24 +177,29 @@ An integer may widen to `double`; no other coercion occurs. A `StringView`
 borrows bytes and is invalidated when its node or an ancestor is modified or
 destroyed.
 
-### Numbers are signed `int64_t` or `double`
+### Numbers are signed `int64_t`, unsigned `uint64_t`, or `double`
 
-pjson has no unsigned numeric representation and no convenience `int` or
-`float` API. Use `int64_t` and `double` explicitly in assignments, appends,
-vectors, SAX callbacks, and `tryGet` calls:
+pjson has no convenience `int`/`float` API, but as of 2.0 it does have a
+distinct unsigned kind. Use `int64_t`, `uint64_t`, and `double` explicitly in
+assignments, appends, vectors, SAX callbacks, and `tryGet` calls:
 
 ```cpp
 root["count"] = int64_t(42);
+root["big"]   = uint64_t(18446744073709551615ULL); // exact, round-trips
 root["ratio"] = double(0.5);
 
 int64_t count = 0;
+uint64_t big = 0;
 double ratio = 0.0;
-if (!root.tryGet("count", count) || !root.tryGet("ratio", ratio))
+if (!root.tryGet("count", count) || !root.tryGet("big", big) ||
+    !root.tryGet("ratio", ratio))
     reportTypeError();
 ```
 
-Before narrowing an unsigned source, perform an application-level range check.
-An integer read as `double` may lose precision beyond `2^53`.
+Integer tokens above `INT64_MAX` (up to `UINT64_MAX`) become the unsigned kind.
+Tokens beyond `UINT64_MAX`, and non-finite floats, are rejected by default (see
+`ParseOptions::AllowLossyNumbers` and `SerializeOptions::NonFinitePolicy`). An
+integer read as `double` may lose precision beyond `2^53`.
 
 ### Building and editing
 
@@ -249,8 +257,8 @@ options.escapeNonAscii = true;
 options.keyOrder = pjson::SerializeOptions::AscendingKeys;
 options.maxOutputBytes = size_t(64) * 1024 * 1024;
 
-std::string text = document->toString(options);
-document->write(output, options);
+std::string text = document.toString(options);
+document.write(output, options);
 ```
 
 Default construction selects compact output, two-space indentation, a space
@@ -280,10 +288,12 @@ a callback cancels parsing; the public call then returns `false` and populates
 
 ## JSON Schema validation is a subset
 
-pjson validates a value directly against another `pjson` value. It does not
-compile a schema or validate against a meta-schema. The collecting overload
-appends `SchemaError` entries; clear a reused vector first. Error paths are RFC
-6901 pointers, with the empty string denoting the root.
+pjson compiles a schema (itself a `pjson` value) into a standalone
+`ByteDance::pJsonSchemaValidator` (declared in `<pjson_schema.h>`) and validates
+values against it. The validator is a pure consumer of pjson's public API; it
+does not validate against a meta-schema. The collecting overload appends
+`pJsonSchemaValidator::Error` entries; clear a reused vector first. Error paths
+are RFC 6901 pointers, with the empty string denoting the root.
 
 The documented pjson subset is the complete enforced vocabulary; it is not a
 complete JSON Schema draft implementation:
@@ -308,15 +318,16 @@ only local URI-fragment JSON Pointers.
 `minLength` and `maxLength` count Unicode code points, not UTF-8 bytes.
 `pattern` uses ECMAScript regular-expression syntax with search semantics. The
 default policy caps pattern and subject sizes and rejects expressions outside a
-conservative safe subset. `SchemaOptions::trustedRegex()` removes only those
-regex restrictions and should be used only when both schema and instance are
-trusted. Validation depth, reference, work, and error-count budgets remain in
-effect. Known format checks run by default; unknown format names are ignored.
+conservative safe subset. `pJsonSchemaValidator::Options::trustedRegex()` removes
+only those regex restrictions and should be used only when both schema and
+instance are trusted. Validation depth, reference, work, and error-count budgets
+remain in effect. Known format checks run by default; unknown format names are
+ignored.
 
 ## Suggested migration sequence
 
-1. Replace parse results with `pjson::unique_ptr` and check every result before
-   dereferencing it.
+1. Replace parse results with a `pjson` value plus a `ParseError`, and check
+   `error.ok` before using the value.
 2. Replace exception-based parse handling with `ParseError`, remembering that
    reporting calls reset it on entry.
 3. Remove permissive parser flags; pjson always enforces RFC 8259 syntax.

@@ -9,8 +9,8 @@ Follow along with [`examples/src/04_editing.cpp`](../examples/src/04_editing.cpp
 Index to the value and assign a new one:
 
 ```cpp
-auto doc = pjson::parse(R"({ "user": { "name": "Ada" }, "count": 2 })");
-pjson& j = *doc;
+pjson::ParseError err;
+pjson j = pjson::parse(R"({ "user": { "name": "Ada" }, "count": 2 })", err);
 
 j["user"]["name"] = "Ada Lovelace";   // change a string
 j["count"] = int64_t(3);               // change a number
@@ -94,14 +94,15 @@ For a sequence of path-based edits, `applyPatch()` implements JSON Patch (RFC
 `test` operations:
 
 ```cpp
-auto patch = pjson::parse(R"([
+pjson patch = pjson::parse(R"([
     { "op": "replace", "path": "/user/name", "value": "Ada Byron" },
     { "op": "add", "path": "/user/roles/-", "value": "reviewer" }
-])");
+])",
+                           err);
 
 pjson::PatchError error;
 pjson::PatchOptions limits;
-if (!patch || !j.applyPatch(*patch, error, limits)) {
+if (!j.applyPatch(patch, error, limits)) {
     std::cerr << "patch operation " << error.opIndex
               << ": " << error.message << "\n";
 }
@@ -111,8 +112,8 @@ Patch paths use JSON Pointer syntax. An empty path addresses the whole document;
 in particular, removing the root succeeds and leaves the target as JSON null:
 
 ```cpp
-auto removeRoot = pjson::parse(R"([{"op":"remove","path":""}])");
-if (removeRoot && j.applyPatch(*removeRoot, error, limits)) {
+pjson removeRoot = pjson::parse(R"([{"op":"remove","path":""}])", err);
+if (err.ok && j.applyPatch(removeRoot, error, limits)) {
     // j.isNull() is now true
 }
 ```
@@ -125,11 +126,12 @@ For object-shaped updates, `applyMergePatch()` implements JSON Merge Patch
 (RFC 7396):
 
 ```cpp
-auto merge = pjson::parse(R"({
+pjson merge = pjson::parse(R"({
     "user": { "email": "ada@example.com", "nickname": null }
-})");
+})",
+                           err);
 
-if (merge && !j.applyMergePatch(*merge, error, limits)) {
+if (!j.applyMergePatch(merge, error, limits)) {
     std::cerr << error.message << "\n";
 }
 ```

@@ -10,8 +10,8 @@
 // result. Referenced by docs/07-capstone-address-book.md.
 //
 #include "pjson.h"
+#include "pjson_schema.h"
 
-#include <climits>
 #include <cstdint>
 #include <iostream>
 #include <vector>
@@ -22,7 +22,7 @@ namespace {
 
     // Builds the schema every contact must satisfy. The embedded literal is
     // fixed application data, so parsing it is expected to succeed.
-    pjson::unique_ptr contactSchema() {
+    pjson contactSchema() {
         return pjson::parse(R"({
         "type": "object",
         "required": ["id", "name", "emails"],
@@ -37,22 +37,19 @@ namespace {
 
     // Adds a deep copy of a valid contact to the book. Invalid contacts leave
     // the book unchanged and produce one line for every validation failure.
-    bool addContact(pjson& book, const pjson& schema, const pjson& contact) {
-        std::vector<pjson::SchemaError> errors;
-        if (!contact.validate(schema, errors)) {
+    bool addContact(pjson& book, const pJsonSchemaValidator& validator, const pjson& contact) {
+        std::vector<pJsonSchemaValidator::Error> errors;
+        if (!validator.validate(contact, errors)) {
             std::cout << "  rejected contact:\n";
-            for (const pjson::SchemaError& e : errors) {
+            for (const pJsonSchemaValidator::Error& e : errors) {
                 std::cout << "    " << (e.path.empty() ? "(root)" : e.path) << ": " << e.message
                           << "\n";
             }
             return false;
         }
-        // Append by assigning to the next array index (there is no operator+= for a
-        // whole pjson value; indexing auto-extends the array, then we copy in).
-        pjson& contacts = book["contacts"];
-        if (contacts.size() > static_cast<size_t>(INT_MAX))
-            return false;
-        contacts[static_cast<int>(contacts.size())] = contact;
+        // Append the whole contact value; pushBack promotes to an array and
+        // deep-copies the supplied value.
+        book["contacts"].pushBack(contact);
         return true;
     }
 
@@ -61,11 +58,13 @@ namespace {
 // Runs the address-book workflow: initialize, ingest, reject, edit, and query.
 int main() {
     // --- Initialize the store ---------------------------------------------
-    pjson::unique_ptr schema = contactSchema();
-    if (!schema) {
+    pjson schema = contactSchema();
+    if (schema.isNull()) {
         std::cerr << "could not parse the embedded schema\n";
         return 1;
     }
+    // Compile the schema once; every contact is checked against this validator.
+    pJsonSchemaValidator validator(schema);
 
     // Start an empty address book.
     pjson book;
@@ -80,27 +79,30 @@ int main() {
     ada["emails"] += "ada@example.com";
     ada["tags"] += "pioneer";
     std::cout << "adding Ada...\n";
-    addContact(book, *schema, ada);
+    addContact(book, validator, ada);
 
     // 2) Accept a contact that arrives as a JSON payload.
     std::cout << "adding incoming payload...\n";
-    auto incoming = pjson::parse(R"({
+    pjson::ParseError incomingError;
+    pjson incoming = pjson::parse(R"({
         "id": 2, "name": "Bob", "emails": ["bob@example.com", "b@work.com"]
-    })");
-    if (!incoming) {
+    })",
+                                  incomingError);
+    if (!incomingError.ok) {
         std::cerr << "could not parse incoming contact\n";
         return 1;
     }
-    addContact(book, *schema, *incoming);
+    addContact(book, validator, incoming);
 
     // 3) Reject an invalid contact.
     std::cout << "adding invalid contact...\n";
-    auto invalid = pjson::parse(R"({ "id": 0, "name": "", "emails": [] })");
-    if (!invalid) {
+    pjson::ParseError invalidError;
+    pjson invalid = pjson::parse(R"({ "id": 0, "name": "", "emails": [] })", invalidError);
+    if (!invalidError.ok) {
         std::cerr << "could not parse invalid-contact fixture\n";
         return 1;
     }
-    addContact(book, *schema, *invalid);
+    addContact(book, validator, invalid);
 
     // --- Edit and query ---------------------------------------------------
     // 4) Edit the store: give Ada a second email, then look someone up.

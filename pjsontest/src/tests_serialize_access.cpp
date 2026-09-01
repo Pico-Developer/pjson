@@ -17,6 +17,7 @@
 //
 #include "pjson.h"
 #include "test_harness.h"
+#include "test_util.h"
 
 #include <climits>
 #include <cstdint>
@@ -250,7 +251,7 @@ TEST(serialize_options_ascii_only_values_and_keys) {
     CHECK(isAscii(text));
     CHECK_EQ(streamed(value, options), text);
 
-    pjson::unique_ptr reparsed = pjson::parse(text);
+    pjson_test::Parsed reparsed = pjson_test::parse(text);
     CHECK(reparsed != nullptr);
     if (reparsed)
         CHECK(*reparsed == value);

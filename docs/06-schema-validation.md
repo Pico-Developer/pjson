@@ -15,25 +15,36 @@ documented subset of the widely-used
 conformance to a JSON Schema draft. Schemas load, build, and round-trip exactly
 like any other pjson value.
 
+Validation itself lives in a separate helper class,
+`ByteDance::pJsonSchemaValidator`, declared in `<pjson_schema.h>`. It is a pure
+consumer of pjson's public API: the core `pjson` class carries no schema or
+regex machinery, and programs that never validate do not pull in that code. You
+compile a schema into a validator once and reuse it to check many instances.
+
 ```mermaid
 flowchart LR
-    data["data (pjson)"] --> V{validate}
-    schema["schema (pjson)"] --> V
+    schema["schema (pjson)"] --> C["pJsonSchemaValidator(schema)"]
+    data["data (pjson)"] --> V{validator.validate}
+    C --> V
     V -->|conforms| OK["true, no errors"]
-    V -->|violates| ERR["false + list of SchemaError"]
+    V -->|violates| ERR["false + list of Error"]
 ```
 
 ## A first schema
 
 ```cpp
-auto schema = pjson::parse(R"({
+#include "pjson_schema.h"
+
+pjson::ParseError err;
+pjson schema = pjson::parse(R"({
     "type": "object",
     "required": ["name", "age"],
     "properties": {
         "name": { "type": "string", "minLength": 1 },
         "age":  { "type": "integer", "minimum": 0, "maximum": 150 }
     }
-})");
+})",
+                            err);
 ```
 
 Read it in English: *the value must be an object; it must have `name` and `age`;
@@ -41,21 +52,29 @@ Read it in English: *the value must be an object; it must have `name` and `age`;
 
 ## Validating
 
+Build a validator from the schema, then validate instances against it:
+
 ```cpp
-auto data = pjson::parse(R"({ "name": "Ada", "age": 36 })");
+pJsonSchemaValidator validator(schema);
+
+pjson data = pjson::parse(R"({ "name": "Ada", "age": 36 })", err);
 
 // Simple yes/no:
-bool ok = data->validate(*schema);
+bool ok = validator.validate(data);
 ```
 
-To learn *what* failed, pass a vector — pjson normally collects every applicable
-failure instead of stopping at the first (a resource-budget failure stops the
-traversal):
+The validator deep-copies the schema on construction, so the original `schema`
+value may change or be destroyed afterward. A single validator can check any
+number of instances and is cheap to reuse.
+
+To learn *what* failed, pass a vector — the validator normally collects every
+applicable failure instead of stopping at the first (a resource-budget failure
+stops the traversal):
 
 ```cpp
-std::vector<pjson::SchemaError> errors;
-if (!data->validate(*schema, errors)) {
-    for (const pjson::SchemaError& e : errors) {
+std::vector<pJsonSchemaValidator::Error> errors;
+if (!validator.validate(data, errors)) {
+    for (const pJsonSchemaValidator::Error& e : errors) {
         std::cout << (e.path.empty() ? "(root)" : e.path)
                   << ": " << e.message << "\n";
     }
@@ -67,8 +86,8 @@ when old results are not wanted. Normally all applicable failures are
 collected; reaching a validation-depth or reference-resolution budget stops
 that traversal safely.
 
-Each `SchemaError` has a `path` (a **JSON Pointer** like `/age` or
-`/friends/2/name`, empty for the document root) and a `message`. From the
+Each `pJsonSchemaValidator::Error` has a `path` (a **JSON Pointer** like `/age`
+or `/friends/2/name`, empty for the document root) and a `message`. From the
 example, an all-bad document reports:
 
 ```
@@ -84,17 +103,20 @@ into arrays (`/roles/0`).
 
 ## Supported keywords
 
-pjson implements the documented keyword subset below. Unknown and unsupported
-keywords are **ignored, not enforced**. This permits annotations and future
-vocabulary to pass through, but it also means a misspelled or unsupported
+pjson implements the documented keyword subset below. By default, unknown and
+unsupported keywords are **ignored, not enforced**. This permits annotations and
+future vocabulary to pass through, but it also means a misspelled or unsupported
 constraint can silently weaken validation. Treat this table as an allowlist and
-test both accepted and rejected instances for every application schema.
+test both accepted and rejected instances for every application schema, or use
+`pJsonSchemaValidator::Options::strict()` to reject unsupported standard keywords
+outright.
 
 | Applies to | Keywords and forms |
 |------------|--------------------|
 | any value  | `type`, `enum`, `const`, local-fragment `$ref` |
-| objects    | `properties`, `patternProperties`, `propertyNames`, `required`, `dependentRequired`, `dependencies`, `additionalProperties` (boolean or schema), `minProperties`, `maxProperties` |
-| arrays     | single-schema or tuple-array `items`, plus `minItems`, `maxItems`, `uniqueItems` |
+| conditional| `if`, `then`, `else` |
+| objects    | `properties`, `patternProperties`, `propertyNames`, `required`, `dependentRequired`, `dependencies`, `dependentSchemas`, `additionalProperties` (boolean or schema), `minProperties`, `maxProperties` |
+| arrays     | single-schema `items`, tuple `prefixItems` (and legacy tuple-array `items`), `contains`, `minContains`, `maxContains`, `minItems`, `maxItems`, `uniqueItems` |
 | numbers    | `minimum`, `maximum`, numeric `exclusiveMinimum`, numeric `exclusiveMaximum`, `multipleOf` |
 | strings    | `minLength`, `maxLength`, `pattern` (ECMAScript regex), `format` |
 | combinators| `allOf`, `anyOf`, `oneOf`, `not` |
@@ -116,10 +138,10 @@ A few notes:
 - A **boolean schema** is allowed: `true` accepts everything, `false` rejects
   everything (handy as a sub-schema, e.g. `"additionalProperties": false`).
 - `pattern` uses `std::regex` ECMAScript syntax with search semantics. Default
-  `SchemaOptions` bound pattern and subject byte sizes and reject expressions
+  options bound pattern and subject byte sizes and reject expressions
   disallowed by the regex safety policy. Applications that fully trust both
   schemas and instances may opt out with
-  `pjson::SchemaOptions::trustedRegex()`.
+  `pJsonSchemaValidator::Options::trustedRegex()`.
 
 The supported vocabulary is deliberately a subset. Tuple-form `items` validates
 the corresponding array positions, but elements beyond the tuple remain
@@ -130,10 +152,11 @@ against a meta-schema.
 
 ## Validation options and resource budgets
 
-`SchemaOptions` controls regex policy, traversal budgets, and format checking:
+`pJsonSchemaValidator::Options` controls regex policy, traversal budgets, and
+format checking. Pass it when constructing the validator:
 
 ```cpp
-pjson::SchemaOptions options;
+pJsonSchemaValidator::Options options;
 options.maxRegexPatternBytes = 256;
 options.maxRegexSubjectBytes = 4096;
 options.allowUnsafeRegex = false;
@@ -142,9 +165,11 @@ options.maxRefResolutions = 1024;
 options.maxValidationWork = 1000000;
 options.maxErrors = 100;
 options.validateFormats = true;
+options.strictSubset = false; // set true to fail closed on unsupported keywords
 
-std::vector<pjson::SchemaError> errors;
-bool ok = data->validate(*schema, errors, options);
+pJsonSchemaValidator validator(schema, options);
+std::vector<pJsonSchemaValidator::Error> errors;
+bool ok = validator.validate(data, errors);
 ```
 
 These are the defaults. A zero regex byte limit disables that individual regex
@@ -153,11 +178,17 @@ reference-resolution, work, or error-count budget retains that budget's
 documented hard ceiling rather than disabling it.
 Validation depth has an absolute hard ceiling of 64; larger configured values
 are clamped to 64 to bound native-stack use during recursive keyword evaluation.
-`SchemaOptions::trustedRegex()` disables both regex byte limits and permits
-unsafe regular expressions while retaining all other defaults. Set
+`pJsonSchemaValidator::Options::trustedRegex()` disables both regex byte limits
+and permits unsafe regular expressions while retaining all other defaults. Set
 `validateFormats = false` when known formats should act only as annotations.
+Set `strictSubset = true` (or use `pJsonSchemaValidator::Options::strict()`) to
+**fail closed**: a schema that uses a standard validation/applicator keyword
+pjson does not implement (for example `unevaluatedProperties` or `$dynamicRef`)
+then makes validation fail instead of silently ignoring the constraint. Unknown
+non-standard extension keywords are still allowed as annotations even in strict
+mode.
 
-## Combinators (composing schemas)
+## Combinators and conditionals (composing schemas)
 
 The logical keywords let you build up complex rules:
 
@@ -165,6 +196,8 @@ The logical keywords let you build up complex rules:
 - `anyOf`: must satisfy **at least one**.
 - `oneOf`: must satisfy **exactly one**.
 - `not`: must **not** satisfy the sub-schema.
+- `if` / `then` / `else`: when the value matches `if`, it must also satisfy
+  `then`; otherwise it must satisfy `else`.
 
 ```json
 { "anyOf": [ { "type": "string" }, { "type": "integer" } ] }
@@ -191,13 +224,17 @@ schema["properties"]["age"]["minimum"] = int64_t(0);
 
 - A schema is a `pjson` describing valid data with pjson's documented JSON
   Schema keyword subset, not a complete draft implementation.
-- `validate(schema)` returns yes/no; `validate(schema, errors)` collects **all**
-  failures, each with a JSON-Pointer `path` and a `message`.
+- Validation lives in the standalone `pJsonSchemaValidator` (in
+  `<pjson_schema.h>`), a pure consumer of pjson's public API. Compile a schema
+  once, then reuse the validator for many instances.
+- `validator.validate(data)` returns yes/no; `validator.validate(data, errors)`
+  collects **all** failures, each with a JSON-Pointer `path` and a `message`.
 - The subset includes local `$ref`, object constraints, known string formats,
   and logical combinators. Unknown keywords are ignored and therefore enforce
   no constraint.
-- `SchemaOptions` bounds regex, validation depth, reference resolution, total
-  validation work, and collected errors, and can disable known-format checks.
+- `pJsonSchemaValidator::Options` bounds regex, validation depth, reference
+  resolution, total validation work, and collected errors, and can disable
+  known-format checks.
 
 Next: [Chapter 07 — Capstone: address book](07-capstone-address-book.md), where
 everything comes together in one small application.

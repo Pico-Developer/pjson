@@ -6,25 +6,27 @@ it into a `pjson` you can read. Follow along with
 
 ## Parsing with `parse()`
 
-`pjson::parse()` takes JSON text and returns a `pjson::unique_ptr`:
+`pjson::parse()` takes JSON text and returns a `pjson` value:
 
 ```cpp
-auto doc = pjson::parse(R"({ "name": "Ada", "age": 36 })");
-if (!doc) {
+pjson::ParseError err;
+pjson doc = pjson::parse(R"({ "name": "Ada", "age": 36 })", err);
+if (!err.ok) {
     // parsing failed — the text was not valid JSON
 }
 ```
 
 Two things to understand:
 
-- **`pjson::unique_ptr`** is a smart pointer that automatically frees the value
-  when it goes out of scope. You never call `delete`. Use `*doc` to get the
-  `pjson`, or `doc->method()` to call methods. Its deleter preserves allocator
-  provenance, so every DOM parse overload uses the same ownership type.
-- On a JSON or DOM-allocation **failure** the pointer is empty (`!doc` is true);
-  malformed input does not escape as an exception. Stream objects configured to
-  throw can still propagate I/O exceptions from `parseStream()`. (Chapter 05
-  shows how to find out why JSON parsing failed.)
+- **`parse()` returns a `pjson` by value** that owns its subtree and frees it
+  when it goes out of scope. You never call `delete`, and there is no smart
+  pointer in the API. Use `doc.method()` directly. To move the result into
+  another document, `dest["k"] = std::move(doc);`.
+- On a JSON failure the terse `parse(text)` returns a JSON `null` value; pass a
+  `ParseError` (as above) to tell failure apart from a successfully parsed
+  literal `null`. Malformed input does not escape as an exception. Stream
+  objects configured to throw can still propagate I/O exceptions from
+  `parseStream()`. (Chapter 05 shows how to find out why JSON parsing failed.)
 
 > `R"(...)"` is a C++ *raw string literal*. Inside it, quotes and backslashes
 > are literal, so you can paste JSON without escaping every `"`. Very handy.
@@ -36,7 +38,7 @@ when the value has the requested type and leaves the output unchanged on
 failure:
 
 ```cpp
-const pjson& j = *doc;
+const pjson& j = doc;
 
 int64_t age = 0;
 if (!j.tryGet("age", age)) {
@@ -241,8 +243,8 @@ for (const std::string& key : j.keys()) {
 
 ## What you learned
 
-- `parse()` returns a `pjson::unique_ptr` and reports JSON/DOM-allocation failures with
-  an empty result.
+- `parse()` returns a `pjson` value and reports failures through a `ParseError`
+  out-param (the terse overload yields a JSON `null` on failure).
 - `tryGet()` provides exact-type node/key/index reads and leaves outputs unchanged
   on failure; `StringView` offers a mutation-sensitive, copy-free string view.
 - `find`, `findPointer`, `hasKey`, and `hasIndex` inspect without creating; use

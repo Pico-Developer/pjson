@@ -21,7 +21,8 @@ struct ParseOptions {
 ```cpp
 pjson::ParseOptions opt;
 opt.maxNodes = 100000;
-auto doc = pjson::parse(text, opt);
+pjson::ParseError err;
+pjson doc = pjson::parse(text, err, opt);
 ```
 
 ## JSON syntax and duplicate keys
@@ -53,26 +54,29 @@ relaxes RFC 8259 syntax.
 
 `maxDepth` caps how deeply values may nest. This is a safety valve: without it,
 a maliciously deep document (thousands of nested `[`s) could exhaust the call
-stack and crash your program. The default of 512 is generous for real data.
-`maxNodes` separately caps the number of materialized JSON values, blocking
-wide flat inputs from amplifying into millions of heap allocations.
+stack and crash your program. The default of 512 is generous for real data, and
+any configured value is clamped to a stack-safe hard ceiling (1024) that cannot
+be exceeded. `maxNodes` separately caps the number of materialized JSON values,
+blocking wide flat inputs from amplifying into millions of heap allocations.
 `maxInputBytes` rejects oversized buffers before parsing begins.
 
 ```cpp
 pjson::ParseOptions shallow;
 shallow.maxDepth = 3;
-auto d = pjson::parse("[[[[1]]]]", shallow);   // fails: too deep
+pjson::ParseError err;
+pjson d = pjson::parse("[[[[1]]]]", err, shallow);   // fails: too deep
 ```
 
 ## Getting the error details
 
 Pass a `pjson::ParseError` to learn what went wrong. Reporting APIs reset every
-field on entry: success leaves `ok == true`, offset `0`, line `1`, column `1`,
-and an empty message; failure describes the first problem.
+field on entry: success leaves `ok == true`, `code == None`, offset `0`, line
+`1`, column `1`, and an empty message; failure describes the first problem.
 
 ```cpp
 struct ParseError {
     bool ok;              // true if parsing succeeded
+    Code code;            // stable machine-facing category (None on success)
     size_t offset;        // byte index where the problem was found
     size_t line;          // one-based source line
     size_t column;        // one-based byte column
@@ -80,16 +84,23 @@ struct ParseError {
 };
 ```
 
+`code` is a stable enum (`Syntax`, `InvalidEncoding`, `DuplicateKey`,
+`NumberRange`, `DepthLimit`, `InputLimit`, `NodeLimit`, `AllocationFailure`,
+`StreamError`, `CallbackError`, `InvalidArgument`) suitable for programmatic
+branching; the `message` text may change between releases.
+
 ```cpp
 pjson::ParseError err;
-auto doc = pjson::parse("[1, 2, ]", err);
-if (!doc) {
+pjson doc = pjson::parse("[1, 2, ]", err);
+if (!err.ok) {
     std::cerr << "parse failed at " << err.line << ':' << err.column
               << " (byte " << err.offset << "): " << err.message << "\n";
 }
 ```
 
-You can combine both: `parse(text, err, opt)`.
+You can combine both: `parse(text, err, opt)`. Because a failed parse returns a
+JSON `null` value, always test `err.ok` (not the value) when the input might
+legitimately be `null`.
 
 The same options and error coordinates apply to `parseSax()` and the incremental
 `parseSaxStream()` API. SAX callback cancellation and callback exceptions are

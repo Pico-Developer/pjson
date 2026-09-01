@@ -15,25 +15,181 @@
 //===----------------------------------------------------------------------===//
 // Shared helpers for the pjson test suite.
 //
+// The public parse() API returns a pjson value plus a ParseError (no smart
+// pointer). Parsed is a TEST-ONLY owning wrapper that adapts that value+error
+// pair to a pointer-like handle so the many existing cases can keep reading as
+// `if (p)`, `p->`, `*p`, and `p == nullptr` where those meant "parse
+// succeeded". It is not part of the library API.
+//
 #ifndef PJSON_TEST_UTIL_H
 #define PJSON_TEST_UTIL_H
 
 #include "pjson.h"
+#include "pjson_schema.h"
 #include "test_harness.h"
 
+#include <cstddef>
+#include <istream>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace pjson_test {
 
-    // Parses via the public API and returns the owning unique_ptr, so tests read
-    // naturally and never leak even on a failed assertion.
-    inline ByteDance::pjson::unique_ptr parse(const std::string& s) {
-        return ByteDance::pjson::parse(s);
+    using ByteDance::pjson;
+    using ByteDance::pJsonSchemaValidator;
+
+    // Short aliases for the validator's vocabulary types. Schema validation is
+    // no longer a pjson member; it lives in the external pJsonSchemaValidator,
+    // which carries its own Error/Options types. These aliases keep the many
+    // existing schema tests concise.
+    typedef pJsonSchemaValidator::Error SchemaError;
+    typedef pJsonSchemaValidator::Options SchemaOptions;
+
+    // Convenience wrappers around the construct-once/validate API. The bulk of
+    // the schema suite only checks pass/fail (optionally collecting errors and
+    // supplying options) and does not care about reusing a compiled validator,
+    // so these adapt the external validator to a single call. Tests that
+    // exercise construction, reuse, or introspection use pJsonSchemaValidator
+    // directly.
+    inline bool schemaValidate(const pjson& aInstance, const pjson& aSchema) {
+        pJsonSchemaValidator validator(aSchema);
+        return validator.validate(aInstance);
+    }
+    inline bool schemaValidate(const pjson& aInstance, const pjson& aSchema,
+                               std::vector<SchemaError>& aErrors) {
+        pJsonSchemaValidator validator(aSchema);
+        return validator.validate(aInstance, aErrors);
+    }
+    inline bool schemaValidate(const pjson& aInstance, const pjson& aSchema,
+                               const SchemaOptions& aOptions) {
+        pJsonSchemaValidator validator(aSchema, aOptions);
+        return validator.validate(aInstance);
+    }
+    inline bool schemaValidate(const pjson& aInstance, const pjson& aSchema,
+                               std::vector<SchemaError>& aErrors,
+                               const SchemaOptions& aOptions) {
+        pJsonSchemaValidator validator(aSchema, aOptions);
+        return validator.validate(aInstance, aErrors);
     }
 
-    // Length-aware counterpart used for embedded-NUL and truncated-buffer cases.
-    inline ByteDance::pjson::unique_ptr parse(const char* s, size_t n) {
-        return ByteDance::pjson::parse(s, n);
+    // Owning, pointer-like parse result. `ok()` (and the bool/nullptr operators)
+    // reflect ParseError::ok, so a successfully parsed literal `null` is truthy,
+    // while only an actual failure compares equal to nullptr.
+    struct Parsed {
+        pjson value;
+        pjson::ParseError error;
+
+        Parsed() {} // error defaults to ok == true
+        // Wraps an already-built value (e.g. a hand-constructed document) as a
+        // successful result.
+        Parsed(pjson aValue) // NOLINT(runtime/explicit): intentional convenience
+                : value(std::move(aValue)) {}
+        // Binds the held value to a specific allocator so allocator-provenance
+        // tests observe the intended allocator after a same-allocator move.
+        explicit Parsed(pjson::Allocator& aAlloc)
+                : value(aAlloc) {}
+
+        bool ok() const { return error.ok; }
+        explicit operator bool() const { return error.ok; }
+        bool operator==(std::nullptr_t) const { return !error.ok; }
+        bool operator!=(std::nullptr_t) const { return error.ok; }
+
+        pjson* operator->() { return &value; }
+        const pjson* operator->() const { return &value; }
+        pjson& operator*() { return value; }
+        const pjson& operator*() const { return value; }
+    };
+
+    inline bool operator==(std::nullptr_t, const Parsed& aParsed) {
+        return !aParsed.error.ok;
+    }
+    inline bool operator!=(std::nullptr_t, const Parsed& aParsed) {
+        return aParsed.error.ok;
+    }
+
+    //== Default-allocator parse helpers =====================================
+    inline Parsed parse(const std::string& s,
+                        const pjson::ParseOptions& o = pjson::ParseOptions()) {
+        Parsed r;
+        r.value = pjson::parse(s, r.error, o);
+        return r;
+    }
+    inline Parsed parse(const std::string& s, pjson::ParseError& e,
+                        const pjson::ParseOptions& o = pjson::ParseOptions()) {
+        Parsed r;
+        r.value = pjson::parse(s, e, o);
+        r.error = e;
+        return r;
+    }
+    inline Parsed parse(const char* s, size_t n,
+                        const pjson::ParseOptions& o = pjson::ParseOptions()) {
+        Parsed r;
+        r.value = pjson::parse(s, n, r.error, o);
+        return r;
+    }
+    inline Parsed parse(const char* s, size_t n, pjson::ParseError& e,
+                        const pjson::ParseOptions& o = pjson::ParseOptions()) {
+        Parsed r;
+        r.value = pjson::parse(s, n, e, o);
+        r.error = e;
+        return r;
+    }
+
+    //== Allocator-aware parse helpers (preserve provenance) =================
+    inline Parsed parse(const std::string& s, pjson::Allocator& a,
+                        const pjson::ParseOptions& o = pjson::ParseOptions()) {
+        Parsed r(a);
+        r.value = pjson::parse(s, r.error, a, o);
+        return r;
+    }
+    inline Parsed parse(const std::string& s, pjson::ParseError& e, pjson::Allocator& a,
+                        const pjson::ParseOptions& o = pjson::ParseOptions()) {
+        Parsed r(a);
+        r.value = pjson::parse(s, e, a, o);
+        r.error = e;
+        return r;
+    }
+    inline Parsed parse(const char* s, size_t n, pjson::Allocator& a,
+                        const pjson::ParseOptions& o = pjson::ParseOptions()) {
+        Parsed r(a);
+        r.value = pjson::parse(s, n, r.error, a, o);
+        return r;
+    }
+    inline Parsed parse(const char* s, size_t n, pjson::ParseError& e, pjson::Allocator& a,
+                        const pjson::ParseOptions& o = pjson::ParseOptions()) {
+        Parsed r(a);
+        r.value = pjson::parse(s, n, e, a, o);
+        r.error = e;
+        return r;
+    }
+
+    //== Stream parse helpers ================================================
+    inline Parsed parseStream(std::istream& in,
+                              const pjson::ParseOptions& o = pjson::ParseOptions()) {
+        Parsed r;
+        r.value = pjson::parseStream(in, r.error, o);
+        return r;
+    }
+    inline Parsed parseStream(std::istream& in, pjson::ParseError& e,
+                              const pjson::ParseOptions& o = pjson::ParseOptions()) {
+        Parsed r;
+        r.value = pjson::parseStream(in, e, o);
+        r.error = e;
+        return r;
+    }
+    inline Parsed parseStream(std::istream& in, pjson::Allocator& a,
+                              const pjson::ParseOptions& o = pjson::ParseOptions()) {
+        Parsed r(a);
+        r.value = pjson::parseStream(in, r.error, a, o);
+        return r;
+    }
+    inline Parsed parseStream(std::istream& in, pjson::ParseError& e, pjson::Allocator& a,
+                              const pjson::ParseOptions& o = pjson::ParseOptions()) {
+        Parsed r(a);
+        r.value = pjson::parseStream(in, e, a, o);
+        r.error = e;
+        return r;
     }
 
     inline int64_t valueInt(const ByteDance::pjson& value) {

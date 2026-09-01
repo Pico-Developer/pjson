@@ -158,7 +158,7 @@ TEST(parse_crlf_document) {
 TEST(parse_duplicate_key_policies) {
     const std::string document = "{\"a\":1,\n\"a\":2}";
     pjson::ParseError err;
-    CHECK(pjson::parse(document, err) == nullptr);
+    CHECK(pjson_test::parse(document, err) == nullptr);
     CHECK(!err.ok);
     CHECK_EQ(err.offset, size_t(8));
     CHECK_EQ(err.line, size_t(2));
@@ -167,30 +167,30 @@ TEST(parse_duplicate_key_policies) {
 
     pjson::ParseOptions keepLast;
     keepLast.duplicateKeys = pjson::ParseOptions::KeepLastDuplicate;
-    auto last = pjson::parse(document, keepLast);
+    auto last = pjson_test::parse(document, keepLast);
     CHECK(last != nullptr);
     CHECK_EQ(last->size(), size_t(1));
     CHECK_EQ(valueInt((*last)["a"]), int64_t(2));
 
     pjson::ParseOptions keepFirst;
     keepFirst.duplicateKeys = pjson::ParseOptions::KeepFirstDuplicate;
-    auto first = pjson::parse(document, keepFirst);
+    auto first = pjson_test::parse(document, keepFirst);
     CHECK(first != nullptr);
     CHECK_EQ(valueInt((*first)["a"]), int64_t(1));
 
     pjson::ParseOptions strictLast;
     strictLast.duplicateKeys = pjson::ParseOptions::KeepLastDuplicate;
-    CHECK(pjson::parse(document, strictLast) != nullptr);
+    CHECK(pjson_test::parse(document, strictLast) != nullptr);
 }
 
 TEST(parse_error_reuse_across_calls) {
     pjson::ParseError err;
 
-    CHECK(pjson::parse("{", err) == nullptr);
+    CHECK(pjson_test::parse("{", err) == nullptr);
     CHECK(!err.ok);
     CHECK(!err.message.empty());
 
-    pjson::unique_ptr ok = pjson::parse("42", err);
+    pjson_test::Parsed ok = pjson_test::parse("42", err);
     CHECK(ok != nullptr);
     CHECK(err.ok);
     CHECK_EQ(err.offset, size_t(0));
@@ -199,7 +199,7 @@ TEST(parse_error_reuse_across_calls) {
     CHECK(err.message.empty());
     CHECK_EQ(valueInt(*ok), int64_t(42));
 
-    CHECK(pjson::parse("[1,]", err) == nullptr);
+    CHECK(pjson_test::parse("[1,]", err) == nullptr);
     CHECK(!err.ok);
     CHECK_EQ(err.offset, size_t(3));
     CHECK(!err.message.empty());
@@ -223,11 +223,11 @@ TEST(parse_ptr_size_with_embedded_nul_in_string) {
 }
 
 TEST(parse_nullptr_is_null_not_crash) {
-    CHECK(pjson::parse(nullptr, 10) == nullptr);
+    CHECK(pjson_test::parse(nullptr, 10) == nullptr);
 }
 
 TEST(parse_zero_length_is_null) {
-    CHECK(pjson::parse("anything", 0) == nullptr);
+    CHECK(pjson_test::parse("anything", 0) == nullptr);
 }
 
 //===----------------------------------------------------------------------===//
@@ -318,10 +318,10 @@ TEST(parse_invalid_keywords) {
 // Number grammar: valid forms accepted with correct type
 //===----------------------------------------------------------------------===//
 TEST(parse_valid_numbers) {
-    pjson::unique_ptr zero = parse("0");
-    pjson::unique_ptr negative = parse("-123");
-    pjson::unique_ptr exponent = parse("1e3");
-    pjson::unique_ptr fraction = parse("123.456");
+    pjson_test::Parsed zero = parse("0");
+    pjson_test::Parsed negative = parse("-123");
+    pjson_test::Parsed exponent = parse("1e3");
+    pjson_test::Parsed fraction = parse("123.456");
     CHECK(zero != nullptr);
     CHECK(parse("-0") != nullptr);
     CHECK(parse("123") != nullptr);
@@ -343,11 +343,21 @@ TEST(parse_valid_numbers) {
     CHECK_EQ(valueDouble(*fraction), 123.456);
 }
 
-TEST(parse_bigint_falls_back_without_throw) {
-    // Beyond int64 range: must not throw; stored as double.
+TEST(parse_bigint_rejected_by_default) {
+    // Beyond uint64 range: rejected by default (PJSON-NUM-001) rather than
+    // silently rounded to a double.
     auto p = parse("100000000000000000000000");
+    CHECK(p == nullptr);
+}
+
+TEST(parse_bigint_lossy_opt_in_stores_double) {
+    // With the explicit opt-in, the same token stores the nearest double.
+    pjson::ParseOptions opt;
+    opt.numberPolicy = pjson::ParseOptions::AllowLossyNumbers;
+    auto p = pjson_test::parse("100000000000000000000000", opt);
     CHECK(p != nullptr);
-    CHECK_EQ(p->getType(), pjson::jsonNumberDouble);
+    if (p)
+        CHECK_EQ(p->getType(), pjson::jsonNumberDouble);
 }
 
 TEST(parse_int64_boundary) {

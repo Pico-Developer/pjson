@@ -11,12 +11,13 @@ Without an allocator argument, a value uses pjson's built-in allocator:
 
 ```cpp
 pjson value;
-pjson::unique_ptr parsed = pjson::parse(R"({"answer":42})");
+pjson::ParseError error;
+pjson parsed = pjson::parse(R"({"answer":42})", error);
 ```
 
-The direct value is owned by its C++ scope. The parse result uses the same
-provenance-aware `pjson::unique_ptr` returned by every DOM parse overload, so it
-is also released automatically. Children returned by `find()` or
+The direct value is owned by its C++ scope. The parse result is a plain `pjson`
+value returned by every DOM parse overload, so it is also released
+automatically when it goes out of scope. Children returned by `find()` or
 `findPointer()` are borrowed views into the owning tree—never delete them
 yourself.
 
@@ -77,24 +78,23 @@ PoolAllocator pool;
 } // document's destructor returns its bound storage to pool
 ```
 
-Parsing must allocate the root dynamically, so every overload returns
-`pjson::unique_ptr`:
+Parsing must allocate the root's descendants dynamically, but every overload
+returns the document **by value**, bound to the supplied allocator:
 
 ```cpp
 pjson::ParseError error;
 pjson::ParseOptions options;
-pjson::unique_ptr document = pjson::parse(text, error, pool, options);
-if (!document) {
+pjson document = pjson::parse(text, error, pool, options);
+if (!error.ok) {
     std::cerr << error.line << ':' << error.column << ": "
               << error.message << '\n';
 }
 ```
 
-`pjson::unique_ptr` is `std::unique_ptr<pjson, pjson::ValueDeleter>`. Its
-stateless deleter reads allocator provenance from the root and returns the root
-through the correct allocator. Do not replace that deleter or call `delete` on
-the root. Moving the smart pointer transfers the root but does not own or extend
-the allocator's lifetime.
+The returned value is bound to `pool`: its wrapper objects and descendants were
+obtained from `pool`, and its destructor returns them through `pool`. There is
+no smart pointer and no manual `delete`. Moving the value transfers the tree but
+does not own or extend the allocator's lifetime.
 
 Allocator-aware overloads exist for `std::string`, `(const char*, size_t)`, and
 `std::istream`, with optional `ParseError` and `ParseOptions`. `parseStream()`
@@ -134,10 +134,10 @@ source is JSON null but remains bound to its original allocator.
 ## Failure behavior
 
 Allocator-aware in-memory parsing catches failures during DOM construction,
-destroys partial trees, returns an empty `pjson::unique_ptr`, and fills
-`ParseError` when supplied. `parseStream()` first fills a standard-allocated
-input buffer, so an exception-enabled stream or failure in that buffer can still
-throw before DOM construction.
+destroys partial trees, returns a JSON `null` value, and fills `ParseError` when
+supplied. `parseStream()` first fills a standard-allocated input buffer, so an
+exception-enabled stream or failure in that buffer can still throw before DOM
+construction.
 
 Other operations that allocate—such as string/container mutation, deep copy,
 and cross-allocator move—may propagate `std::bad_alloc`. Copy assignment,
@@ -163,13 +163,13 @@ CountingAllocator storage;
     direct["kind"] = "direct root";
 
     pjson::ParseError error;
-    pjson::unique_ptr parsed =
+    pjson parsed =
         pjson::parse(R"({"kind":"parsed root","values":[1,2,3]})",
                      error, storage);
-    if (!parsed)
+    if (!error.ok)
         return 1;
 
-    pjson copy(*parsed, storage);
+    pjson copy(parsed, storage);
     if (direct.canSwap(copy))
         direct.swap(copy);
 }
@@ -178,12 +178,12 @@ CountingAllocator storage;
 
 ## What you learned
 
-- Default values require no allocator setup and every DOM parse returns the
-  provenance-aware `pjson::unique_ptr`.
+- Default values require no allocator setup and every DOM parse returns a plain
+  `pjson` value.
 - Every value is allocator-bound; a supplied `Allocator` is borrowed and must
   outlive the entire bound tree.
-- Direct roots remain caller-owned, while allocator-parsed roots use
-  `pjson::unique_ptr` and `ValueDeleter`.
+- Direct roots remain caller-owned, and an allocator-parsed value is bound to,
+  and freed through, the allocator passed to `parse()`.
 - Copies are deep, assignments preserve the destination allocator, and moves may
   allocate across allocator domains.
 - `canSwap()` distinguishes the O(1) same-allocator path from a cross-allocator

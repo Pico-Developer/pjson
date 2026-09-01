@@ -9,6 +9,7 @@ set (INCLUDE_DIR "include")
 
 set (SRC_FILES ${SRC_FILES}
 ${SRC_DIR}/pjson.cpp
+${SRC_DIR}/pjson_schema.cpp
 )
 
 # Warning flags differ by compiler: GCC/Clang use -Wall -Wextra, MSVC uses /W4.
@@ -51,7 +52,9 @@ install(TARGETS ${TARGET_NAME}
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
 )
 
-install(FILES ${INCLUDE_DIR}/pjson.h
+install(FILES
+    ${INCLUDE_DIR}/pjson.h
+    ${INCLUDE_DIR}/pjson_schema.h
     DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
 )
 

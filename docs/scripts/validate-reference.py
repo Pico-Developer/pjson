@@ -17,7 +17,6 @@ REQUIRED_COMPOUNDS = {
     "ByteDance",
     "ByteDance::pjson",
     "ByteDance::pjson::Allocator",
-    "ByteDance::pjson::ValueDeleter",
     "ByteDance::pjson::ParseOptions",
     "ByteDance::pjson::ParseError",
     "ByteDance::pjson::PointerError",
@@ -26,8 +25,9 @@ REQUIRED_COMPOUNDS = {
     "ByteDance::pjson::SerializeOptions",
     "ByteDance::pjson::StringView",
     "ByteDance::pjson::SaxHandler",
-    "ByteDance::pjson::SchemaError",
-    "ByteDance::pjson::SchemaOptions",
+    "ByteDance::pJsonSchemaValidator",
+    "ByteDance::pJsonSchemaValidator::Error",
+    "ByteDance::pJsonSchemaValidator::Options",
 }
 
 # Baseline overload counts make accidental omissions visible. APIs whose exact
@@ -49,27 +49,38 @@ REQUIRED_MEMBERS = {
     "isBool": 1,
     "isArray": 1,
     "isObject": 1,
+    "isUInt": 1,
+    "isInteger": 1,
     "getAllocator": 1,
     "canSwap": 1,
-    "tryGet": 20,
+    "tryGet": 24,
     "size": 1,
     "empty": 1,
     "clear": 1,
     "keys": 1,
     "hasKey": 2,
+    "contains": 2,
     "hasIndex": 1,
     "find": 6,
+    "forEachMember": 2,
+    "forEachElement": 2,
+    "at": 4,
+    "null": 1,
+    "object": 1,
+    "array": 1,
+    "pushBack": 2,
+    "insertOrAssign": 2,
+    "reserve": 1,
     "escapePointerToken": 1,
     "findPointer": 8,
     "operator[]": 3,
-    "operator=": 11,
-    "operator+=": 9,
+    "operator=": 14,
+    "operator+=": 11,
     "erase": 3,
     "applyPatch": 2,
     "applyMergePatch": 2,
     "operator==": 1,
     "operator!=": 1,
-    "validate": 2,
 }
 
 REMOVED_PUBLIC_MEMBERS = {
@@ -87,7 +98,6 @@ REMOVED_PUBLIC_MEMBERS = {
     "getDoubleOr",
     "getBoolOr",
     "getStringOr",
-    "at",
     "EncodeForJSON",
     "EncodeBase64ForJSON",
     "DecodeFromJSON",
@@ -103,6 +113,7 @@ EXPECTED_PUBLIC_ENUMS = {
         "jsonBoolean",
         "jsonArray",
         "jsonObject",
+        "jsonNumberUInt",
     },
     ("ByteDance::pjson::Allocator", "AllocationKind"): {
         "NodeAllocation",
@@ -114,6 +125,24 @@ EXPECTED_PUBLIC_ENUMS = {
         "RejectDuplicateKeys",
         "KeepFirstDuplicate",
         "KeepLastDuplicate",
+    },
+    ("ByteDance::pjson::ParseOptions", "NumberPolicy"): {
+        "RejectUnrepresentableNumbers",
+        "AllowLossyNumbers",
+    },
+    ("ByteDance::pjson::ParseError", "Code"): {
+        "None",
+        "Syntax",
+        "InvalidEncoding",
+        "DuplicateKey",
+        "NumberRange",
+        "DepthLimit",
+        "InputLimit",
+        "NodeLimit",
+        "AllocationFailure",
+        "StreamError",
+        "CallbackError",
+        "InvalidArgument",
     },
     ("ByteDance::pjson::PointerError", "Code"): {
         "Ok",
@@ -152,26 +181,35 @@ EXPECTED_PUBLIC_ENUMS = {
         "AscendingKeys",
         "DescendingKeys",
     },
+    ("ByteDance::pjson::SerializeOptions", "NonFinitePolicy"): {
+        "RejectNonFinite",
+        "NonFiniteToNull",
+        "NonFiniteToString",
+    },
 }
 
 EXPECTED_PARAMETER_TYPES = {
     "tryGet": {
         ("int64_t&",),
+        ("uint64_t&",),
         ("double&",),
         ("bool&",),
         ("std::string&",),
         ("StringView&",),
         ("const std::string&", "int64_t&"),
+        ("const std::string&", "uint64_t&"),
         ("const std::string&", "double&"),
         ("const std::string&", "bool&"),
         ("const std::string&", "std::string&"),
         ("const std::string&", "StringView&"),
         ("const char*", "int64_t&"),
+        ("const char*", "uint64_t&"),
         ("const char*", "double&"),
         ("const char*", "bool&"),
         ("const char*", "std::string&"),
         ("const char*", "StringView&"),
         ("int", "int64_t&"),
+        ("int", "uint64_t&"),
         ("int", "double&"),
         ("int", "bool&"),
         ("int", "std::string&"),
@@ -193,14 +231,17 @@ EXPECTED_PARAMETER_TYPES = {
     "operator=": {
         ("const pjson&",),
         ("pjson&&",),
+        ("std::nullptr_t",),
         ("const std::string&",),
         ("const char*",),
         ("const bool",),
         ("const int64_t",),
+        ("const uint64_t",),
         ("const double",),
         ("const std::vector<std::string>&",),
         ("const std::vector<bool>&",),
         ("const std::vector<int64_t>&",),
+        ("const std::vector<uint64_t>&",),
         ("const std::vector<double>&",),
     },
     "operator+=": {
@@ -208,10 +249,12 @@ EXPECTED_PARAMETER_TYPES = {
         ("const char*",),
         ("const bool",),
         ("const int64_t",),
+        ("const uint64_t",),
         ("const double",),
         ("const std::vector<std::string>&",),
         ("const std::vector<bool>&",),
         ("const std::vector<int64_t>&",),
+        ("const std::vector<uint64_t>&",),
         ("const std::vector<double>&",),
     },
 }
@@ -229,6 +272,7 @@ REQUIRED_PUBLIC_FIELDS = {
         "indentCharacter",
         "escapeNonAscii",
         "keyOrder",
+        "nonFinite",
         "maxOutputBytes",
     },
 }
@@ -361,16 +405,6 @@ def main() -> int:
                     f"Allocator::{name}: expected at least {minimum}, "
                     f"found {allocator_members[name]}"
                 )
-    deleter_definition = compound_definition("ByteDance::pjson::ValueDeleter")
-    if deleter_definition is not None:
-        undocumented = undocumented_public_members(deleter_definition)
-        if undocumented:
-            errors.append(
-                "undocumented ValueDeleter members: " + ", ".join(undocumented)
-            )
-        if not deleter_definition.findall(".//memberdef[@prot='public'][name='operator()']"):
-            errors.append("missing ValueDeleter::operator()")
-
     for compound_name, expected_fields in REQUIRED_PUBLIC_FIELDS.items():
         definition = compound_definition(compound_name)
         if definition is None:
@@ -382,8 +416,6 @@ def main() -> int:
         for field in sorted(expected_fields - actual_fields):
             errors.append(f"missing public field {compound_name}::{field}")
 
-    if members["unique_ptr"] < 1:
-        errors.append("missing allocator-aware pjson::unique_ptr typedef")
     if members["pjson"] < 6:
         errors.append("pjson: expected six allocator/default constructors")
     if members["swap"] < 1 or members["copyFrom"] < 1:
@@ -426,11 +458,11 @@ def main() -> int:
         ]
         for member in dom_parse_members:
             result_type = normalized_xml_type(member.find("type"))
-            if result_type not in {"unique_ptr", "pjson::unique_ptr"}:
+            if result_type != "pjson":
                 name = member.findtext("name", default="")
                 errors.append(
                     f"{signature(name, parameter_types(member))} returns {result_type}, "
-                    "expected pjson::unique_ptr"
+                    "expected pjson"
                 )
 
         constructors = [

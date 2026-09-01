@@ -35,7 +35,7 @@ TEST(malformed_empty_inputs) {
     CHECK_PARSE_FAILS("\t\n\r ");
     CHECK_PARSE_FAILS("\r\n");
     // A lone NUL byte is not a value.
-    CHECK(pjson::parse(std::string("\0", 1)) == nullptr);
+    CHECK(pjson_test::parse(std::string("\0", 1)) == nullptr);
 }
 
 //===----------------------------------------------------------------------===//
@@ -130,7 +130,7 @@ TEST(malformed_number_out_of_range) {
     // A 400-digit integer overflows int64, falls back to double, overflows
     // that too, and is rejected.
     std::string huge(400, '9');
-    CHECK(pjson::parse(huge) == nullptr);
+    CHECK(pjson_test::parse(huge) == nullptr);
     // Just inside range is fine.
     CHECK(parse("1e308") != nullptr);
 }
@@ -185,7 +185,7 @@ TEST(malformed_keywords) {
 //===----------------------------------------------------------------------===//
 TEST(malformed_bom_prefix) {
     const char bom[] = {(char)0xEF, (char)0xBB, (char)0xBF, '1'};
-    CHECK(pjson::parse(bom, sizeof(bom)) == nullptr);
+    CHECK(pjson_test::parse(bom, sizeof(bom)) == nullptr);
 }
 
 //===----------------------------------------------------------------------===//
@@ -195,7 +195,7 @@ TEST(malformed_excessive_depth_arrays) {
     const int depth = 200000;
     std::string s(depth, '[');
     s += std::string(depth, ']');
-    CHECK(pjson::parse(s) == nullptr); // default maxDepth guards this
+    CHECK(pjson_test::parse(s) == nullptr); // default maxDepth guards this
 }
 
 TEST(malformed_excessive_depth_objects) {
@@ -207,7 +207,7 @@ TEST(malformed_excessive_depth_objects) {
     s += "1";
     for (int i = 0; i < depth; ++i)
         s += "}";
-    CHECK(pjson::parse(s) == nullptr);
+    CHECK(pjson_test::parse(s) == nullptr);
 }
 
 //===----------------------------------------------------------------------===//
@@ -217,21 +217,21 @@ TEST(malformed_excessive_depth_objects) {
 TEST(malformed_control_chars) {
     const char rawNL[] = {'"', 'a', '\n', 'b', '"'};
     const char rawTab[] = {'"', '\t', '"'};
-    CHECK(pjson::parse(rawNL, sizeof(rawNL)) == nullptr);
-    CHECK(pjson::parse(rawTab, sizeof(rawTab)) == nullptr);
+    CHECK(pjson_test::parse(rawNL, sizeof(rawNL)) == nullptr);
+    CHECK(pjson_test::parse(rawTab, sizeof(rawTab)) == nullptr);
 }
 
 TEST(malformed_bad_escapes_and_surrogates) {
-    CHECK(pjson::parse("\"\\x41\"") == nullptr);
-    CHECK(pjson::parse("\"\\uD800\"") == nullptr); // lone high surrogate
-    CHECK(pjson::parse("\"\\uDC00\"") == nullptr); // lone low surrogate
+    CHECK(pjson_test::parse("\"\\x41\"") == nullptr);
+    CHECK(pjson_test::parse("\"\\uD800\"") == nullptr); // lone high surrogate
+    CHECK(pjson_test::parse("\"\\uDC00\"") == nullptr); // lone low surrogate
 }
 
 TEST(malformed_invalid_utf8) {
     const char bad[] = {'"', (char)0xC3, (char)0x28, '"'}; // 0xC3 not followed by continuation
     const char lone[] = {'"', (char)0xFF, '"'};
-    CHECK(pjson::parse(bad, sizeof(bad)) == nullptr);
-    CHECK(pjson::parse(lone, sizeof(lone)) == nullptr);
+    CHECK(pjson_test::parse(bad, sizeof(bad)) == nullptr);
+    CHECK(pjson_test::parse(lone, sizeof(lone)) == nullptr);
 }
 
 //===----------------------------------------------------------------------===//
@@ -240,13 +240,13 @@ TEST(malformed_invalid_utf8) {
 TEST(malformed_error_offsets) {
     pjson::ParseError err;
 
-    CHECK(!pjson::parse("[1, 2, ]", err));
+    CHECK(!pjson_test::parse("[1, 2, ]", err));
     CHECK_EQ(err.offset, size_t(7)); // the ']' after a trailing comma
 
-    pjson::parse("   @", err);
+    pjson_test::parse("   @", err);
     CHECK_EQ(err.offset, size_t(3)); // first non-ws garbage
 
-    pjson::parse("{\"a\":1 \"b\":2}", err);
+    pjson_test::parse("{\"a\":1 \"b\":2}", err);
     CHECK(!err.ok);
     CHECK(!err.message.empty());
 }
@@ -278,7 +278,7 @@ TEST(malformed_partial_tree_teardown_is_leak_free) {
     };
     for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
         pjson::ParseError err;
-        CHECK(pjson::parse(cases[i], err) == nullptr);
+        CHECK(pjson_test::parse(cases[i], err) == nullptr);
         CHECK(!err.ok);
     }
 }

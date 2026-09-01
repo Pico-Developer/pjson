@@ -73,9 +73,10 @@ private:
 // and transfers both within and across allocator domains.
 int main() {
     // --- Default allocation ------------------------------------------------
-    // Every parse overload uses the provenance-aware pjson::unique_ptr owner.
-    pjson::unique_ptr ordinary = pjson::parse(R"({"storage":"default"})");
-    if (!ordinary)
+    // Every parse overload returns a pjson value bound to the default allocator.
+    pjson::ParseError ordinaryError;
+    pjson ordinary = pjson::parse(R"({"storage":"default"})", ordinaryError);
+    if (!ordinaryError.ok)
         return 1;
 
     // --- Custom allocator domains -----------------------------------------
@@ -92,20 +93,19 @@ int main() {
         direct["values"] += int64_t(2);
 
         pjson::ParseError error;
-        // Allocator-aware parsing returns pjson::unique_ptr; its custom deleter
-        // returns the dynamically allocated root through `first`.
-        pjson::unique_ptr parsed =
-            pjson::parse(R"({"kind":"parsed root","values":[3,4]})", error, first);
-        if (!parsed) {
+        // Allocator-aware parsing returns a pjson value bound to `first`; its
+        // storage is released through `first` when the value is destroyed.
+        pjson parsed = pjson::parse(R"({"kind":"parsed root","values":[3,4]})", error, first);
+        if (!error.ok) {
             std::cerr << error.message << '\n';
             return 1;
         }
 
         // --- Transfer between domains -------------------------------------
         // Explicit allocator construction deep-copies into another domain.
-        pjson rehomed(*parsed, second);
-        if (direct.canSwap(*parsed))
-            direct.swap(*parsed); // same allocator: constant-time exchange
+        pjson rehomed(parsed, second);
+        if (direct.canSwap(parsed))
+            direct.swap(parsed); // same allocator: constant-time exchange
 
         // Move assignment preserves the destination allocator. Because these
         // allocators differ, this may allocate while deep-transferring the tree.

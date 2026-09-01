@@ -25,15 +25,16 @@ int main() {
         "friends": [ {"name":"Bob"}, {"name":"Cid"} ]
     })";
 
-    // Every DOM parse overload returns pjson::unique_ptr; it is empty on failure.
+    // Every DOM parse overload returns a pjson value; pass a ParseError to
+    // learn whether parsing succeeded.
     pjson::ParseError parseError;
-    pjson::unique_ptr doc = pjson::parse(text, parseError);
-    if (!doc) {
+    pjson doc = pjson::parse(text, parseError);
+    if (!parseError.ok) {
         std::cerr << parseError.line << ':' << parseError.column << ": " << parseError.message
                   << "\n";
         return 1;
     }
-    const pjson& j = *doc;
+    const pjson& j = doc;
 
     // --- Strict scalar reads ----------------------------------------------
     // StringView borrows the stored bytes, so write the explicit length rather

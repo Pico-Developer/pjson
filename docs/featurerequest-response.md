@@ -1,0 +1,314 @@
+<!-- SPDX-FileCopyrightText: 2026 ByteDance Ltd. and/or its affiliates -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+
+# Response to pjson Production-Readiness Requirements
+
+This document responds to every requirement in
+[`docs/featurerequest.md`](featurerequest.md). It records, for each item, a
+disposition and the concrete work done (or the reason it was deferred or judged
+not applicable). The requirements themselves are a well-constructed, largely
+accurate audit; a small number rest on assumptions that did not match the
+1.0.0 baseline, and those are called out explicitly.
+
+Work landed in this pass targets the release now versioned **2.0.0** (the
+unsigned-integer numeric model and the non-finite serialization default are
+breaking changes, so the major version was bumped per SemVer). The unit suite
+grew from 431 to 483 cases; all pass under a normal Debug build and under
+AddressSanitizer + UndefinedBehaviorSanitizer.
+
+## Legend
+
+- **Implemented** — done in this pass, with tests.
+- **Partially implemented** — core of the requirement done; remainder scoped
+  and noted.
+- **Already satisfied** — the 1.0.0 baseline already met it; verified.
+- **Deferred** — valid, but out of scope for this pass; tracked in `Todo.md`.
+- **Not accurate / adjusted** — the requirement's premise did not hold against
+  the baseline, or conflicts with a documented design choice; explained.
+
+---
+
+## 4. P0 correctness and safety
+
+### PJSON-COR-001 — Preserve object keys byte-for-byte — Implemented
+Confirmed defect A.1 was real: the `std::string` member/find/hasKey/erase paths
+delegated through `c_str()`, so `"a"` and `"a\u0000b"` collided. The
+`std::string` overloads are now the length-aware primary implementations
+(`operator[]`, `find`, `hasKey`, `erase`, keyed `tryGet`); `const char*`
+overloads keep documented NUL-terminated behavior. Pointer/Patch/equality/
+serialization already operated on decoded `std::string` names and now preserve
+these keys end to end. Regression matrix: `pjsontest/src/tests_embedded_nul.cpp`
+(empty names; U+0000 at start/middle/end; parse round-trip; pointer + equality;
+the documented `const char*` truncation contract).
+
+### PJSON-COR-002 — Make aliasing mutations memory-safe — Implemented
+Confirmed defect A.2 was real. Move assignment previously called `reset()`
+before reading the source, freeing it when the source was a descendant. It now
+snapshots the source's storage into a same-allocator temporary first, then swaps
+(`pjson::operator=(pjson&&)`). `swap()` gained an ancestor/descendant guard
+(`containsNode`) and rejects overlapping swaps as a safe no-op; internal
+non-aliased swaps use a new `swapStorageUnchecked`/`_swapStorage` fast path.
+Tests: `pjsontest/src/tests_aliasing.cpp` covers self copy/move, root-from-
+descendant, descendant-from-root, sibling assigns, and root/descendant swap;
+the whole suite passes under ASan/UBSan.
+
+### PJSON-NUM-001 — Never silently corrupt an accepted number — Implemented
+Confirmed defect A.3 was real (UINT64_MAX became `1.8446744073709552e+19`).
+Added the `jsonNumberUInt` kind and full unsigned surface: `uint64_t`
+assignment/append/vectors, `isUInt()`/`isInteger()`, `tryGet(uint64_t&)`,
+`SaxHandler::onUInt`, exact signed/unsigned/double comparison
+(`_compareNumbers` rewritten), and decimal serialization via `std::to_string`
+without a `double` round-trip. Tokens in `[INT64_MIN, INT64_MAX]` stay signed;
+`(INT64_MAX, UINT64_MAX]` are unsigned; an explicit `uint64_t` assignment keeps
+unsigned identity even for small values. Tokens outside the exact range are
+rejected by default (`ParseOptions::RejectUnrepresentableNumbers`) or, with
+`AllowLossyNumbers`, stored as the nearest double. Tests:
+`pjsontest/src/tests_numbers.cpp`, and both SAX/DOM front ends agree
+(`tests_depth_frontends.cpp`).
+
+### PJSON-NUM-002 — Handle non-finite floats explicitly — Implemented
+The old behavior (stored NaN/Inf silently serialized as `null`) is replaced by
+`SerializeOptions::NonFinitePolicy`. The default `RejectNonFinite` fails
+serialization with a structured error (`toString` throws
+`std::invalid_argument`; `write` sets `failbit`) identically for compact,
+pretty, and streaming output. `NonFiniteToNull` restores the legacy mapping and
+`NonFiniteToString` emits `"NaN"`/`"Infinity"`/`"-Infinity"`. Double formatting
+remains locale-independent. Tests: `tests_numbers.cpp`
+(`non_finite_serialization_policy`, `non_finite_stream_policy`).
+
+### PJSON-NUM-003 — Define finite float conversion precisely — Partially implemented / already satisfied
+The baseline already parsed via a classic-locale conversion, rejected overflow
+to non-finite, and round-tripped finite binary64 (verified in
+`tests_pathological.cpp` and the new `finite_double_round_trips`). This pass
+made the overflow-vs-reject policy explicit through `NumberPolicy`. The formal
+"correctly rounded on every standard library" guarantee and the exhaustive
+halfway/subnormal randomized-corpus proof described in the requirement remain a
+documentation-and-test hardening task (tracked in `Todo.md`); the observable
+round-trip contract holds today.
+
+### PJSON-SEC-001 — Make nesting limits stack-safe — Implemented
+Confirmed defect A.4 was real: a large configured `maxDepth` still allowed
+recursive DOM/SAX parsing to overflow. Configured depth is now clamped to a
+proven-safe hard ceiling (`kParseDepthHardLimit`, 1024) that callers cannot
+raise, applied uniformly in the DOM parser and both SAX parsers. A 100,000-deep
+document with `maxDepth = INT_MAX` returns a structured resource-limit error
+across all front ends. Tests: `tests_depth_frontends.cpp`; clean under ASan.
+
+### PJSON-PARSE-001 — Keep parser front ends equivalent — Implemented (verified)
+Added differential tests asserting the string, byte-span, DOM-stream,
+buffered-SAX, and streaming-SAX front ends agree on acceptance, value/structure,
+and rejection (including the new numeric-range and depth cases):
+`tests_depth_frontends.cpp`. Sharing a single lexer core (PJSON-MAINT-001)
+remains deferred; behavioral equivalence is now guarded by tests.
+
+### PJSON-PARSE-002 — Apply duplicate-key policy early — Implemented
+The DOM object parser now decodes the name, checks for a duplicate, and (under
+`RejectDuplicateKeys`) fails at the duplicate key's own offset *before* parsing
+or allocating its value subtree. Keep-first still grammar-checks the discarded
+value. Comparison uses decoded, length-aware names. Tests:
+`tests_error_model.cpp` (`duplicate_key_reported_early_at_key_offset`,
+`duplicate_keep_first_still_validates_value`,
+`duplicate_key_uses_decoded_length_aware_names`).
+
+## 5. P1 core DOM and API
+
+### PJSON-API-001 — Non-allocating traversal — Implemented
+Added `forEachMember`/`forEachElement` (const and mutable) callback visitors
+that iterate borrowed children directly, exposing a length-aware `StringView`
+key and value reference with no per-key allocation or second lookup. Visitors
+are function pointers with an opaque `void* ctx` (keeping the public header
+declaration-only and ABI-stable); early stop is supported by returning `false`.
+`keys()` remains as a convenience copy. Tests: `tests_dom_api.cpp`.
+
+### PJSON-API-002 — Construction and mutation primitives — Implemented
+Added `null()`/`object()`/`array()` factories, `operator=(std::nullptr_t)`,
+`pushBack(const pjson&)` and `pushBack(pjson&&)`, `insertOrAssign` (copy and
+move), and `reserve()`. Scalar/unsigned/vector assignment and append were
+extended for `uint64_t`. Multi-step mutations retain the existing
+build-then-swap strong-guarantee pattern. Tests: `tests_dom_api.cpp`.
+
+### PJSON-API-003 — Separate safe reads from vivifying writes — Implemented
+Added checked, non-vivifying `at(key)` and `at(index)` (throwing
+`std::out_of_range`) and `contains()` alongside the existing non-vivifying
+`find`/`hasKey`/`hasIndex`/`tryGet`. Positive `at(size_t)` uses `size_t`;
+negative indexing stays on the separate signed `find(int)`/`tryGet(int, …)`
+API. Tests: `tests_dom_api.cpp`.
+
+### PJSON-API-004 — Type conversion and equality — Implemented (semantics) / Partially (docs)
+`tryGet` conversions are exact: signed↔unsigned reads succeed only when
+representable, integers widen to double, and no narrowing/precision-losing read
+reports success. Cross-representation equality (`1 == 1u == 1.0`) is exact above
+2^53 via the rewritten `_compareNumbers`. Object equality is order-independent.
+The consolidated prose table enumerating every conversion is folded into the
+README numeric/equality sections; a single exhaustive matrix doc is a
+documentation follow-up.
+
+### PJSON-API-005 — Structured error model — Implemented
+`ParseError` gained a stable `Code` enum (syntax, invalid encoding, duplicate
+key, number range, depth/input/node limits, allocation failure, stream error,
+callback error, invalid argument) set alongside the existing message and
+byte/line/column. Serialization already reports through exception/`failbit`
+with distinct exception types for UTF-8 vs. limit vs. (new) non-finite. Tests:
+`tests_error_model.cpp`. A separate `SerializeError` result type is not added;
+the existing typed-exception/`failbit` contract satisfies the machine-facing
+need.
+
+### PJSON-API-006 — Ownership and allocator completeness — Already satisfied (documented scope)
+The baseline already documents that the custom `Allocator` covers persistent
+nodes and string/array/object wrapper objects, while standard-container backing
+buffers and transient scratch use the standard allocator, and it is described as
+exactly that (not a "complete DOM allocator"). Cross-allocator copy/move/swap
+behavior, provenance-preserving deletion, and injected-failure invariants are
+covered by `tests_allocator.cpp`. Routing every container's internal buffer
+through the allocator is a larger design change left as a documented limitation.
+
+### PJSON-API-007 — Document thread safety — Implemented (documentation)
+pjson makes no positive concurrency guarantee beyond the C++ standard default:
+distinct values may be used concurrently; a single value must not be mutated
+concurrently with any other access; the default allocator's initialization is
+thread-safe. This is now stated explicitly in the README thread-safety note. No
+`ThreadSanitizer` job is added because no positive shared-object guarantee is
+claimed.
+
+## 6. P1 serialization
+
+### PJSON-SER-001 — Valid and stable output — Implemented / already satisfied
+Output is one valid RFC 8259 value with correct escaping and programmatic-UTF-8
+validation; `toString()` and `write()` are byte-for-byte equivalent for the
+same options; no framing bytes are appended. The output-size limit is now
+verified overflow-safe at limit-1/limit/limit+1 for both APIs. Non-finite and
+invalid-UTF-8 behavior is defined by policy. Tests:
+`tests_serialize_limits.cpp`.
+
+### PJSON-SER-002 — Deterministic output when requested — Already satisfied (verified)
+Sorted (ascending/descending) bytewise key order is available and
+deterministic; order does not affect structural equality. Verified by
+`deterministic_key_order`. Canonical JSON is explicitly *not* claimed.
+
+## 7. P1 resource and security
+
+### PJSON-SEC-002 — Uniform, overflow-safe budgets — Already satisfied / extended
+Parser, serializer, patch, and schema budgets exist with a documented "zero =
+hard ceiling / unlimited" convention and checked arithmetic. This pass added the
+depth hard-ceiling clamp (SEC-001) and kept the number-policy failures
+distinguishable from malformed input via `ParseError::Code`.
+
+### PJSON-SEC-003 — Transactional mutation — Already satisfied (verified)
+Patch/Merge Patch remain atomic (build-scratch-then-swap), now using the safe
+`_swapStorage` publication path. Move-into-descendant and move-root are
+rejected. Covered by `tests_pointer_patch.cpp`.
+
+### PJSON-SEC-004 — Regexes and external resources hostile — Already satisfied
+Schema regex work is size-bounded and screened for catastrophic backtracking by
+default (`trustedRegex()` to opt out). No API fetches a URL; remote `$ref` is
+rejected. Unchanged and re-verified.
+
+## 8. Optional JSON Schema module
+
+### PJSON-SCHEMA-000 — Strict fail-closed subset — Implemented
+Added `pJsonSchemaValidator::Options::strict()` / `strictSubset`. In strict
+mode, a standard validation/applicator keyword pjson does not enforce (e.g.
+`unevaluatedProperties`, `$dynamicRef`) fails validation instead of being
+ignored, while unknown non-standard extension keywords remain allowed as
+annotations. Default remains permissive for compatibility. Tests:
+`tests_schema_2020.cpp`.
+
+### Schema module extracted to an external validator — Implemented
+JSON Schema validation was moved out of `pjson` entirely into the standalone
+`ByteDance::pJsonSchemaValidator` class (`<pjson_schema.h>` / `pjson_schema.cpp`).
+It is a **pure consumer of pjson's public API** and touches no library
+internals, so the core DOM no longer carries the schema/regex machinery and
+programs that never validate do not link it. The former nested
+`pjson::SchemaError` / `pjson::SchemaOptions` are now
+`pJsonSchemaValidator::Error` / `pJsonSchemaValidator::Options`, and the
+member `pjson::validate()` overloads are removed. Callers construct a validator
+from a schema once and reuse it. A new public `pjson::tryCompareNumber()`
+promotes the exact cross-kind numeric ordering the validator needs from a
+former private helper. This also delivers the compiled/immutable validator
+object requested by PJSON-SCHEMA-002.
+
+### PJSON-SCHEMA-001..006 — Partially implemented / Deferred
+This pass materially expanded the validator toward 2020-12 by adding
+`if`/`then`/`else`, `prefixItems`, `contains`/`minContains`/`maxContains`, and
+`dependentSchemas` (fixing the A.5 conditional-schema gap), plus the strict
+gate above, and by extracting a reusable compiled validator object
+(SCHEMA-002, above). Not yet implemented:
+`$dynamicRef`/`$dynamicAnchor`, `unevaluatedItems`/`unevaluatedProperties`,
+`$vocabulary` negotiation, external resolver callbacks, and the full
+`draft2020-12` `JSON-Schema-Test-Suite` CI gate. Per the requirement's own
+rule, documentation continues to describe this as a **documented subset** and
+does not claim general 2020-12 conformance. Remaining SCHEMA-001/003/004/006
+work is tracked in `Todo.md` as a separately gated module effort.
+
+## 9. Existing extensions
+
+### PJSON-EXT-001/002/003 — Pointer / Patch / Merge Patch — Already satisfied
+RFC 6901/6902/7396 behavior, atomicity, and structured errors were already
+implemented and tested; embedded-NUL and aliasing fixes above strengthen them.
+Re-verified by `tests_pointer_patch.cpp`.
+
+## 10. P2 performance
+
+### PJSON-PERF-001/002/003 — Deferred
+The comparative benchmark harness (`bench/`) and methodology already exist. The
+broader per-workload matrix, regression tracking on controlled runners, and the
+"avoid avoidable work" audit are performance projects deferred to a follow-up so
+this pass could keep correctness gates as the priority. The new unsigned path
+and traversal API were written to avoid extra allocations/copies.
+
+## 11. P2 build, packaging, portability
+
+### PJSON-BUILD-001..005 — Already satisfied (verified)
+The baseline is a well-behaved CMake subproject (namespaced `pjson::pjson`,
+developer targets off when embedded), supports static/shared install and
+build-tree consumers, ships relocatable CMake + pkg-config + Conan/vcpkg
+recipes, publishes a CI platform matrix (GCC/Clang/AppleClang/MSVC), and keeps
+optional features modular. Version fields were bumped to 2.0.0 across the header,
+CMake, Conan, and vcpkg manifests (a configure-time mismatch is a hard error).
+
+## 12. Verification
+
+### PJSON-TEST-001..005 — Partially implemented / already satisfied
+JSONTestSuite and the JSON-Schema-Test-Suite (draft-07) are pinned and wired;
+sanitizer, differential, and fuzz jobs exist. This pass added the two mandatory
+regressions (embedded-NUL access; ancestor/descendant move under sanitizers) and
+new differential front-end tests, and every compiled case remains individually
+registered with CTest (483 cases). The `draft2020-12` conformance gate is
+deferred with the full-dialect work (SCHEMA-006).
+
+## 13. Documentation and governance
+
+### PJSON-DOC-001..004 — Partially implemented
+README, `CHANGELOG.md`, and `Todo.md` are updated for the new numeric model,
+non-finite policy, error codes, traversal/factory/checked APIs, and schema
+additions, and the 2.0.0 compatibility impact is called out (ABI break +
+behavioral changes) per DOC-004. `SECURITY.md`/`GOVERNANCE.md` already cover
+DOC-003. A single consolidated behavioral-contract reference (DOC-001) remains a
+documentation follow-up.
+
+## 14. Maintainability
+
+### PJSON-MAINT-001/002 — MAINT-002 implemented / MAINT-001 deferred
+Unifying the DOM and SAX grammar into one shared core (MAINT-001) remains an
+architectural-debt item in `Todo.md`. Splitting the schema validator out of the
+DOM translation unit (MAINT-002) is done: it now lives in its own
+`pjson_schema.cpp` behind the external `pJsonSchemaValidator` class, decoupled
+from the DOM via the public API. Both are guarded by the differential and schema
+tests.
+
+## 15. P3 optional enhancements — Deferred
+Insertion-order object storage, big-integer/decimal types, `string_view`
+overloads, JSON Lines helpers, canonical JSON, and a pull-parser cursor remain
+optional and out of scope; several are listed in `Todo.md`.
+
+## 16–17. Delivery sequence and definition of done
+
+Steps 1–6 of the requirement's own delivery order (the core correctness gate)
+are complete: embedded-NUL keys, aliasing safety, exact unsigned integers, the
+non-finite policy, stack-safe/equivalent front ends, and early duplicate
+detection with structured diagnostics — each with a permanent regression test
+and clean under ASan/UBSan. Step 7 (traversal, generic insertion, factories,
+checked indexing) and the structured-error portion of step 6 are done. The full
+JSON Schema 2020-12 module (step 10) is advanced but intentionally still labeled
+a documented subset, and steps 9/11 (performance baselines, registry publishing)
+plus the deferred items above remain open and tracked in `Todo.md`.

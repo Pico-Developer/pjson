@@ -19,6 +19,7 @@
 //
 #include "pjson.h"
 #include "test_harness.h"
+#include "test_util.h"
 
 #include <random>
 #include <string>
@@ -58,7 +59,7 @@ TEST(format_double_is_short_and_stable) {
 TEST(format_double_large_integral_value_round_trips_with_double_kind) {
     pjson value;
     value = double(2738421882738290.0);
-    pjson::unique_ptr reparsed = pjson::parse(value.toString());
+    pjson_test::Parsed reparsed = pjson_test::parse(value.toString());
     CHECK(reparsed != nullptr);
     CHECK(reparsed->isDouble());
     CHECK(*reparsed == value);
@@ -67,7 +68,7 @@ TEST(format_double_large_integral_value_round_trips_with_double_kind) {
 TEST(format_double_high_precision_round_trips) {
     pjson j;
     j = double(3.141592653589793);
-    pjson::unique_ptr rt = pjson::parse(j.toString());
+    pjson_test::Parsed rt = pjson_test::parse(j.toString());
     CHECK(rt != nullptr);
     expectDouble(*rt, 3.141592653589793);
 }
@@ -104,11 +105,11 @@ TEST(compact_round_trip_reproduces) {
     o["nested"]["deep"]["deeper"] = std::string("value");
 
     std::string compact = o.toString();
-    pjson::unique_ptr p1 = pjson::parse(compact);
+    pjson_test::Parsed p1 = pjson_test::parse(compact);
     CHECK(p1 != nullptr);
     CHECK_EQ(p1->toString(), compact);
     // A second generation is identical (idempotent).
-    pjson::unique_ptr p2 = pjson::parse(p1->toString());
+    pjson_test::Parsed p2 = pjson_test::parse(p1->toString());
     CHECK(p2 != nullptr);
     CHECK_EQ(p2->toString(), compact);
 }
@@ -130,7 +131,7 @@ TEST(pretty_reparses_to_same_compact) {
     std::string pretty = o.toString(prettyOpts);
     CHECK_NE(compact, pretty); // formatting differs
 
-    pjson::unique_ptr pp = pjson::parse(pretty);
+    pjson_test::Parsed pp = pjson_test::parse(pretty);
     CHECK(pp != nullptr);
     CHECK_EQ(pp->toString(), compact);          // same data
     CHECK_EQ(pp->toString(prettyOpts), pretty); // pretty is idempotent
@@ -142,29 +143,29 @@ TEST(pretty_reparses_to_same_compact) {
 TEST(empty_structures_round_trip) {
     pjson a;
     a.resetTo(pjson::jsonArray);
-    pjson::unique_ptr ra = pjson::parse(a.toString());
+    pjson_test::Parsed ra = pjson_test::parse(a.toString());
     CHECK(ra != nullptr);
     CHECK_EQ(ra->getType(), pjson::jsonArray);
     CHECK_EQ(ra->toString(), a.toString());
 
     pjson m;
     m.resetTo(pjson::jsonObject);
-    pjson::unique_ptr rm = pjson::parse(m.toString());
+    pjson_test::Parsed rm = pjson_test::parse(m.toString());
     CHECK(rm != nullptr);
     CHECK_EQ(rm->getType(), pjson::jsonObject);
 
     pjson n;
     CHECK_EQ(n.toString(), std::string("null"));
-    pjson::unique_ptr rn = pjson::parse(n.toString());
+    pjson_test::Parsed rn = pjson_test::parse(n.toString());
     CHECK(rn != nullptr);
     CHECK_EQ(rn->getType(), pjson::jsonNull);
 }
 
 TEST(nested_empty_containers_round_trip) {
-    pjson::unique_ptr p = pjson::parse("{\"a\":[],\"b\":{},\"c\":[[],{}]}");
+    pjson_test::Parsed p = pjson_test::parse("{\"a\":[],\"b\":{},\"c\":[[],{}]}");
     CHECK(p != nullptr);
     std::string compact = p->toString();
-    pjson::unique_ptr p2 = pjson::parse(compact);
+    pjson_test::Parsed p2 = pjson_test::parse(compact);
     CHECK(p2 != nullptr);
     CHECK_EQ(p2->toString(), compact);
 }
@@ -295,7 +296,7 @@ TEST(fuzz_round_trip_is_stable) {
 
         // Compact: parse(serialize(x)) must reproduce serialize(x) exactly.
         std::string compact = doc.toString();
-        pjson::unique_ptr rc = pjson::parse(compact);
+        pjson_test::Parsed rc = pjson_test::parse(compact);
         CHECK(rc != nullptr);
         if (rc) {
             CHECK_EQ(rc->toString(), compact);
@@ -303,7 +304,7 @@ TEST(fuzz_round_trip_is_stable) {
 
         // Pretty: must re-parse to the same compact form.
         std::string pretty = doc.toString(prettyOpts);
-        pjson::unique_ptr rp = pjson::parse(pretty);
+        pjson_test::Parsed rp = pjson_test::parse(pretty);
         CHECK(rp != nullptr);
         if (rp) {
             CHECK_EQ(rp->toString(), compact);
@@ -323,11 +324,11 @@ TEST(fuzz_never_throws_on_arbitrary_bytes) {
         int n = len(rng);
         for (int i = 0; i < n; ++i)
             s += static_cast<char>(byte(rng));
-        pjson::unique_ptr p = pjson::parse(s); // must not throw
+        pjson_test::Parsed p = pjson_test::parse(s); // must not throw
         if (p) {
             // If it parsed, it must re-serialize and re-parse consistently.
             std::string out = p->toString();
-            pjson::unique_ptr p2 = pjson::parse(out);
+            pjson_test::Parsed p2 = pjson_test::parse(out);
             CHECK(p2 != nullptr);
             if (p2) {
                 CHECK_EQ(p2->toString(), out);

@@ -102,6 +102,12 @@ namespace {
             return true;
         }
 
+        bool onUInt(uint64_t value) override {
+            mark(7);
+            mix(value);
+            return true;
+        }
+
         // Canonical serialization gives floating-point values a stable byte representation.
         bool onDouble(double value) override {
             mark(5);
@@ -144,18 +150,15 @@ namespace {
 
         // Contiguous DOM parsing provides the baseline status and value.
         pjson::ParseError bufferError;
-        pjson::unique_ptr buffered =
-            pjson::parse(input.c_str(), input.size(), bufferError, options);
-        pjson_fuzz::require(static_cast<bool>(buffered) == bufferError.ok);
+        pjson buffered = pjson::parse(input.c_str(), input.size(), bufferError, options);
 
         // Chunk boundaries must not affect DOM acceptance or serialized output.
         ChunkedStream domInput(input, chunkSize);
         pjson::ParseError streamError;
-        pjson::unique_ptr streamed = pjson::parseStream(domInput, streamError, options);
-        pjson_fuzz::require(static_cast<bool>(streamed) == streamError.ok);
-        pjson_fuzz::require(static_cast<bool>(buffered) == static_cast<bool>(streamed));
-        if (buffered)
-            pjson_fuzz::require(buffered->toString() == streamed->toString());
+        pjson streamed = pjson::parseStream(domInput, streamError, options);
+        pjson_fuzz::require(bufferError.ok == streamError.ok);
+        if (bufferError.ok)
+            pjson_fuzz::require(buffered.toString() == streamed.toString());
 
         // Capture the SAX trace from the same contiguous baseline input.
         DigestHandler bufferHandler;
@@ -172,7 +175,7 @@ namespace {
             pjson::parseSaxStream(saxInput, streamHandler, saxStreamError, options);
         pjson_fuzz::require(saxStream == saxStreamError.ok);
         pjson_fuzz::require(saxBuffer == saxStream);
-        pjson_fuzz::require(static_cast<bool>(buffered) == saxBuffer);
+        pjson_fuzz::require(bufferError.ok == saxBuffer);
         // Failure can be detected before any callbacks for a bounded in-memory
         // input but only after prefix callbacks for a stream, so compare traces
         // only when both parsers consumed the complete document successfully.

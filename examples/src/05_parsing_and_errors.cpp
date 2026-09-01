@@ -19,12 +19,12 @@ using namespace ByteDance;
 // location. Reporting parse APIs reset ParseError on entry.
 static void tryParse(const char* label, const std::string& text, const pjson::ParseOptions& opt) {
     pjson::ParseError err;
-    auto doc = pjson::parse(text, err, opt);
+    pjson doc = pjson::parse(text, err, opt);
     std::cout << label << ": ";
-    if (doc) {
+    if (err.ok) {
         pjson::SerializeOptions compact;
         compact.maxOutputBytes = size_t(64) * 1024 * 1024;
-        std::cout << "OK -> " << doc->toString(compact) << "\n";
+        std::cout << "OK -> " << doc.toString(compact) << "\n";
     } else {
         std::cout << "FAILED at " << err.line << ':' << err.column << " (byte " << err.offset
                   << ", " << err.message << ")\n";

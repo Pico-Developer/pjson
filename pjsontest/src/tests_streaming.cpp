@@ -411,7 +411,7 @@ TEST(streaming_sax_null_stream_buffer_reports_read_failure) {
 TEST(streaming_sax_number_range_matches_dom_parser) {
     const char* overflows[] = {"1e400", "-1e400"};
     for (size_t i = 0; i < sizeof(overflows) / sizeof(overflows[0]); ++i) {
-        CHECK(pjson::parse(overflows[i]) == nullptr);
+        CHECK(pjson_test::parse(overflows[i]) == nullptr);
         NumberHandler handler;
         pjson::ParseError err;
         CHECK(!pjson::parseSax(overflows[i], handler, err));
@@ -427,7 +427,7 @@ TEST(streaming_sax_number_range_matches_dom_parser) {
 
     const char* accepted[] = {"1e-400", "4.9406564584124654e-324"};
     for (size_t i = 0; i < sizeof(accepted) / sizeof(accepted[0]); ++i) {
-        pjson::unique_ptr dom = pjson::parse(accepted[i]);
+        pjson_test::Parsed dom = pjson_test::parse(accepted[i]);
         CHECK(dom != nullptr);
         NumberHandler handler;
         pjson::ParseError err;

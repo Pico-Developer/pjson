@@ -33,22 +33,26 @@
  * preserve the destination allocator. Storage transfer and swap are O(1) only
  * between values with the same allocator; use canSwap() when allocator
  * provenance may differ. Every DOM parse() and parseStream() overload returns
- * pjson::unique_ptr so pjson::ValueDeleter can release the root through its
- * originating allocator. An empty pointer reports a parse failure.
+ * the parsed document by value, bound to the chosen allocator and freed on
+ * destruction; pass a pjson::ParseError to distinguish failure from a
+ * successfully parsed literal null.
  *
  * operator[] is the auto-vivifying builder API. For observation without
- * mutation, use find(), findPointer(), hasKey(), hasIndex(), or tryGet().
+ * mutation, use find(), findPointer(), hasKey(), hasIndex(), at(), contains(),
+ * forEachMember()/forEachElement(), or tryGet().
  * tryGet() requires the requested stored type and leaves its output unchanged
- * on failure; only an integer-to-double widening conversion is permitted.
- * Containers expose query
+ * on failure; integer-to-double widening and exact signed/unsigned integer
+ * reads are permitted. Containers expose query
  * and child-lookup operations rather than their raw storage types.
  *
- * getType() distinguishes jsonNumberInt from jsonNumberDouble and reports
- * objects as jsonObject. Numeric assignment and append overloads accept
- * int64_t or double. Configure serialization through SerializeOptions; the
- * compact toString() and write() overloads take no formatting boolean, and
- * SerializeOptions::maxOutputBytes bounds generated output. PatchOptions
- * bounds transactional JSON Patch and Merge Patch amplification. Invalid UTF-8
+ * getType() distinguishes jsonNumberInt, jsonNumberUInt, and jsonNumberDouble
+ * and reports objects as jsonObject. Numeric assignment and append overloads
+ * accept int64_t, uint64_t, or double. Configure serialization through
+ * SerializeOptions; the compact toString() and write() overloads take no
+ * formatting boolean, and SerializeOptions::maxOutputBytes bounds generated
+ * output. A stored non-finite double fails serialization by default; select an
+ * explicit SerializeOptions::NonFinitePolicy to map it. PatchOptions bounds
+ * transactional JSON Patch and Merge Patch amplification. Invalid UTF-8
  * and logical output-size failures are detected before write() emits bytes.
  *
  * @see https://github.com/Pico-Developer/pjson/tree/main/docs Tutorials
@@ -68,15 +72,23 @@
  */
 
 /**
- * @struct ByteDance::pjson::ValueDeleter
- * @brief Stateless deleter for owning roots returned by DOM parsing.
+ * @class ByteDance::pJsonSchemaValidator
+ * @brief Validates pjson values against a JSON-Schema-subset schema.
  *
- * The deleter obtains allocator provenance from the value. It does not own or
- * extend the allocator's lifetime.
+ * pJsonSchemaValidator is a standalone helper declared in <pjson_schema.h> and
+ * built from pjson_schema.cpp. It is a pure consumer of pjson's public API and
+ * never touches the DOM's internal storage, so the core pjson class carries no
+ * schema or regex machinery and applications that do not validate never link it.
+ * Construct one validator from a schema (deep-copied on construction) and reuse
+ * it to validate many instances; validation never throws and never mutates its
+ * inputs.
+ *
+ * @see ByteDance::pJsonSchemaValidator::Options
+ * @see ByteDance::pJsonSchemaValidator::Error
  */
 
 /**
- * @struct ByteDance::pjson::SchemaOptions
+ * @struct ByteDance::pJsonSchemaValidator::Options
  * @brief Bounds schema-validation work and controls optional format checks.
  *
  * Recursive validation depth defaults to an absolute hard ceiling of 64. A
@@ -84,6 +96,11 @@
  * caller configuration can make recursive keyword evaluation exceed the
  * conservative native-stack bound. Other zero-valued validation budgets retain their
  * documented hard ceilings; only regex byte limits use zero as unlimited.
+ */
+
+/**
+ * @struct ByteDance::pJsonSchemaValidator::Error
+ * @brief One schema-validation failure: a JSON Pointer path and a message.
  */
 
 /**

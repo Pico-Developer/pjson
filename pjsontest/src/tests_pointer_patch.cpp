@@ -48,8 +48,8 @@ namespace {
     }
 
     // Parses fixed test fixtures while still recording a normal harness failure on bad setup.
-    pjson::unique_ptr parseChecked(const char* text) {
-        pjson::unique_ptr doc = parse(text);
+    pjson_test::Parsed parseChecked(const char* text) {
+        pjson_test::Parsed doc = parse(text);
         CHECK(doc != nullptr);
         return doc;
     }
@@ -62,7 +62,7 @@ namespace {
     }
 
     // Canonical RFC 6901 object containing every token-escaping example.
-    pjson::unique_ptr makeRfc6901ExampleDoc() {
+    pjson_test::Parsed makeRfc6901ExampleDoc() {
         return parseChecked(
             R"({"foo":["bar","baz"],"":0,"a/b":1,"c%d":2,"e^f":3,"g|h":4,"i\\j":5,"k\"l":6," ":7,"m~n":8})");
     }
@@ -128,9 +128,9 @@ TEST(patch_options_defaults_are_finite) {
 // RFC 6901 pointer examples and escaping
 //===----------------------------------------------------------------------===//
 TEST(pointer_rfc6901_examples) {
-    pjson::unique_ptr doc = makeRfc6901ExampleDoc();
+    pjson_test::Parsed doc = makeRfc6901ExampleDoc();
 
-    CHECK(doc->findPointer("") == doc.get());
+    CHECK(doc->findPointer("") == &*doc);
     CHECK_EQ(doc->findPointer("/foo")->size(), size_t(2));
     CHECK_EQ(mustGetString(*doc->findPointer("/foo/0")), std::string("bar"));
     CHECK_EQ(mustGetInt(*doc->findPointer("/")), int64_t(0));
@@ -145,7 +145,7 @@ TEST(pointer_rfc6901_examples) {
 }
 
 TEST(pointer_char_ptr_and_const_overloads_work) {
-    pjson::unique_ptr doc = makeRfc6901ExampleDoc();
+    pjson_test::Parsed doc = makeRfc6901ExampleDoc();
     const pjson& cdoc = *doc;
 
     const pjson* cnode = cdoc.findPointer("/foo/1");
@@ -181,7 +181,7 @@ TEST(pointer_empty_token_after_slash_is_empty_key) {
 // Pointer errors and non-vivifying behavior
 //===----------------------------------------------------------------------===//
 TEST(pointer_invalid_syntax_requires_leading_slash_or_empty) {
-    pjson::unique_ptr doc = parseChecked(R"({"foo":1})");
+    pjson_test::Parsed doc = parseChecked(R"({"foo":1})");
     pjson::PointerError err;
     CHECK(doc->findPointer("foo", err) == nullptr);
     CHECK(!err.ok);
@@ -190,7 +190,7 @@ TEST(pointer_invalid_syntax_requires_leading_slash_or_empty) {
 }
 
 TEST(pointer_invalid_escape_sequences_fail) {
-    pjson::unique_ptr doc = parseChecked(R"({"foo":1})");
+    pjson_test::Parsed doc = parseChecked(R"({"foo":1})");
 
     pjson::PointerError badDigit;
     CHECK(doc->findPointer("/~2", badDigit) == nullptr);
@@ -204,7 +204,7 @@ TEST(pointer_invalid_escape_sequences_fail) {
 }
 
 TEST(pointer_missing_target_reports_error) {
-    pjson::unique_ptr doc = parseChecked(R"({"foo":1})");
+    pjson_test::Parsed doc = parseChecked(R"({"foo":1})");
     pjson::PointerError err;
     CHECK(doc->findPointer("/bar", err) == nullptr);
     CHECK(!err.ok);
@@ -215,7 +215,7 @@ TEST(pointer_missing_target_reports_error) {
 }
 
 TEST(pointer_expected_container_reports_error) {
-    pjson::unique_ptr doc = parseChecked(R"({"foo":1})");
+    pjson_test::Parsed doc = parseChecked(R"({"foo":1})");
     pjson::PointerError err;
     CHECK(doc->findPointer("/foo/bar", err) == nullptr);
     CHECK(!err.ok);
@@ -225,7 +225,7 @@ TEST(pointer_expected_container_reports_error) {
 }
 
 TEST(pointer_invalid_array_index_reports_error) {
-    pjson::unique_ptr doc = parseChecked(R"(["x","y"])");
+    pjson_test::Parsed doc = parseChecked(R"(["x","y"])");
 
     pjson::PointerError leadingZero;
     CHECK(doc->findPointer("/01", leadingZero) == nullptr);
@@ -241,7 +241,7 @@ TEST(pointer_invalid_array_index_reports_error) {
 }
 
 TEST(pointer_array_index_out_of_range_reports_error) {
-    pjson::unique_ptr doc = parseChecked(R"(["x","y"])");
+    pjson_test::Parsed doc = parseChecked(R"(["x","y"])");
     pjson::PointerError err;
     CHECK(doc->findPointer("/2", err) == nullptr);
     CHECK(!err.ok);
@@ -250,7 +250,7 @@ TEST(pointer_array_index_out_of_range_reports_error) {
 }
 
 TEST(pointer_append_token_is_not_lookup) {
-    pjson::unique_ptr doc = parseChecked(R"(["x","y"])");
+    pjson_test::Parsed doc = parseChecked(R"(["x","y"])");
     pjson::PointerError err;
     CHECK(doc->findPointer("/-", err) == nullptr);
     CHECK(!err.ok);
@@ -294,7 +294,7 @@ TEST(pointer_mutable_find_can_edit_existing_node_without_creating_new_ones) {
 }
 
 TEST(pointer_error_object_is_reused_across_failure_and_success) {
-    pjson::unique_ptr doc = parseChecked(R"({"foo":1})");
+    pjson_test::Parsed doc = parseChecked(R"({"foo":1})");
     pjson::PointerError err;
 
     CHECK(doc->findPointer("/missing", err) == nullptr);
@@ -395,7 +395,7 @@ TEST(patch_invalid_op_is_rejected) {
 // JSON Patch: add
 //===----------------------------------------------------------------------===//
 TEST(patch_add_object_member_and_replace_existing_member) {
-    pjson::unique_ptr doc = parseChecked(R"({"a":1})");
+    pjson_test::Parsed doc = parseChecked(R"({"a":1})");
     pjson patch = makePatchArray();
     patch[0]["op"] = "add";
     patch[0]["path"] = "/b";
@@ -411,7 +411,7 @@ TEST(patch_add_object_member_and_replace_existing_member) {
 }
 
 TEST(patch_add_root_replaces_whole_document) {
-    pjson::unique_ptr doc = parseChecked(R"({"a":1})");
+    pjson_test::Parsed doc = parseChecked(R"({"a":1})");
     pjson value;
     value["replaced"] = true;
     value["n"] = static_cast<int64_t>(7);
@@ -426,7 +426,7 @@ TEST(patch_add_root_replaces_whole_document) {
 }
 
 TEST(patch_add_array_inserts_and_appends) {
-    pjson::unique_ptr doc = parseChecked(R"(["a","c"])");
+    pjson_test::Parsed doc = parseChecked(R"(["a","c"])");
     pjson patch = makePatchArray();
     patch[0]["op"] = "add";
     patch[0]["path"] = "/1";
@@ -440,7 +440,7 @@ TEST(patch_add_array_inserts_and_appends) {
 }
 
 TEST(patch_add_requires_existing_parent_and_valid_array_index) {
-    pjson::unique_ptr doc = parseChecked(R"({"a":[1,2]})");
+    pjson_test::Parsed doc = parseChecked(R"({"a":[1,2]})");
     const pjson before(*doc);
 
     pjson missingParent = makePatchArray();
@@ -475,7 +475,7 @@ TEST(patch_add_requires_existing_parent_and_valid_array_index) {
 // JSON Patch: remove / replace
 //===----------------------------------------------------------------------===//
 TEST(patch_remove_object_member_and_array_element) {
-    pjson::unique_ptr doc = parseChecked(R"({"a":1,"arr":["x","y","z"]})");
+    pjson_test::Parsed doc = parseChecked(R"({"a":1,"arr":["x","y","z"]})");
     pjson patch = makePatchArray();
     patch[0]["op"] = "remove";
     patch[0]["path"] = "/a";
@@ -487,7 +487,7 @@ TEST(patch_remove_object_member_and_array_element) {
 }
 
 TEST(patch_remove_root_succeeds_and_leaves_null) {
-    pjson::unique_ptr doc = parseChecked(R"({"a":1})");
+    pjson_test::Parsed doc = parseChecked(R"({"a":1})");
     pjson patch = makePatchArray();
     patch[0]["op"] = "remove";
     patch[0]["path"] = "";
@@ -499,7 +499,7 @@ TEST(patch_remove_root_succeeds_and_leaves_null) {
 }
 
 TEST(patch_remove_and_replace_require_existing_target) {
-    pjson::unique_ptr doc = parseChecked(R"({"a":[1,2],"b":1})");
+    pjson_test::Parsed doc = parseChecked(R"({"a":[1,2],"b":1})");
     const pjson before(*doc);
 
     pjson removeMissing = makePatchArray();
@@ -521,7 +521,7 @@ TEST(patch_remove_and_replace_require_existing_target) {
 }
 
 TEST(patch_replace_root_and_existing_member) {
-    pjson::unique_ptr doc = parseChecked(R"({"a":1,"b":2})");
+    pjson_test::Parsed doc = parseChecked(R"({"a":1,"b":2})");
     pjson replaceWhole;
     replaceWhole["done"] = true;
 
@@ -541,7 +541,7 @@ TEST(patch_replace_root_and_existing_member) {
 // JSON Patch: move / copy / test
 //===----------------------------------------------------------------------===//
 TEST(patch_move_object_member_and_same_array_reorder) {
-    pjson::unique_ptr doc = parseChecked(R"({"obj":{"a":1},"arr":["a","b","c"]})");
+    pjson_test::Parsed doc = parseChecked(R"({"obj":{"a":1},"arr":["a","b","c"]})");
     pjson patch = makePatchArray();
     patch[0]["op"] = "move";
     patch[0]["from"] = "/obj/a";
@@ -555,7 +555,7 @@ TEST(patch_move_object_member_and_same_array_reorder) {
 }
 
 TEST(patch_move_from_must_exist_and_cannot_move_into_descendant) {
-    pjson::unique_ptr doc = parseChecked(R"({"a":{"b":1},"x":0})");
+    pjson_test::Parsed doc = parseChecked(R"({"a":{"b":1},"x":0})");
     const pjson before(*doc);
 
     pjson missingFrom = makePatchArray();
@@ -587,7 +587,7 @@ TEST(patch_move_from_must_exist_and_cannot_move_into_descendant) {
 }
 
 TEST(patch_copy_duplicates_value_without_mutating_source) {
-    pjson::unique_ptr doc = parseChecked(R"({"src":{"nested":[1,2]},"dst":0})");
+    pjson_test::Parsed doc = parseChecked(R"({"src":{"nested":[1,2]},"dst":0})");
     pjson patch = makePatchArray();
     patch[0]["op"] = "copy";
     patch[0]["from"] = "/src";
@@ -604,7 +604,7 @@ TEST(patch_copy_duplicates_value_without_mutating_source) {
 }
 
 TEST(patch_test_uses_rfc_numeric_equality_and_fails_atomically) {
-    pjson::unique_ptr doc = parseChecked(R"({"n":1,"arr":[{"x":1.0}]})");
+    pjson_test::Parsed doc = parseChecked(R"({"n":1,"arr":[{"x":1.0}]})");
     const pjson before(*doc);
 
     pjson pass = makePatchArray();
@@ -633,14 +633,14 @@ TEST(patch_test_uses_rfc_numeric_equality_and_fails_atomically) {
 }
 
 TEST(patch_test_numeric_equality_above_2pow53_and_rounded_inequality) {
-    pjson::unique_ptr exact = parseChecked(R"({"n":9007199254740994})");
+    pjson_test::Parsed exact = parseChecked(R"({"n":9007199254740994})");
     pjson patch = makePatchArray();
     patch[0]["op"] = "test";
     patch[0]["path"] = "/n";
     patch[0]["value"] = double(9007199254740994.0);
     CHECK(exact->applyPatch(patch));
 
-    pjson::unique_ptr rounded = parseChecked(R"({"n":9007199254740993})");
+    pjson_test::Parsed rounded = parseChecked(R"({"n":9007199254740993})");
     pjson bad = makePatchArray();
     bad[0]["op"] = "test";
     bad[0]["path"] = "/n";
@@ -652,7 +652,7 @@ TEST(patch_test_numeric_equality_above_2pow53_and_rounded_inequality) {
 }
 
 TEST(patch_copy_and_move_can_replace_root) {
-    pjson::unique_ptr copied = parseChecked(R"({"a":{"b":1},"x":2})");
+    pjson_test::Parsed copied = parseChecked(R"({"a":{"b":1},"x":2})");
     pjson copyPatch = makePatchArray();
     copyPatch[0]["op"] = "copy";
     copyPatch[0]["from"] = "/a";
@@ -660,7 +660,7 @@ TEST(patch_copy_and_move_can_replace_root) {
     CHECK(copied->applyPatch(copyPatch));
     CHECK_EQ(copied->toString(), std::string("{\"b\":1}"));
 
-    pjson::unique_ptr moved = parseChecked(R"({"a":{"b":1},"x":2})");
+    pjson_test::Parsed moved = parseChecked(R"({"a":{"b":1},"x":2})");
     pjson movePatch = makePatchArray();
     movePatch[0]["op"] = "move";
     movePatch[0]["from"] = "/a";
@@ -673,7 +673,7 @@ TEST(patch_copy_and_move_can_replace_root) {
 // JSON Patch: invalid path / from syntax and full rollback
 //===----------------------------------------------------------------------===//
 TEST(patch_invalid_path_and_from_bubble_structured_errors) {
-    pjson::unique_ptr doc = parseChecked(R"({"a":1,"b":2})");
+    pjson_test::Parsed doc = parseChecked(R"({"a":1,"b":2})");
     const pjson before(*doc);
 
     pjson badPath = makePatchArray();
@@ -698,7 +698,7 @@ TEST(patch_invalid_path_and_from_bubble_structured_errors) {
 }
 
 TEST(patch_error_object_is_reused_across_failure_and_success) {
-    pjson::unique_ptr doc = parseChecked(R"({"a":1})");
+    pjson_test::Parsed doc = parseChecked(R"({"a":1})");
     pjson::PatchError err;
 
     pjson failing = makePatchArray();
@@ -726,7 +726,7 @@ TEST(patch_error_object_is_reused_across_failure_and_success) {
 }
 
 TEST(patch_atomic_rollback_on_late_failure) {
-    pjson::unique_ptr doc = parseChecked(R"({"a":1,"arr":[10,20]})");
+    pjson_test::Parsed doc = parseChecked(R"({"a":1,"arr":[10,20]})");
     const pjson before(*doc);
     pjson patch = makePatchArray();
     patch[0]["op"] = "replace";
@@ -747,7 +747,7 @@ TEST(patch_atomic_rollback_on_late_failure) {
 }
 
 TEST(patch_resource_limits_are_atomic_and_error_is_reusable) {
-    pjson::unique_ptr doc = parseChecked(R"({"a":1,"nested":{"x":2}})");
+    pjson_test::Parsed doc = parseChecked(R"({"a":1,"nested":{"x":2}})");
     const pjson before(*doc);
     pjson patch = makePatchArray();
     patch[0]["op"] = "replace";
@@ -787,7 +787,7 @@ TEST(patch_resource_limits_are_atomic_and_error_is_reusable) {
 }
 
 TEST(patch_large_string_value_and_copy_respect_clone_byte_limit) {
-    pjson::unique_ptr doc = parseChecked(R"({"src":"small","keep":1})");
+    pjson_test::Parsed doc = parseChecked(R"({"src":"small","keep":1})");
     const pjson before(*doc);
     const std::string large(4096, 'x');
 
@@ -831,7 +831,7 @@ TEST(patch_work_limit_bounds_deep_pointer_and_test_equality) {
 }
 
 TEST(patch_zero_limits_use_safe_ceilings_for_small_documents) {
-    pjson::unique_ptr doc = parseChecked(R"({"a":1})");
+    pjson_test::Parsed doc = parseChecked(R"({"a":1})");
     pjson patch = makePatchArray();
     patch[0]["op"] = "replace";
     patch[0]["path"] = "/a";
@@ -869,9 +869,9 @@ TEST(patch_deep_pointer_and_patch_are_iterative_safe) {
 // JSON Merge Patch (RFC 7396)
 //===----------------------------------------------------------------------===//
 TEST(merge_patch_rfc7396_primary_example) {
-    pjson::unique_ptr doc = parseChecked(
+    pjson_test::Parsed doc = parseChecked(
         R"({"title":"Goodbye!","author":{"givenName":"John","familyName":"Doe"},"tags":["example","sample"],"content":"This will be unchanged"})");
-    pjson::unique_ptr patch = parseChecked(
+    pjson_test::Parsed patch = parseChecked(
         R"({"title":"Hello!","phoneNumber":"+01-123-456-7890","author":{"familyName":null},"tags":["example"]})");
 
     pjson::PatchError err;
@@ -884,25 +884,25 @@ TEST(merge_patch_rfc7396_primary_example) {
 }
 
 TEST(merge_patch_null_members_remove_object_keys) {
-    pjson::unique_ptr doc = parseChecked(R"({"a":1,"b":2,"c":{"x":1,"y":2}})");
-    pjson::unique_ptr patch = parseChecked(R"({"a":null,"c":{"y":null}})");
+    pjson_test::Parsed doc = parseChecked(R"({"a":1,"b":2,"c":{"x":1,"y":2}})");
+    pjson_test::Parsed patch = parseChecked(R"({"a":null,"c":{"y":null}})");
 
     CHECK(doc->applyMergePatch(*patch));
     CHECK_EQ(doc->toString(), std::string("{\"b\":2,\"c\":{\"x\":1}}"));
 }
 
 TEST(merge_patch_non_object_patch_replaces_entire_target) {
-    pjson::unique_ptr arrayDoc = parseChecked(R"({"a":1})");
-    pjson::unique_ptr arrayPatch = parseChecked(R"([1,2,3])");
+    pjson_test::Parsed arrayDoc = parseChecked(R"({"a":1})");
+    pjson_test::Parsed arrayPatch = parseChecked(R"([1,2,3])");
     CHECK(arrayDoc->applyMergePatch(*arrayPatch));
     CHECK_EQ(arrayDoc->toString(), std::string("[1,2,3]"));
 
-    pjson::unique_ptr nullDoc = parseChecked(R"({"a":1})");
+    pjson_test::Parsed nullDoc = parseChecked(R"({"a":1})");
     pjson nullPatch;
     CHECK(nullDoc->applyMergePatch(nullPatch));
     CHECK(nullDoc->isNull());
 
-    pjson::unique_ptr scalarDoc = parseChecked(R"({"a":1})");
+    pjson_test::Parsed scalarDoc = parseChecked(R"({"a":1})");
     pjson scalarPatch;
     scalarPatch = static_cast<int64_t>(7);
     CHECK(scalarDoc->applyMergePatch(scalarPatch));
@@ -912,33 +912,33 @@ TEST(merge_patch_non_object_patch_replaces_entire_target) {
 TEST(merge_patch_when_target_is_non_object_object_patch_starts_from_empty_object) {
     pjson doc;
     doc = static_cast<int64_t>(5);
-    pjson::unique_ptr patch = parseChecked(R"({"a":1,"b":{"c":2}})");
+    pjson_test::Parsed patch = parseChecked(R"({"a":1,"b":{"c":2}})");
 
     CHECK(doc.applyMergePatch(*patch));
     CHECK_EQ(doc.toString(), std::string("{\"a\":1,\"b\":{\"c\":2}}"));
 }
 
 TEST(merge_patch_arrays_are_replaced_wholesale_not_merged_elementwise) {
-    pjson::unique_ptr doc = parseChecked(R"({"arr":[1,2,3],"obj":{"arr":[4,5]}})");
-    pjson::unique_ptr patch = parseChecked(R"({"arr":[9],"obj":{"arr":[7,8,9]}})");
+    pjson_test::Parsed doc = parseChecked(R"({"arr":[1,2,3],"obj":{"arr":[4,5]}})");
+    pjson_test::Parsed patch = parseChecked(R"({"arr":[9],"obj":{"arr":[7,8,9]}})");
 
     CHECK(doc->applyMergePatch(*patch));
     CHECK_EQ(doc->toString(), std::string("{\"arr\":[9],\"obj\":{\"arr\":[7,8,9]}}"));
 }
 
 TEST(merge_patch_empty_object_is_no_op) {
-    pjson::unique_ptr doc = parseChecked(R"({"a":1,"b":{"c":2}})");
+    pjson_test::Parsed doc = parseChecked(R"({"a":1,"b":{"c":2}})");
     const pjson before(*doc);
-    pjson::unique_ptr patch = parseChecked(R"({})");
+    pjson_test::Parsed patch = parseChecked(R"({})");
 
     CHECK(doc->applyMergePatch(*patch));
     CHECK(*doc == before);
 }
 
 TEST(merge_patch_resource_limits_are_atomic) {
-    pjson::unique_ptr doc = parseChecked(R"({"keep":1,"nested":{"old":true}})");
+    pjson_test::Parsed doc = parseChecked(R"({"keep":1,"nested":{"old":true}})");
     const pjson before(*doc);
-    pjson::unique_ptr patch = parseChecked(R"({"nested":{"new":2},"added":3})");
+    pjson_test::Parsed patch = parseChecked(R"({"nested":{"new":2},"added":3})");
 
     pjson::PatchOptions options;
     options.maxWork = 1;
@@ -956,7 +956,7 @@ TEST(merge_patch_resource_limits_are_atomic) {
 
 TEST(merge_patch_preserves_resource_limit_from_member_processing) {
     pjson target;
-    pjson::unique_ptr patch = parseChecked(R"({"a":1})");
+    pjson_test::Parsed patch = parseChecked(R"({"a":1})");
     pjson::PatchOptions options;
     options.maxClonedNodes = 1;
     pjson::PatchError error;

@@ -12,11 +12,12 @@ int main() {
     ByteDance::pjson value;
     value["packaged"] = true;
 
-    const ByteDance::pjson::unique_ptr parsed = ByteDance::pjson::parse(value.toString());
+    ByteDance::pjson::ParseError error;
+    const ByteDance::pjson parsed = ByteDance::pjson::parse(value.toString(), error);
     bool packaged = false;
     // A successful package preserves the sentinel property through a round
     // trip and keeps the public header macro in sync with the linked library.
-    return parsed && parsed->tryGet("packaged", packaged) && packaged &&
+    return error.ok && parsed.tryGet("packaged", packaged) && packaged &&
                    std::string(ByteDance::pjson::getVersion()) == PJSON_VERSION
                ? 0
                : 1;

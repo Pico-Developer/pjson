@@ -319,8 +319,11 @@ TEST(copyfrom_deep_copies) {
     expectDouble(a["arr"][0], 1.5);
 }
 
-TEST(unique_ptr_owns_ordinary_root_values) {
-    pjson::unique_ptr owned(new pjson());
+TEST(ordinary_new_root_frees_correctly) {
+    // A `new pjson()` root is freed correctly by a std::unique_ptr with the
+    // default deleter: an ordinary (non-allocator-owned) node destructs and
+    // returns its storage through operator delete.
+    std::unique_ptr<pjson> owned(new pjson());
     CHECK(owned != nullptr);
     (*owned)["value"] = static_cast<int64_t>(1);
     expectInt((*owned)["value"], int64_t(1));

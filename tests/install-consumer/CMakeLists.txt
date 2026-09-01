@@ -12,10 +12,10 @@ option(PJSON_CONSUMER_USE_PKGCONFIG "Consume pjson through pkg-config" OFF)
 
 if(PJSON_CONSUMER_USE_PKGCONFIG)
     find_package(PkgConfig REQUIRED)
-    pkg_check_modules(pjson REQUIRED IMPORTED_TARGET pjson>=1.0)
+    pkg_check_modules(pjson REQUIRED IMPORTED_TARGET pjson>=2.0)
     set(PJSON_CONSUMER_TARGET PkgConfig::pjson)
 else()
-    find_package(pjson 1.0 CONFIG REQUIRED)
+    find_package(pjson 2.0 CONFIG REQUIRED)
     set(PJSON_CONSUMER_TARGET pjson::pjson)
 endif()
 

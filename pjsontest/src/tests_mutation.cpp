@@ -19,6 +19,7 @@
 //
 #include "pjson.h"
 #include "test_harness.h"
+#include "test_util.h"
 #include <string>
 #include <vector>
 
@@ -62,7 +63,7 @@ TEST(mutate_build_deep_mixed_tree) {
     expectString(j["user"]["history"][1]["action"], "logout");
 
     // The whole thing round-trips.
-    pjson::unique_ptr rt = pjson::parse(j.toString());
+    pjson_test::Parsed rt = pjson_test::parse(j.toString());
     CHECK(rt != nullptr);
     CHECK(*rt == j);
 }
@@ -204,7 +205,8 @@ TEST(mutate_clear_and_rebuild) {
 // Editing a parsed document in place, then re-serializing.
 //===----------------------------------------------------------------------===//
 TEST(mutate_edit_parsed_document) {
-    pjson::unique_ptr p = pjson::parse(R"({ "list":[10,20,30], "meta":{"v":1}, "drop":true })");
+    pjson_test::Parsed p =
+        pjson_test::parse(R"({ "list":[10,20,30], "meta":{"v":1}, "drop":true })");
     CHECK(p != nullptr);
     pjson& j = *p;
 
@@ -221,7 +223,7 @@ TEST(mutate_edit_parsed_document) {
     CHECK(!j.hasKey("drop"));
 
     // Still valid JSON after all the edits.
-    pjson::unique_ptr rt = pjson::parse(j.toString());
+    pjson_test::Parsed rt = pjson_test::parse(j.toString());
     CHECK(rt != nullptr);
     CHECK(*rt == j);
 }
@@ -416,7 +418,7 @@ TEST(mutate_full_lifecycle) {
     CHECK_EQ(doc.size(), size_t(1));
 
     // Everything still serializes and round-trips.
-    pjson::unique_ptr rt = pjson::parse(doc.toString());
+    pjson_test::Parsed rt = pjson_test::parse(doc.toString());
     CHECK(rt != nullptr);
     CHECK(*rt == doc);
 }

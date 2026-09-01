@@ -34,6 +34,14 @@ ${SRC_DIR}/tests_allocator.cpp
 ${SRC_DIR}/tests_streaming.cpp
 ${SRC_DIR}/tests_serialize_access.cpp
 ${SRC_DIR}/tests_pointer_patch.cpp
+${SRC_DIR}/tests_embedded_nul.cpp
+${SRC_DIR}/tests_aliasing.cpp
+${SRC_DIR}/tests_numbers.cpp
+${SRC_DIR}/tests_depth_frontends.cpp
+${SRC_DIR}/tests_error_model.cpp
+${SRC_DIR}/tests_dom_api.cpp
+${SRC_DIR}/tests_serialize_limits.cpp
+${SRC_DIR}/tests_schema_2020.cpp
 )
 
 # ---- Test target --------------------------------------------------------

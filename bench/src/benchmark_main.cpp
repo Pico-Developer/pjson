@@ -40,7 +40,7 @@ namespace {
         std::string name;
         std::string origin;
         std::string jsonText;
-        pjson::unique_ptr parsed;
+        pjson parsed;
     };
 
     // Per-operation timing summary. Times remain in nanoseconds internally and
@@ -115,6 +115,10 @@ namespace {
                 int64_t number = 0;
                 return value.tryGet(number) ? mixHash(hash, static_cast<std::uint64_t>(number))
                                             : hash;
+            }
+            case pjson::jsonNumberUInt: {
+                std::uint64_t number = 0;
+                return value.tryGet(number) ? mixHash(hash, number) : hash;
             }
             case pjson::jsonNumberDouble: {
                 double number = 0.0;
@@ -300,12 +304,13 @@ namespace {
         workload.name = name;
         workload.origin = origin;
         workload.jsonText = jsonText;
-        workload.parsed = pjson::parse(workload.jsonText);
-        if (!workload.parsed) {
+        pjson::ParseError parseError;
+        workload.parsed = pjson::parse(workload.jsonText, parseError);
+        if (!parseError.ok) {
             std::cerr << "failed to parse benchmark workload: " << name << "\n";
             std::exit(1);
         }
-        consumeHash(traversePjson(*workload.parsed));
+        consumeHash(traversePjson(workload.parsed));
         consumeSize(workload.jsonText.size());
         return workload;
     }
@@ -346,8 +351,9 @@ namespace {
                 continue;
             }
 
-            pjson::unique_ptr parsed = pjson::parse(jsonText);
-            if (!parsed) {
+            pjson::ParseError parseError;
+            pjson parsed = pjson::parse(jsonText, parseError);
+            if (!parseError.ok) {
                 std::cerr << "warning: benchmark input is not valid JSON and was skipped: "
                           << inputFiles[i] << "\n";
                 continue;
@@ -545,28 +551,29 @@ namespace {
             const Workload& workload = workloads[i];
 
             const RunStats parseStats = measure(workload.jsonText, [&workload]() {
-                pjson::unique_ptr parsed = pjson::parse(workload.jsonText);
-                if (!parsed) {
+                pjson::ParseError parseError;
+                pjson parsed = pjson::parse(workload.jsonText, parseError);
+                if (!parseError.ok) {
                     std::cerr << "benchmark parse failed for " << workload.name << "\n";
                     std::exit(1);
                 }
-                consumeHash(traversePjson(*parsed));
+                consumeHash(traversePjson(parsed));
             });
             recordResult(results, i, "pjson", "parse", parseStats);
 
             const RunStats serializeStats = measure(workload.jsonText, [&workload]() {
-                const std::string jsonText = workload.parsed->toString();
+                const std::string jsonText = workload.parsed.toString();
                 consumeSize(jsonText.size());
                 consumeHash(hashString(jsonText));
             });
             recordResult(results, i, "pjson", "serialize", serializeStats);
 
             const RunStats traverseStats = measure(
-                workload.jsonText, [&workload]() { consumeHash(traversePjson(*workload.parsed)); });
+                workload.jsonText, [&workload]() { consumeHash(traversePjson(workload.parsed)); });
             recordResult(results, i, "pjson", "traverse", traverseStats);
 
             const RunStats copyStats = measure(workload.jsonText, [&workload]() {
-                pjson copy(*workload.parsed);
+                pjson copy(workload.parsed);
                 consumeHash(traversePjson(copy));
                 consumeSize(copy.size());
             });

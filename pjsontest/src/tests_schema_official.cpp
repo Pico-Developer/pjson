@@ -20,6 +20,7 @@
 //
 #include "pjson.h"
 #include "test_harness.h"
+#include "test_util.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -46,11 +47,11 @@ using namespace ByteDance;
 
 namespace {
 
-    pjson::unique_ptr parseJson(const std::string& text, pjson::ParseError* error = NULL) {
+    pjson_test::Parsed parseJson(const std::string& text, pjson::ParseError* error = NULL) {
         if (error != NULL) {
-            return pjson::parse(text, *error, pjson::ParseOptions());
+            return pjson_test::parse(text, *error, pjson::ParseOptions());
         }
-        return pjson::parse(text, pjson::ParseOptions());
+        return pjson_test::parse(text, pjson::ParseOptions());
     }
 
     // Every upstream file is either fully run, fully skipped, or filtered by named groups.
@@ -361,7 +362,7 @@ namespace {
         return desc->tryGet(value) ? value : std::string("<missing description>");
     }
 
-    std::string firstErrorSummary(const std::vector<pjson::SchemaError>& errors) {
+    std::string firstErrorSummary(const std::vector<pjson_test::SchemaError>& errors) {
         if (errors.empty()) {
             return std::string("no schema errors reported");
         }
@@ -404,8 +405,8 @@ namespace {
             return;
         }
 
-        std::vector<pjson::SchemaError> errors;
-        const bool actual = data->validate(schema, errors);
+        std::vector<pjson_test::SchemaError> errors;
+        const bool actual = pjson_test::schemaValidate(*data, schema, errors);
         if (actual == expected) {
             return;
         }
@@ -552,7 +553,7 @@ TEST(schema_official_draft7_optional) {
         }
 
         pjson::ParseError parseError;
-        pjson::unique_ptr suite = parseJson(readFile(path), &parseError);
+        pjson_test::Parsed suite = parseJson(readFile(path), &parseError);
         if (!suite) {
             std::ostringstream os;
             os << rules[i].relativePath << " failed to parse";

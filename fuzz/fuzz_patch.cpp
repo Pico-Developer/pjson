@@ -17,27 +17,29 @@ namespace {
                               const std::string& patchInput, size_t variantOffset) {
         const pjson::ParseOptions options =
             pjson_fuzz::parseOptionsVariant(data, size, variantOffset);
-        pjson::unique_ptr original = pjson::parse(documentInput, options);
-        pjson::unique_ptr patch = pjson::parse(patchInput, options);
-        if (!original || !patch)
+        pjson::ParseError originalError;
+        pjson::ParseError patchError;
+        pjson original = pjson::parse(documentInput, originalError, options);
+        pjson patch = pjson::parse(patchInput, patchError, options);
+        if (!originalError.ok || !patchError.ok)
             return;
 
-        const bool useJsonPatch = patch->isArray();
-        pjson working = *original;
+        const bool useJsonPatch = patch.isArray();
+        pjson working = original;
         pjson::PatchError detailedError;
-        const bool detailedOk = useJsonPatch ? working.applyPatch(*patch, detailedError)
-                                             : working.applyMergePatch(*patch, detailedError);
+        const bool detailedOk = useJsonPatch ? working.applyPatch(patch, detailedError)
+                                             : working.applyMergePatch(patch, detailedError);
         pjson_fuzz::require(detailedOk == detailedError.ok);
 
-        pjson simple = *original;
+        pjson simple = original;
         const bool simpleOk =
-            useJsonPatch ? simple.applyPatch(*patch) : simple.applyMergePatch(*patch);
+            useJsonPatch ? simple.applyPatch(patch) : simple.applyMergePatch(patch);
         pjson_fuzz::require(simpleOk == detailedOk);
 
         if (!detailedOk) {
             // Failure must leave the document unchanged because patch application is atomic.
-            pjson_fuzz::require(working == *original);
-            pjson_fuzz::require(simple == *original);
+            pjson_fuzz::require(working == original);
+            pjson_fuzz::require(simple == original);
             return;
         }
 
@@ -46,16 +48,18 @@ namespace {
         const std::string compact = working.toString();
         pjson::ParseOptions compactOptions = options;
         compactOptions.maxInputBytes = compact.size();
-        pjson::unique_ptr reparsed = pjson::parse(compact, compactOptions);
-        pjson_fuzz::require(reparsed != nullptr);
-        pjson_fuzz::require(*reparsed == working);
+        pjson::ParseError reparsedError;
+        pjson reparsed = pjson::parse(compact, reparsedError, compactOptions);
+        pjson_fuzz::require(reparsedError.ok);
+        pjson_fuzz::require(reparsed == working);
 
         const std::string pretty = working.toString(pjson::SerializeOptions::prettyPrinted());
         pjson::ParseOptions prettyOptions = options;
         prettyOptions.maxInputBytes = pretty.size();
-        pjson::unique_ptr prettyParsed = pjson::parse(pretty, prettyOptions);
-        pjson_fuzz::require(prettyParsed != nullptr);
-        pjson_fuzz::require(*prettyParsed == working);
+        pjson::ParseError prettyError;
+        pjson prettyParsed = pjson::parse(pretty, prettyError, prettyOptions);
+        pjson_fuzz::require(prettyError.ok);
+        pjson_fuzz::require(prettyParsed == working);
     }
 
 } // namespace

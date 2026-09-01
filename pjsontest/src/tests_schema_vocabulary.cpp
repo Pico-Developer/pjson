@@ -18,6 +18,7 @@
 //
 #include "pjson.h"
 #include "test_harness.h"
+#include "test_util.h"
 #include <string>
 #include <vector>
 
@@ -25,29 +26,29 @@ using namespace ByteDance;
 
 namespace {
 
-    pjson::unique_ptr parseJson(const char* text) {
-        return pjson::parse(std::string(text));
+    pjson_test::Parsed parseJson(const char* text) {
+        return pjson_test::parse(std::string(text));
     }
 
     // Parse-and-validate adapters keep the vocabulary tables focused on schema behavior.
     bool validates(const char* schemaText, const char* dataText,
-                   std::vector<pjson::SchemaError>& errors,
-                   const pjson::SchemaOptions& opts = pjson::SchemaOptions()) {
-        pjson::unique_ptr schema = parseJson(schemaText);
-        pjson::unique_ptr data = parseJson(dataText);
+                   std::vector<pjson_test::SchemaError>& errors,
+                   const pjson_test::SchemaOptions& opts = pjson_test::SchemaOptions()) {
+        pjson_test::Parsed schema = parseJson(schemaText);
+        pjson_test::Parsed data = parseJson(dataText);
         if (!schema || !data)
             return false;
-        return data->validate(*schema, errors, opts);
+        return pjson_test::schemaValidate(*data, *schema, errors, opts);
     }
 
     bool validates(const char* schemaText, const char* dataText,
-                   const pjson::SchemaOptions& opts = pjson::SchemaOptions()) {
-        std::vector<pjson::SchemaError> errors;
+                   const pjson_test::SchemaOptions& opts = pjson_test::SchemaOptions()) {
+        std::vector<pjson_test::SchemaError> errors;
         return validates(schemaText, dataText, errors, opts);
     }
 
     // Error predicates assert semantic diagnostics without coupling tests to error ordering.
-    bool hasErrorAt(const std::vector<pjson::SchemaError>& errors, const std::string& path) {
+    bool hasErrorAt(const std::vector<pjson_test::SchemaError>& errors, const std::string& path) {
         for (const auto& err : errors) {
             if (err.path == path)
                 return true;
@@ -55,7 +56,7 @@ namespace {
         return false;
     }
 
-    bool hasMessageContaining(const std::vector<pjson::SchemaError>& errors,
+    bool hasMessageContaining(const std::vector<pjson_test::SchemaError>& errors,
                               const std::string& needle) {
         for (const auto& err : errors) {
             if (err.message.find(needle) != std::string::npos)
@@ -64,7 +65,7 @@ namespace {
         return false;
     }
 
-    bool hasErrorAtWithMessage(const std::vector<pjson::SchemaError>& errors,
+    bool hasErrorAtWithMessage(const std::vector<pjson_test::SchemaError>& errors,
                                const std::string& path, const std::string& needle) {
         for (const auto& err : errors) {
             if (err.path == path && err.message.find(needle) != std::string::npos)
@@ -74,32 +75,32 @@ namespace {
     }
 
     // Small option factories make each validation-budget test state only its changed knob.
-    pjson::SchemaOptions optionsWithFormatValidation(bool enabled) {
-        pjson::SchemaOptions opts;
+    pjson_test::SchemaOptions optionsWithFormatValidation(bool enabled) {
+        pjson_test::SchemaOptions opts;
         opts.validateFormats = enabled;
         return opts;
     }
 
-    pjson::SchemaOptions optionsWithDepthBudget(size_t maxDepth) {
-        pjson::SchemaOptions opts;
+    pjson_test::SchemaOptions optionsWithDepthBudget(size_t maxDepth) {
+        pjson_test::SchemaOptions opts;
         opts.maxValidationDepth = maxDepth;
         return opts;
     }
 
-    pjson::SchemaOptions optionsWithRefBudget(size_t maxRefs) {
-        pjson::SchemaOptions opts;
+    pjson_test::SchemaOptions optionsWithRefBudget(size_t maxRefs) {
+        pjson_test::SchemaOptions opts;
         opts.maxRefResolutions = maxRefs;
         return opts;
     }
 
-    pjson::SchemaOptions optionsWithWorkBudget(size_t maxWork) {
-        pjson::SchemaOptions opts;
+    pjson_test::SchemaOptions optionsWithWorkBudget(size_t maxWork) {
+        pjson_test::SchemaOptions opts;
         opts.maxValidationWork = maxWork;
         return opts;
     }
 
-    pjson::SchemaOptions optionsWithErrorBudget(size_t maxErrors) {
-        pjson::SchemaOptions opts;
+    pjson_test::SchemaOptions optionsWithErrorBudget(size_t maxErrors) {
+        pjson_test::SchemaOptions opts;
         opts.maxErrors = maxErrors;
         return opts;
     }
@@ -203,7 +204,7 @@ TEST(schema_vocab_ref_local_defs_and_definitions) {
         "additionalProperties": false
     })";
     CHECK(validates(defsSchema, R"({"id":7})"));
-    std::vector<pjson::SchemaError> errors;
+    std::vector<pjson_test::SchemaError> errors;
     CHECK(!validates(defsSchema, R"({"id":0})", errors));
     CHECK(hasErrorAtWithMessage(errors, "/id", "minimum"));
 
@@ -223,7 +224,7 @@ TEST(schema_vocab_ref_local_defs_and_definitions) {
 }
 
 TEST(schema_vocab_ref_unresolved_malformed_and_nonlocal) {
-    std::vector<pjson::SchemaError> errors;
+    std::vector<pjson_test::SchemaError> errors;
 
     CHECK(!validates(R"({"$ref":"#/$defs/missing"})", "1", errors));
     CHECK(hasErrorAt(errors, std::string("")));
@@ -241,7 +242,7 @@ TEST(schema_vocab_ref_unresolved_malformed_and_nonlocal) {
 }
 
 TEST(schema_vocab_ref_cycle_is_reported) {
-    std::vector<pjson::SchemaError> errors;
+    std::vector<pjson_test::SchemaError> errors;
     CHECK(!validates(R"({"$ref":"#"})", R"({"anything":1})", errors));
     CHECK(hasErrorAt(errors, std::string("")));
     CHECK(hasMessageContaining(errors, "cycle"));
@@ -259,8 +260,8 @@ TEST(schema_vocab_ref_validation_depth_budget) {
         }
     })";
 
-    pjson::SchemaOptions shallow = optionsWithDepthBudget(2);
-    std::vector<pjson::SchemaError> errors;
+    pjson_test::SchemaOptions shallow = optionsWithDepthBudget(2);
+    std::vector<pjson_test::SchemaError> errors;
     CHECK(!validates(kRecursiveNodeSchema, data, errors, shallow));
     CHECK(hasMessageContaining(errors, "depth"));
 }
@@ -277,67 +278,67 @@ TEST(schema_vocab_ref_resolution_budget) {
         }
     })";
 
-    pjson::SchemaOptions limited = optionsWithRefBudget(2);
-    std::vector<pjson::SchemaError> errors;
+    pjson_test::SchemaOptions limited = optionsWithRefBudget(2);
+    std::vector<pjson_test::SchemaError> errors;
     CHECK(!validates(kRecursiveNodeSchema, data, errors, limited));
     CHECK(hasMessageContaining(errors, "ref"));
     CHECK(hasMessageContaining(errors, "budget"));
 }
 
 TEST(schema_vocab_ref_chain_still_obeys_depth_budget) {
-    pjson::SchemaOptions opts = optionsWithDepthBudget(4);
+    pjson_test::SchemaOptions opts = optionsWithDepthBudget(4);
     opts.maxRefResolutions = 16;
     const pjson schema = makeReferenceChainSchema(4);
     pjson instance;
     instance = int64_t(1);
 
-    std::vector<pjson::SchemaError> errors;
-    CHECK(!instance.validate(schema, errors, opts));
+    std::vector<pjson_test::SchemaError> errors;
+    CHECK(!pjson_test::schemaValidate(instance, schema, errors, opts));
     CHECK(hasMessageContaining(errors, "depth"));
     CHECK(hasMessageContaining(errors, "budget"));
 }
 
 TEST(schema_vocab_ref_zero_depth_uses_hard_ceiling) {
-    pjson::SchemaOptions opts = optionsWithDepthBudget(0);
-    CHECK_EQ(pjson::SchemaOptions().maxValidationDepth, size_t(64));
+    pjson_test::SchemaOptions opts = optionsWithDepthBudget(0);
+    CHECK_EQ(pjson_test::SchemaOptions().maxValidationDepth, size_t(64));
     const pjson schema = makeNestedPropertySchema(64);
     const pjson instance = makeNestedPropertyInstance(64);
 
-    std::vector<pjson::SchemaError> errors;
-    CHECK(!instance.validate(schema, errors, opts));
+    std::vector<pjson_test::SchemaError> errors;
+    CHECK(!pjson_test::schemaValidate(instance, schema, errors, opts));
     CHECK(hasMessageContaining(errors, "depth"));
 }
 
 TEST(schema_vocab_ref_requested_depth_is_clamped_to_hard_ceiling) {
-    pjson::SchemaOptions opts = optionsWithDepthBudget(2048);
+    pjson_test::SchemaOptions opts = optionsWithDepthBudget(2048);
     const pjson withinLimitSchema = makeNestedPropertySchema(63);
     const pjson withinLimitInstance = makeNestedPropertyInstance(63);
     const pjson schema = makeNestedPropertySchema(64);
     const pjson instance = makeNestedPropertyInstance(64);
 
-    CHECK(withinLimitInstance.validate(withinLimitSchema, opts));
-    std::vector<pjson::SchemaError> errors;
-    CHECK(!instance.validate(schema, errors, opts));
+    CHECK(pjson_test::schemaValidate(withinLimitInstance, withinLimitSchema, opts));
+    std::vector<pjson_test::SchemaError> errors;
+    CHECK(!pjson_test::schemaValidate(instance, schema, errors, opts));
     CHECK(hasMessageContaining(errors, "depth"));
 }
 
 TEST(schema_vocab_ref_zero_resolution_budget_allows_hard_ceiling) {
-    pjson::SchemaOptions opts = optionsWithRefBudget(0);
+    pjson_test::SchemaOptions opts = optionsWithRefBudget(0);
     const pjson schema = makeBranchingWorkSchema(10);
     pjson instance;
     instance = int64_t(1);
 
-    CHECK(instance.validate(schema, opts));
+    CHECK(pjson_test::schemaValidate(instance, schema, opts));
 }
 
 TEST(schema_vocab_ref_zero_resolution_budget_uses_hard_ceiling) {
-    pjson::SchemaOptions opts = optionsWithRefBudget(0);
+    pjson_test::SchemaOptions opts = optionsWithRefBudget(0);
     const pjson schema = makeBranchingWorkSchema(11);
     pjson instance;
     instance = int64_t(1);
 
-    std::vector<pjson::SchemaError> errors;
-    CHECK(!instance.validate(schema, errors, opts));
+    std::vector<pjson_test::SchemaError> errors;
+    CHECK(!pjson_test::schemaValidate(instance, schema, errors, opts));
     CHECK(hasMessageContaining(errors, "ref"));
     CHECK(hasMessageContaining(errors, "budget"));
 }
@@ -353,7 +354,7 @@ TEST(schema_vocab_ref_ignores_sibling_keywords_draft07) {
     })";
 
     CHECK(validates(schema, R"("ok")"));
-    std::vector<pjson::SchemaError> errors;
+    std::vector<pjson_test::SchemaError> errors;
     CHECK(!validates(schema, "5", errors));
     CHECK(hasMessageContaining(errors, "string"));
     CHECK(!hasMessageContaining(errors, "expected type integer"));
@@ -373,7 +374,7 @@ TEST(schema_vocab_pattern_properties_basic_matching) {
     })";
 
     CHECK(validates(schema, R"({"S_COUNT":1,"plain":"x"})"));
-    std::vector<pjson::SchemaError> errors;
+    std::vector<pjson_test::SchemaError> errors;
     CHECK(!validates(schema, R"({"S_COUNT":"bad"})", errors));
     CHECK(hasErrorAt(errors, "/S_COUNT"));
 }
@@ -389,7 +390,7 @@ TEST(schema_vocab_pattern_properties_and_properties_both_apply) {
         }
     })";
 
-    std::vector<pjson::SchemaError> errors;
+    std::vector<pjson_test::SchemaError> errors;
     CHECK(!validates(schema, R"({"S_NAME":5})", errors));
     CHECK(hasErrorAtWithMessage(errors, "/S_NAME", "string"));
 }
@@ -403,7 +404,7 @@ TEST(schema_vocab_property_names_reports_property_path) {
     })";
 
     CHECK(validates(schema, R"({"OK":1,"ALSO_OK":2})"));
-    std::vector<pjson::SchemaError> errors;
+    std::vector<pjson_test::SchemaError> errors;
     CHECK(!validates(schema, R"({"bad/key":1})", errors));
     CHECK(hasErrorAt(errors, "/bad~1key"));
     CHECK(hasMessageContaining(errors, "pattern"));
@@ -418,7 +419,7 @@ TEST(schema_vocab_dependent_required) {
     })";
 
     CHECK(validates(schema, R"({"credit_card":"1234","billing_address":"x","name":"Ada"})"));
-    std::vector<pjson::SchemaError> errors;
+    std::vector<pjson_test::SchemaError> errors;
     CHECK(!validates(schema, R"({"credit_card":"1234"})", errors));
     CHECK(hasErrorAt(errors, std::string("")));
     CHECK(hasMessageContaining(errors, "billing_address"));
@@ -434,7 +435,7 @@ TEST(schema_vocab_dependencies_array_form) {
     })";
 
     CHECK(validates(schema, R"({"credit_card":"1234","billing_address":"x"})"));
-    std::vector<pjson::SchemaError> errors;
+    std::vector<pjson_test::SchemaError> errors;
     CHECK(!validates(schema, R"({"credit_card":"1234"})", errors));
     CHECK(hasErrorAt(errors, std::string("")));
     CHECK(hasMessageContaining(errors, "billing_address"));
@@ -455,7 +456,7 @@ TEST(schema_vocab_dependencies_schema_form) {
 
     CHECK(validates(schema, R"({"credit_card":"1234","billing_address":"123 Main"})"));
 
-    std::vector<pjson::SchemaError> errors;
+    std::vector<pjson_test::SchemaError> errors;
     CHECK(!validates(schema, R"({"credit_card":"1234"})", errors));
     CHECK(hasErrorAt(errors, std::string("")));
     CHECK(hasMessageContaining(errors, "billing_address"));
@@ -476,7 +477,7 @@ TEST(schema_vocab_additional_properties_schema_applies_only_to_unmatched_keys) {
 
     CHECK(validates(schema, R"({"declared":"ok","extra":2})"));
 
-    std::vector<pjson::SchemaError> errors;
+    std::vector<pjson_test::SchemaError> errors;
     CHECK(!validates(schema, R"({"declared":"ok","extra":"bad"})", errors));
     CHECK(hasErrorAtWithMessage(errors, "/extra", "integer"));
     CHECK(!hasErrorAt(errors, "/declared"));
@@ -496,7 +497,7 @@ TEST(schema_vocab_object_keyword_interactions) {
 
     CHECK(validates(schema, R"({"fixed":"ok","dyn_count":3})"));
 
-    std::vector<pjson::SchemaError> errors;
+    std::vector<pjson_test::SchemaError> errors;
     CHECK(!validates(schema, R"({"fixed":"ok","dyn_count":"bad","extra":1})", errors));
     CHECK(hasErrorAtWithMessage(errors, "/dyn_count", "integer"));
     CHECK(hasErrorAtWithMessage(errors, "/extra", "additional property"));
@@ -546,7 +547,7 @@ TEST(schema_vocab_format_ipv6) {
 }
 
 TEST(schema_vocab_format_ipv6_rejects_ipv4_prefix_before_compression) {
-    std::vector<pjson::SchemaError> errors;
+    std::vector<pjson_test::SchemaError> errors;
     CHECK(!validates(R"({"format":"ipv6"})", R"("192.0.2.128::")", errors));
     CHECK(hasMessageContaining(errors, "format") || hasMessageContaining(errors, "ipv6"));
 }
@@ -561,11 +562,11 @@ TEST(schema_vocab_format_uuid) {
 TEST(schema_vocab_format_unknown_is_ignored_and_disable_option_skips_known_formats) {
     CHECK(validates(R"({"type":"string","format":"unknown-future-format"})", R"("anything")"));
 
-    pjson::SchemaOptions disabled = optionsWithFormatValidation(false);
+    pjson_test::SchemaOptions disabled = optionsWithFormatValidation(false);
     CHECK(validates(R"({"type":"string","format":"date"})", R"("not-a-date")", disabled));
 
-    pjson::SchemaOptions enabled = optionsWithFormatValidation(true);
-    std::vector<pjson::SchemaError> errors;
+    pjson_test::SchemaOptions enabled = optionsWithFormatValidation(true);
+    std::vector<pjson_test::SchemaError> errors;
     CHECK(!validates(R"({"type":"string","format":"date"})", R"("not-a-date")", errors, enabled));
     CHECK(hasMessageContaining(errors, "format"));
 }
@@ -588,7 +589,7 @@ TEST(schema_multiple_of_precision_decimal_exact_cases) {
 }
 
 TEST(schema_multiple_of_precision_decimal_traps) {
-    std::vector<pjson::SchemaError> errors;
+    std::vector<pjson_test::SchemaError> errors;
     CHECK(!validates(R"({"multipleOf":0.1})", "0.30000000000000004", errors));
     CHECK(hasMessageContaining(errors, "multiple"));
 
@@ -609,7 +610,7 @@ TEST(schema_multiple_of_non_positive_schema_values_are_ignored) {
 }
 
 TEST(schema_multiple_of_precision_overflow_case_from_official_suite) {
-    std::vector<pjson::SchemaError> errors;
+    std::vector<pjson_test::SchemaError> errors;
     CHECK(!validates(R"({"type":"integer","multipleOf":0.123456789})", "1e308", errors));
     CHECK(hasMessageContaining(errors, "multiple"));
 }
@@ -620,17 +621,17 @@ TEST(schema_multiple_of_precision_exact_mixed_numeric_const_enum) {
 
     pjson exactInt;
     exactInt = int64_t(9007199254740993LL);
-    CHECK(exactInt.validate(constSchema));
+    CHECK(pjson_test::schemaValidate(exactInt, constSchema));
 
     pjson roundedDouble;
     roundedDouble = double(9007199254740992.0);
-    CHECK(!roundedDouble.validate(constSchema));
+    CHECK(!pjson_test::schemaValidate(roundedDouble, constSchema));
 
     pjson enumSchema;
     enumSchema["enum"][0] = int64_t(9007199254740993LL);
     enumSchema["enum"][1] = int64_t(5);
-    CHECK(exactInt.validate(enumSchema));
-    CHECK(!roundedDouble.validate(enumSchema));
+    CHECK(pjson_test::schemaValidate(exactInt, enumSchema));
+    CHECK(!pjson_test::schemaValidate(roundedDouble, enumSchema));
 }
 
 TEST(schema_validation_work_budget) {
@@ -645,26 +646,26 @@ TEST(schema_validation_work_budget) {
     })";
     const char* data = R"({"items":[1,2,3,4,5,6,7,8,9,10]})";
 
-    pjson::SchemaOptions constrained = optionsWithWorkBudget(1);
-    std::vector<pjson::SchemaError> errors;
+    pjson_test::SchemaOptions constrained = optionsWithWorkBudget(1);
+    std::vector<pjson_test::SchemaError> errors;
     CHECK(!validates(schema, data, errors, constrained));
     CHECK(hasMessageContaining(errors, "work") || hasMessageContaining(errors, "budget"));
 }
 
 TEST(schema_validation_work_budget_charges_deep_equality_unicode_and_additional_properties) {
-    pjson::SchemaOptions tiny = optionsWithWorkBudget(16);
-    std::vector<pjson::SchemaError> errors;
+    pjson_test::SchemaOptions tiny = optionsWithWorkBudget(16);
+    std::vector<pjson_test::SchemaError> errors;
 
     const pjson deep = makeDeepValue(32, int64_t(1));
     pjson constSchema;
     constSchema["const"] = deep;
-    CHECK(!deep.validate(constSchema, errors, tiny));
+    CHECK(!pjson_test::schemaValidate(deep, constSchema, errors, tiny));
     CHECK(hasMessageContaining(errors, "work") || hasMessageContaining(errors, "budget"));
 
     errors.clear();
     pjson enumSchema;
     enumSchema["enum"][0] = deep;
-    CHECK(!deep.validate(enumSchema, errors, tiny));
+    CHECK(!pjson_test::schemaValidate(deep, enumSchema, errors, tiny));
     CHECK(hasMessageContaining(errors, "work") || hasMessageContaining(errors, "budget"));
 
     errors.clear();
@@ -673,7 +674,7 @@ TEST(schema_validation_work_budget_charges_deep_equality_unicode_and_additional_
     pjson duplicateDeep;
     duplicateDeep[0] = deep;
     duplicateDeep[1] = deep;
-    CHECK(!duplicateDeep.validate(uniqueSchema, errors, tiny));
+    CHECK(!pjson_test::schemaValidate(duplicateDeep, uniqueSchema, errors, tiny));
     CHECK(hasMessageContaining(errors, "work") || hasMessageContaining(errors, "budget"));
 
     errors.clear();
@@ -684,7 +685,7 @@ TEST(schema_validation_work_budget_charges_deep_equality_unicode_and_additional_
     for (size_t i = 0; i < 32; ++i)
         unicode += "\xF0\x9F\x98\x80";
     unicodeValue = unicode;
-    CHECK(!unicodeValue.validate(unicodeSchema, errors, tiny));
+    CHECK(!pjson_test::schemaValidate(unicodeValue, unicodeSchema, errors, tiny));
     CHECK(hasMessageContaining(errors, "work") || hasMessageContaining(errors, "budget"));
 
     errors.clear();
@@ -693,7 +694,7 @@ TEST(schema_validation_work_budget_charges_deep_equality_unicode_and_additional_
     pjson manyProperties;
     for (size_t i = 0; i < 32; ++i)
         manyProperties["key" + std::to_string(i)] = static_cast<int64_t>(i);
-    CHECK(!manyProperties.validate(additionalSchema, errors, tiny));
+    CHECK(!pjson_test::schemaValidate(manyProperties, additionalSchema, errors, tiny));
     CHECK(hasMessageContaining(errors, "work") || hasMessageContaining(errors, "budget"));
 }
 
@@ -705,20 +706,20 @@ TEST(schema_additional_properties_large_object_stays_within_work_budget) {
     for (size_t i = 0; i < propertyCount; ++i)
         instance["key" + std::to_string(i)] = static_cast<int64_t>(i);
 
-    pjson::SchemaOptions options = optionsWithWorkBudget(propertyCount * 4U + 16U);
-    CHECK(instance.validate(schema, options));
+    pjson_test::SchemaOptions options = optionsWithWorkBudget(propertyCount * 4U + 16U);
+    CHECK(pjson_test::schemaValidate(instance, schema, options));
 }
 
 TEST(schema_validation_zero_work_budget_uses_hard_ceiling) {
-    pjson::SchemaOptions opts = optionsWithWorkBudget(0);
+    pjson_test::SchemaOptions opts = optionsWithWorkBudget(0);
     opts.maxValidationDepth = 64;
     opts.maxRefResolutions = 2000000;
     const pjson schema = makeBranchingWorkSchema(20);
     pjson instance;
     instance = int64_t(1);
 
-    std::vector<pjson::SchemaError> errors;
-    CHECK(!instance.validate(schema, errors, opts));
+    std::vector<pjson_test::SchemaError> errors;
+    CHECK(!pjson_test::schemaValidate(instance, schema, errors, opts));
     CHECK(hasMessageContaining(errors, "work") || hasMessageContaining(errors, "budget"));
 }
 
@@ -735,20 +736,20 @@ TEST(schema_validation_error_budget) {
     })";
     const char* data = R"({"a":"x","b":"y"})";
 
-    pjson::SchemaOptions constrained = optionsWithErrorBudget(1);
-    std::vector<pjson::SchemaError> errors;
+    pjson_test::SchemaOptions constrained = optionsWithErrorBudget(1);
+    std::vector<pjson_test::SchemaError> errors;
     CHECK(!validates(schema, data, errors, constrained));
     CHECK(errors.size() <= size_t(1));
 }
 
 TEST(schema_anyof_scratch_errors_do_not_consume_public_error_budget) {
-    pjson::SchemaOptions options = optionsWithErrorBudget(1);
+    pjson_test::SchemaOptions options = optionsWithErrorBudget(1);
     const char* matchingLast =
         R"({"anyOf":[{"type":"string"},{"minimum":10},{"const":7},{"type":"integer"}]})";
     const char* matchingFirst =
         R"({"anyOf":[{"type":"integer"},{"type":"string"},{"minimum":10},{"const":7}]})";
 
-    std::vector<pjson::SchemaError> errors;
+    std::vector<pjson_test::SchemaError> errors;
     CHECK(validates(matchingLast, "5", errors, options));
     CHECK(errors.empty());
     CHECK(validates(matchingFirst, "5", errors, options));
@@ -756,13 +757,13 @@ TEST(schema_anyof_scratch_errors_do_not_consume_public_error_budget) {
 }
 
 TEST(schema_oneof_scratch_errors_do_not_consume_public_error_budget) {
-    pjson::SchemaOptions options = optionsWithErrorBudget(1);
+    pjson_test::SchemaOptions options = optionsWithErrorBudget(1);
     const char* matchingLast =
         R"({"oneOf":[{"type":"string"},{"minimum":10},{"const":7},{"type":"integer"}]})";
     const char* matchingFirst =
         R"({"oneOf":[{"type":"integer"},{"type":"string"},{"minimum":10},{"const":7}]})";
 
-    std::vector<pjson::SchemaError> errors;
+    std::vector<pjson_test::SchemaError> errors;
     CHECK(validates(matchingLast, "5", errors, options));
     CHECK(errors.empty());
     CHECK(validates(matchingFirst, "5", errors, options));
@@ -770,7 +771,7 @@ TEST(schema_oneof_scratch_errors_do_not_consume_public_error_budget) {
 }
 
 TEST(schema_not_scratch_error_leaves_budget_for_later_real_failure) {
-    pjson::SchemaOptions options = optionsWithErrorBudget(1);
+    pjson_test::SchemaOptions options = optionsWithErrorBudget(1);
     const char* schema = R"({
         "allOf": [
             {"not": {"type": "string"}},
@@ -778,7 +779,7 @@ TEST(schema_not_scratch_error_leaves_budget_for_later_real_failure) {
         ]
     })";
 
-    std::vector<pjson::SchemaError> errors;
+    std::vector<pjson_test::SchemaError> errors;
     CHECK(!validates(schema, "5", errors, options));
     CHECK_EQ(errors.size(), size_t(1));
     CHECK(hasMessageContaining(errors, "string"));
@@ -799,12 +800,12 @@ TEST(schema_speculative_branches_discard_large_hidden_error_sets) {
 
     pjson instance;
     instance.resetTo(pjson::jsonObject);
-    pjson::SchemaOptions options;
+    pjson_test::SchemaOptions options;
     options.maxErrors = 1;
     options.maxValidationWork = requiredCount * 4;
-    std::vector<pjson::SchemaError> errors;
+    std::vector<pjson_test::SchemaError> errors;
 
-    CHECK(instance.validate(anyOfSchema, errors, options));
+    CHECK(pjson_test::schemaValidate(instance, anyOfSchema, errors, options));
     CHECK(errors.empty());
 }
 
@@ -812,8 +813,8 @@ TEST(schema_validation_zero_error_budget_uses_hard_ceiling) {
     const char* schema = R"({"type":"object","required":["a","b","c"]})";
     const char* data = R"({})";
 
-    pjson::SchemaOptions opts = optionsWithErrorBudget(0);
-    std::vector<pjson::SchemaError> errors;
+    pjson_test::SchemaOptions opts = optionsWithErrorBudget(0);
+    std::vector<pjson_test::SchemaError> errors;
     CHECK(!validates(schema, data, errors, opts));
     CHECK(!errors.empty());
     CHECK(errors.size() <= size_t(100));

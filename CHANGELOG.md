@@ -9,6 +9,100 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases follow
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING (API):** JSON Schema validation is no longer a member of `pjson`.
+  The `pjson::validate()` overloads and the nested `pjson::SchemaError` /
+  `pjson::SchemaOptions` types are removed. Validation now lives in a standalone
+  `ByteDance::pJsonSchemaValidator` class declared in the new `<pjson_schema.h>`
+  header (built from `pjson_schema.cpp`). Compile a schema once —
+  `pJsonSchemaValidator v(schema[, pJsonSchemaValidator::Options()]);` — then
+  call `v.validate(instance[, errors])`. The former `SchemaError` and
+  `SchemaOptions` are now `pJsonSchemaValidator::Error` and
+  `pJsonSchemaValidator::Options`. The validator is a pure consumer of pjson's
+  public API and touches no library internals, so the core DOM no longer links
+  the schema/regex machinery. A new public `pjson::tryCompareNumber()` exposes
+  the exact cross-kind numeric ordering the validator needs.
+
+## [2.0.0] - 2026-08-31
+
+This release responds to the external production-readiness requirements captured
+in `docs/featurerequest.md`; see `docs/featurerequest-response.md` for a
+per-requirement disposition. It contains correctness fixes, an ABI-breaking
+numeric-model change, and new APIs, so it is a major version bump.
+
+### Added
+
+- Added an exact unsigned-integer representation (`jsonNumberUInt`): `uint64_t`
+  assignment/append/vectors, `isUInt()`, `isInteger()`, `tryGet(uint64_t&)`, the
+  `SaxHandler::onUInt(uint64_t)` event, and exact signed/unsigned/double
+  comparison and decimal serialization without converting through `double`.
+- Added a structured `ParseError::Code` category (syntax, invalid encoding,
+  duplicate key, number range, depth/input/node limits, allocation failure,
+  stream error, callback error, invalid argument) alongside the existing
+  message and byte/line/column coordinates.
+- Added non-allocating traversal: `forEachMember` and `forEachElement`
+  (const and mutable) that visit borrowed children without copying keys.
+- Added construction and mutation primitives: `null()`, `object()`, `array()`
+  factories, `operator=(std::nullptr_t)`, `pushBack()` (copy and move),
+  `insertOrAssign()`, `reserve()`, checked `at()` for keys and indices, and
+  `contains()`.
+- Added `SerializeOptions::NonFinitePolicy` (`RejectNonFinite` default,
+  `NonFiniteToNull`, `NonFiniteToString`) governing NaN/infinity output.
+- Added `ParseOptions::NumberPolicy` (`RejectUnrepresentableNumbers` default,
+  `AllowLossyNumbers`) governing numbers outside the exact 64-bit and binary64
+  ranges.
+- Added JSON Schema Draft 2020-12 applicator keywords to the validator:
+  `if`/`then`/`else`, `prefixItems`, `contains`/`minContains`/`maxContains`, and
+  `dependentSchemas`, plus a strict fail-closed subset mode
+  (`SchemaOptions::strict()` / `strictSubset`) that rejects unsupported standard
+  keywords instead of ignoring them.
+
+### Changed
+
+- **BREAKING (API):** `parse()` and `parseStream()` now return a `pjson` value
+  instead of `pjson::unique_ptr`; the `pjson::unique_ptr` typedef and
+  `ValueDeleter` are removed. Detect failure with a `ParseError` out-param
+  (`err.ok`) rather than a null check — the terse overloads return a JSON `null`
+  value on failure. Move the returned value to transfer ownership. This removes
+  the only smart pointer from the public API.
+- **BREAKING (ABI):** `pjson::jsonType` gained `jsonNumberUInt` and the value
+  storage grew a `uint64_t` member. Existing enumerator values are unchanged, but
+  the class layout changed; dependents must be rebuilt against this header.
+- **BREAKING (behavior):** integer tokens above `INT64_MAX` now parse to the
+  exact unsigned representation (up to `UINT64_MAX`) instead of a lossy `double`.
+  Tokens outside `[INT64_MIN, UINT64_MAX]`, and non-finite floating values, are
+  now rejected by default; opt in with `ParseOptions::AllowLossyNumbers`.
+- **BREAKING (behavior):** serializing a stored non-finite `double` now fails
+  with a structured error by default instead of silently emitting `null`. Use
+  `SerializeOptions::NonFiniteToNull` to keep the old behavior.
+- Object key access, lookup, `hasKey`, `erase`, and keyed `tryGet` are now
+  length-aware for `std::string`, preserving names containing embedded U+0000;
+  `const char*` overloads keep documented NUL-terminated behavior.
+- The parser now clamps a configured `maxDepth` to a stack-safe hard ceiling, so
+  even an `INT_MAX` request cannot overflow the native stack.
+
+### Fixed
+
+- Fixed a heap-use-after-free in move assignment when the source aliased an
+  ancestor or descendant of the destination; overlapping `swap()` is now a safe
+  no-op.
+- Rejected duplicate object keys are now reported immediately at the duplicate
+  key's own offset, before its value subtree is parsed or allocated.
+
+### Removed
+
+- Removed the public `pjson::unique_ptr` typedef and `pjson::ValueDeleter`;
+  parsing returns a `pjson` value. A `new pjson()` root is still freed by an
+  ordinary `std::unique_ptr<pjson>` or by normal scope.
+
+### Security
+
+- Made configurable nesting limits memory-safe: excessive depth returns a
+  structured resource-limit error rather than exhausting the stack, across the
+  string, byte-span, DOM-stream, buffered-SAX, and incremental-SAX front ends.
+
+
 ## [1.0.0] - 2026-08-31
 
 ### Added
@@ -119,7 +213,8 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases follow
 
 - Initial pjson source release.
 
-[Unreleased]: https://github.com/Pico-Developer/pjson/compare/1.0.0...HEAD
+[Unreleased]: https://github.com/Pico-Developer/pjson/compare/2.0.0...HEAD
+[2.0.0]: https://github.com/Pico-Developer/pjson/compare/1.0.0...2.0.0
 [1.0.0]: https://github.com/Pico-Developer/pjson/compare/release-0.0.3...1.0.0
 [0.0.3]: https://github.com/Pico-Developer/pjson/compare/release-0.0.2...release-0.0.3
 [0.0.2]: https://github.com/Pico-Developer/pjson/compare/release-0.0.1...release-0.0.2

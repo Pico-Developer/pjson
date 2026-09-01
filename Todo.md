@@ -13,6 +13,48 @@ cross-platform CI.
 
 ---
 
+## From the production-readiness review (docs/featurerequest.md)
+
+The core correctness gate (embedded-NUL keys, aliasing safety, exact unsigned
+integers, non-finite policy, stack-safe/equivalent parser front ends, early
+duplicate detection, structured error codes) shipped in 2.0.0. See
+`docs/featurerequest-response.md` for the full per-requirement disposition. The
+remaining, larger items are tracked here.
+
+### [ ] SCHEMA-2020 — Complete JSON Schema Draft 2020-12 as a gated module
+
+**What is done:** `if`/`then`/`else`, `prefixItems`,
+`contains`/`minContains`/`maxContains`, `dependentSchemas`, a strict
+fail-closed subset mode (`pJsonSchemaValidator::Options::strict()`), and a
+compiled/immutable validator object: schema validation now lives in the external
+`ByteDance::pJsonSchemaValidator` class (`<pjson_schema.h>` / `pjson_schema.cpp`)
+that consumes only pjson's public API and is constructed once per schema.
+
+**What remains (PJSON-SCHEMA-001/003/004/006):**
+`$schema`/dialect negotiation, `$id`/`$anchor`/`$dynamicAnchor`/`$dynamicRef`,
+`unevaluatedItems`/`unevaluatedProperties`, `$vocabulary`, an external resolver
+callback with cycle/byte/work budgets, and the pinned `draft2020-12`
+`JSON-Schema-Test-Suite` conformance gate in CI. Until these land, docs must
+keep saying "documented subset" and must not claim general 2020-12 conformance.
+
+### [ ] NUM-3-HARDENING — Prove finite double conversion (PJSON-NUM-003)
+
+Add randomized binary64 round-trip corpora, halfway/subnormal/exponent-extreme
+cases, and a documented correctly-rounded-conversion statement per supported
+standard library. The observable round-trip contract already holds.
+
+### [ ] PERF-BASELINE — Representative benchmarks and regression tracking
+
+PJSON-PERF-001/002/003: expand the benchmark matrix (wide objects, large
+arrays, string/escape/int/float-heavy), record environment metadata, and add
+regression reporting on controlled runners before enforcing budgets.
+
+### [ ] DOC-CONTRACT — Single consolidated behavioral contract (PJSON-DOC-001)
+
+One versioned reference covering value representations and numeric boundaries,
+strictness/limits, error/exception behavior per entry point, invalidation
+rules, allocator/aliasing/thread-safety, and per-standard conformance scope.
+
 ## Medium Priority
 
 ### [ ] MAINT-1 — Unify DOM and SAX parser grammar code

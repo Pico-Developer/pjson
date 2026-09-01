@@ -129,7 +129,7 @@ TEST(my_feature_does_x) {
 - `TEST(name) { ... }` registers a test automatically — no list to maintain.
 - `CHECK(expr)` fails the test if `expr` is false.
 - `CHECK_EQ(a, b)` checks equality and prints both values on failure.
-- `CHECK_PARSE_FAILS(text)` asserts that parsing `text` returns empty.
+- `CHECK_PARSE_FAILS(text)` asserts that parsing `text` reports a failure.
 
 There is no `main()` to edit; the runner discovers every `TEST` at startup.
 

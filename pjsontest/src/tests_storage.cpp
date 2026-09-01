@@ -18,6 +18,7 @@
 //
 #include "pjson.h"
 #include "test_harness.h"
+#include "test_util.h"
 
 #include <string>
 #include <type_traits>
@@ -268,7 +269,7 @@ TEST(storage_scalar_type_transitions_preserve_behavior) {
 }
 
 TEST(storage_scalar_parse_copy_move_and_serialize_round_trip) {
-    pjson::unique_ptr parsed = pjson::parse(R"({"i":1,"d":2.5,"b":true})");
+    pjson_test::Parsed parsed = pjson_test::parse(R"({"i":1,"d":2.5,"b":true})");
     CHECK(parsed != nullptr);
     expectInt((*parsed)["i"], int64_t(1));
     expectDouble((*parsed)["d"], 2.5);

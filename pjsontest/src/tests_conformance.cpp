@@ -20,6 +20,7 @@
 //
 #include "pjson.h"
 #include "test_harness.h"
+#include "test_util.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -80,7 +81,7 @@ namespace {
         ::pjson_test::current().checks += 1;
 
         pjson::ParseError err;
-        pjson::unique_ptr parsed = pjson::parse(tc.document, err, conformanceOptions());
+        pjson_test::Parsed parsed = pjson_test::parse(tc.document, err, conformanceOptions());
 
         if (tc.shouldParse) {
             if (parsed == nullptr) {
@@ -236,7 +237,7 @@ namespace {
         ::pjson_test::current().checks += 1;
 
         pjson::ParseError err;
-        pjson::unique_ptr parsed = pjson::parse(payload, err, conformanceOptions());
+        pjson_test::Parsed parsed = pjson_test::parse(payload, err, conformanceOptions());
 
         if (shouldParse && parsed == nullptr) {
             std::ostringstream detail;
@@ -412,11 +413,11 @@ TEST(conformance_json_test_suite_optional) {
             // every one and require deterministic behavior: if accepted, the
             // normalized output must itself be strict JSON and round-trip.
             const std::string payload = readFile(files[i]);
-            pjson::unique_ptr parsed = pjson::parse(payload, conformanceOptions());
+            pjson_test::Parsed parsed = pjson_test::parse(payload, conformanceOptions());
             CHECK(true); // parsing the corpus entry terminated safely
             if (parsed) {
                 const std::string normalized = parsed->toString();
-                CHECK(pjson::parse(normalized, conformanceOptions()) != nullptr);
+                CHECK(pjson_test::parse(normalized, conformanceOptions()) != nullptr);
             }
             implementationDefined += 1;
             continue;

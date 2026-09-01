@@ -238,12 +238,12 @@ TEST(fuzz_schema_validation_never_crashes) {
         pjson doc;
         buildRandom(doc, rng, 3);
 
-        std::vector<pjson::SchemaError> errors;
-        bool ok = doc.validate(*schema, errors);
+        std::vector<pjson_test::SchemaError> errors;
+        bool ok = pjson_test::schemaValidate(doc, *schema, errors);
         // The contract: ok == errors.empty(). Also validate() (no errors arg)
         // must agree with the collecting form.
         CHECK_EQ(ok, errors.empty());
-        CHECK_EQ(ok, doc.validate(*schema));
+        CHECK_EQ(ok, pjson_test::schemaValidate(doc, *schema));
     }
 }
 
@@ -264,16 +264,16 @@ TEST(fuzz_malformed_schemas_tolerated) {
         const char* values[] = {"5", "\"str\"", "[1,2,3]", R"({"k0":1})", "true", "null"};
         for (const char* v : values) {
             auto d = parse(v);
-            std::vector<pjson::SchemaError> errors;
-            CHECK(d->validate(*schema, errors));
+            std::vector<pjson_test::SchemaError> errors;
+            CHECK(pjson_test::schemaValidate(*d, *schema, errors));
             CHECK(errors.empty());
         }
     }
 
     auto invalidRegex = parse(R"({"pattern":"([unclosed"})");
     auto stringValue = parse("\"value\"");
-    std::vector<pjson::SchemaError> errors;
-    CHECK(!stringValue->validate(*invalidRegex, errors));
+    std::vector<pjson_test::SchemaError> errors;
+    CHECK(!pjson_test::schemaValidate(*stringValue, *invalidRegex, errors));
     CHECK(!errors.empty());
 }
 

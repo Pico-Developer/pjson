@@ -19,30 +19,28 @@ namespace {
         const pjson::ParseOptions options =
             pjson_fuzz::parseOptionsVariant(data, size, variantOffset);
         pjson::ParseError error;
-        pjson::unique_ptr value = pjson::parse(pjson_fuzz::bytes(data, size), size, error, options);
-        // The returned value and explicit status must agree on whether parsing succeeded.
-        pjson_fuzz::require(static_cast<bool>(value) == error.ok);
-        if (!value)
+        pjson value = pjson::parse(pjson_fuzz::bytes(data, size), size, error, options);
+        if (!error.ok)
             return;
 
         // Compact output must be a stable, value-preserving representation.
-        const std::string compact = value->toString();
+        const std::string compact = value.toString();
         pjson::ParseOptions compactOptions = options;
         compactOptions.maxInputBytes = compact.size();
         pjson::ParseError compactError;
-        pjson::unique_ptr reparsed = pjson::parse(compact, compactError, compactOptions);
-        pjson_fuzz::require(reparsed != nullptr);
+        pjson reparsed = pjson::parse(compact, compactError, compactOptions);
         pjson_fuzz::require(compactError.ok);
-        pjson_fuzz::require(*reparsed == *value);
-        pjson_fuzz::require(reparsed->toString() == compact);
+        pjson_fuzz::require(reparsed == value);
+        pjson_fuzz::require(reparsed.toString() == compact);
 
         // Pretty printing may change whitespace, but never the represented JSON value.
-        const std::string pretty = value->toString(pjson::SerializeOptions::prettyPrinted());
+        const std::string pretty = value.toString(pjson::SerializeOptions::prettyPrinted());
         pjson::ParseOptions prettyOptions = options;
         prettyOptions.maxInputBytes = pretty.size();
-        pjson::unique_ptr prettyParsed = pjson::parse(pretty, prettyOptions);
-        pjson_fuzz::require(prettyParsed != nullptr);
-        pjson_fuzz::require(*prettyParsed == *value);
+        pjson::ParseError prettyError;
+        pjson prettyParsed = pjson::parse(pretty, prettyError, prettyOptions);
+        pjson_fuzz::require(prettyError.ok);
+        pjson_fuzz::require(prettyParsed == value);
     }
 
 } // namespace

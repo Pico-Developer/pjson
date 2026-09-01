@@ -8,8 +8,8 @@ types are intentionally excluded.
 ## Start here
 
 - @ref ByteDance::pjson is the central DOM value and entry point.
-- @ref ByteDance::pjson::Allocator, @ref ByteDance::pjson::ValueDeleter, and
-  ByteDance::pjson::unique_ptr support allocator-bound persistent DOM storage.
+- @ref ByteDance::pjson::Allocator supports allocator-bound persistent DOM
+  storage; parse returns the document by value, bound to the chosen allocator.
 - @ref ByteDance::pjson::ParseOptions configures duplicate keys and input
   budgets; every parser enforces RFC 8259 syntax.
 - @ref ByteDance::pjson::ParseError reports non-throwing parse failures.
@@ -23,8 +23,11 @@ types are intentionally excluded.
 - ByteDance::pjson::applyPatch() and ByteDance::pjson::applyMergePatch() apply
   atomic RFC 6902 and RFC 7396 updates.
 - @ref ByteDance::pjson::SaxHandler supports incremental, non-DOM parsing.
-- @ref ByteDance::pjson::SchemaOptions and
-  @ref ByteDance::pjson::SchemaError configure and report schema validation.
+- @ref ByteDance::pJsonSchemaValidator validates a pjson value against a schema
+  (itself a pjson value); its nested @ref ByteDance::pJsonSchemaValidator::Options
+  and @ref ByteDance::pJsonSchemaValidator::Error configure and report schema
+  validation. It is a standalone helper in `<pjson_schema.h>` that consumes only
+  pjson's public API.
 
 Use the navigation tree to browse classes, nested option/error types, enums,
 typedefs, and every public overload. Each entry is generated from the current

@@ -101,9 +101,10 @@ int main() {
     pjson::SerializeOptions pretty = pjson::SerializeOptions::prettyPrinted();
     std::cout << person.toString(pretty) << "\n";
 
-    pjson::unique_ptr parsed = pjson::parse(person.toString(pretty));
+    pjson::ParseError error;
+    pjson parsed = pjson::parse(person.toString(pretty), error);
     std::string name;
-    if (parsed && parsed->tryGet("name", name))
+    if (error.ok && parsed.tryGet("name", name))
         std::cout << name << "\n"; // Ada
 }
 ```

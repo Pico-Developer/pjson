@@ -34,6 +34,12 @@ struct NumberSummary : pjson::SaxHandler {
         return true;
     }
 
+    bool onUInt(uint64_t value) override {
+        ++count;
+        total += static_cast<double>(value);
+        return true;
+    }
+
     bool onDouble(double value) override {
         ++count;
         total += value;
@@ -42,9 +48,10 @@ struct NumberSummary : pjson::SaxHandler {
 };
 ```
 
-Available callbacks are `onNull`, `onBool`, `onInt`, `onDouble`, `onString`,
-`onStartArray`, `onEndArray`, `onStartObject`, `onKey`, and `onEndObject`. They
-arrive in source order.
+Available callbacks are `onNull`, `onBool`, `onInt`, `onUInt`, `onDouble`,
+`onString`, `onStartArray`, `onEndArray`, `onStartObject`, `onKey`, and
+`onEndObject`. They arrive in source order. `onUInt` receives integer tokens
+above `INT64_MAX`; handlers that only care about smaller integers may ignore it.
 
 ## Parse the stream
 

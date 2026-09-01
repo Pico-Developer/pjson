@@ -193,15 +193,15 @@ namespace pjson_test {
         }                                                                                          \
     } while (0)
 
-// Asserts that parsing aStr yields an empty result (invalid input) without
-// throwing.
+// Asserts that parsing aStr fails (returns an error) without throwing.
 #define CHECK_PARSE_FAILS(aStr)                                                                    \
     do {                                                                                           \
         ::pjson_test::current().checks += 1;                                                       \
-        ByteDance::pjson::unique_ptr _p = ByteDance::pjson::parse(aStr);                           \
-        if (_p != nullptr) {                                                                       \
-            ::pjson_test::report_failure(__FILE__, __LINE__, "parse(" #aStr ") == nullptr",        \
-                                         "parsed to: " + _p->toString());                          \
+        ByteDance::pjson::ParseError _e;                                                           \
+        ByteDance::pjson _p = ByteDance::pjson::parse(aStr, _e);                                   \
+        if (_e.ok) {                                                                               \
+            ::pjson_test::report_failure(__FILE__, __LINE__, "parse(" #aStr ") should fail",       \
+                                         "parsed to: " + _p.toString());                           \
         }                                                                                          \
     } while (0)
 

@@ -1197,9 +1197,10 @@ Or run the collected binary directly to see every case:
 ./build/pjsontest/pjsontest      # if built via plain cmake
 ```
 
-Deterministic generated cases live in `tests_fuzz.cpp`; four standalone
+Deterministic generated cases live in `tests_fuzz.cpp`; seven standalone
 coverage-guided targets exercise DOM parsing/round trips, stream and SAX
-agreement, schema validation, and the atomicity of JSON Patch and Merge Patch.
+agreement, serialization, schema validation, JSON Pointer, and the atomicity of
+JSON Patch and Merge Patch.
 With a full Clang/libFuzzer toolchain on Linux or macOS, replay the checked-in
 seeds with the CI-sized budget:
 

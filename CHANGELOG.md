@@ -29,8 +29,9 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases follow
   exposes `isSchemaValid()`, `schemaErrors()`, and `dialect()`. Schema errors are
   categorized as `SchemaCompilation` versus `InstanceValidation`.
 - Added a pinned, manifest-driven Draft 2020-12 conformance gate. After the
-  reference and unevaluated-keyword work below, 1,287 supported cases run and
-  10 cases are explicitly skipped with reasons so coverage cannot silently shrink.
+  reference and unevaluated-keyword work below, 1,287 supported cases run; four
+  groups (10 cases) and one two-case meta-schema file are explicitly skipped
+  with reasons so coverage cannot silently shrink.
 - Added `$id` resource bases, `$anchor`, `$dynamicAnchor`, `$ref`, `$dynamicRef`,
   and an explicit function-pointer resolver. pjson performs no implicit I/O;
   resolution is bounded by reference, document, byte, work, and depth limits.

@@ -296,8 +296,9 @@ registered with CTest. A manifest-driven `draft2020-12` conformance gate
 gate: supported-keyword files run whole, and each remaining unsupported group
 (official meta-schema behavior and Unicode `\p{}` regex)
 is skipped with a concrete reason so coverage cannot silently shrink. Measured
-baseline: 1,287 Draft 2020-12 cases pass across 378 groups; 10 cases are skipped
-across 4 groups. Full unconditional 2020-12 conformance remains unclaimed.
+baseline: 1,287 Draft 2020-12 cases pass across 378 groups; four groups (10
+cases) and one two-case meta-schema file are skipped. Full unconditional 2020-12
+conformance remains unclaimed.
 
 ## 13. Documentation and governance
 

@@ -90,7 +90,8 @@ required vocabularies, and accepts unknown optional vocabularies. SCHEMA-003 and
 SCHEMA-004 now provide `$id`/URI resources, `$anchor`, `$dynamicAnchor`, `$ref`,
 `$dynamicRef`, an explicit resolver with document/byte/work/depth budgets, and
 annotation propagation for `unevaluatedItems`/`unevaluatedProperties`. The
-official Draft 2020-12 gate now runs 1,287 cases across 378 groups.
+official Draft 2020-12 gate now runs 1,287 cases across 378 groups; it skips four
+groups (10 cases) and one two-case meta-schema file with explicit reasons.
 
 **What remains:** full standard-vocabulary/meta-schema loading and ECMA-262
 Unicode property escapes. The

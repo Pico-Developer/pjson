@@ -3,7 +3,7 @@
 
 [libfuzzer]
 # Bound generated inputs so routine mutations emphasize streaming boundaries.
-max_len = 4096
+max_len = 65536
 # Stop one input if a streaming path does not complete within five seconds.
 timeout = 5
 # Leave enough headroom for sanitizer overhead while catching runaway growth.

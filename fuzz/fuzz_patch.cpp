@@ -11,8 +11,8 @@ using ByteDance::pjson;
 
 namespace {
 
-    // Applies either RFC 6902 JSON Patch or RFC 7396 Merge Patch and checks the
-    // non-throwing API contracts that are observable from fuzz-side callers.
+    // Applies RFC 6902 JSON Patch and checks the non-throwing API contracts
+    // that are observable from fuzz-side callers.
     void exercisePatchVariant(const uint8_t* data, size_t size, const std::string& documentInput,
                               const std::string& patchInput, size_t variantOffset) {
         const pjson::ParseOptions options =
@@ -24,16 +24,17 @@ namespace {
         if (!originalError.ok || !patchError.ok)
             return;
 
-        const bool useJsonPatch = patch.isArray();
+        if (!patch.isArray())
+            return;
         pjson working = original;
         pjson::PatchError detailedError;
-        const bool detailedOk = useJsonPatch ? working.applyPatch(patch, detailedError)
-                                             : working.applyMergePatch(patch, detailedError);
+        const pjson::PatchOptions patchOptions =
+            pjson_fuzz::patchOptionsVariant(data, size, variantOffset);
+        const bool detailedOk = working.applyPatch(patch, detailedError, patchOptions);
         pjson_fuzz::require(detailedOk == detailedError.ok);
 
         pjson simple = original;
-        const bool simpleOk =
-            useJsonPatch ? simple.applyPatch(patch) : simple.applyMergePatch(patch);
+        const bool simpleOk = simple.applyPatch(patch, patchOptions);
         pjson_fuzz::require(simpleOk == detailedOk);
 
         if (!detailedOk) {

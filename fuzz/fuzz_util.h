@@ -91,6 +91,20 @@ namespace pjson_fuzz {
         return options;
     }
 
+    inline ByteDance::pjson::PatchOptions patchOptionsVariant(const uint8_t* data, size_t size,
+                                                              size_t offset = 0) {
+        ByteDance::pjson::PatchOptions options;
+        static const size_t kOperationBudgets[] = {1U, 8U, 64U, 10000U};
+        static const size_t kNodeBudgets[] = {8U, 128U, 4096U, 1000000U};
+        static const size_t kByteBudgets[] = {64U, 4096U, 65536U, 64U * 1024U * 1024U};
+        static const size_t kWorkBudgets[] = {16U, 512U, 16384U, 1000000U};
+        options.maxOperations = kOperationBudgets[pickByte(data, size, offset, 0) % 4U];
+        options.maxClonedNodes = kNodeBudgets[pickByte(data, size, offset + 1U, 1) % 4U];
+        options.maxClonedBytes = kByteBudgets[pickByte(data, size, offset + 2U, 2) % 4U];
+        options.maxWork = kWorkBudgets[pickByte(data, size, offset + 3U, 3) % 4U];
+        return options;
+    }
+
     // Raw input adaptation.
 
     // Returns a non-null character pointer for empty input and preserves all other bytes.

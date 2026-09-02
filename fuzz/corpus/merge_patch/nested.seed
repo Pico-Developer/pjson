@@ -1,0 +1,2 @@
+{"a":{"b":1,"drop":true},"array":[1,2]}
+{"a":{"b":2,"drop":null},"array":{"now":"object"}}

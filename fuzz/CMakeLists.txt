@@ -77,5 +77,8 @@ endfunction()
 
 pjson_add_fuzzer(pjson_fuzz_parse fuzz_parse.cpp)
 pjson_add_fuzzer(pjson_fuzz_stream fuzz_stream.cpp)
+pjson_add_fuzzer(pjson_fuzz_serialize fuzz_serialize.cpp)
 pjson_add_fuzzer(pjson_fuzz_schema fuzz_schema.cpp)
+pjson_add_fuzzer(pjson_fuzz_pointer fuzz_pointer.cpp)
 pjson_add_fuzzer(pjson_fuzz_patch fuzz_patch.cpp)
+pjson_add_fuzzer(pjson_fuzz_merge_patch fuzz_merge_patch.cpp)

@@ -56,7 +56,7 @@ flowchart LR
 - `--all` benchmarks pjson alongside pinned nlohmann/json, RapidJSON, and
   simdjson versions. Use `--bench` for the dependency-free pjson-only run, or
   `--bench-compare` to request comparison mode directly.
-- `--all` also replays bounded corpora through four libFuzzer targets covering
+- `--all` also replays bounded corpora through seven libFuzzer targets covering
   DOM parsing, streaming, schema validation, and Patch/Merge Patch atomicity
   when the local platform has Clang and libFuzzer; otherwise that optional part is
   reported as skipped. `--fuzz` is strict and fails if it cannot run.

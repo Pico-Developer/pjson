@@ -3,7 +3,7 @@
 
 [libfuzzer]
 # Bound generated inputs so routine mutations emphasize patch-operation paths.
-max_len = 4096
+max_len = 65536
 # Stop one patch/document pair if processing exceeds five seconds.
 timeout = 5
 # Leave enough headroom for sanitizer overhead while catching runaway growth.

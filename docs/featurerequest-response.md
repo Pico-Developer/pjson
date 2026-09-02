@@ -296,7 +296,8 @@ CMake, Conan, and vcpkg manifests (a configure-time mismatch is a hard error).
 ### PJSON-TEST-001..005 — Partially implemented / already satisfied
 JSONTestSuite and the JSON-Schema-Test-Suite are pinned and wired; sanitizer,
 differential, and fuzz jobs exist. This pass added the two mandatory regressions
-(embedded-NUL access; ancestor/descendant move under sanitizers) and new
+(embedded-NUL access; ancestor/descendant move under sanitizers), dedicated
+serialization, Pointer, and Merge Patch fuzz targets with 64 KiB input support, and new
 differential front-end tests, and every compiled case remains individually
 registered with CTest. A manifest-driven `draft2020-12` conformance gate
 (`schema_official_draft2020_optional`) now runs alongside the existing draft-07

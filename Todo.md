@@ -58,7 +58,8 @@ The last complete Debug/ASan/Release runs passed 510/510 tests. The current
 Draft 2020-12 manifest executes 1,287 official cases across 378 groups and skips
 10 cases across four groups. The remaining groups require the official
 meta-schema/custom vocabulary behavior or ECMA-262 Unicode property escapes.
-Also verified: clang-format, clang-tidy, 20,000 schema-fuzzer runs, Doxygen API
+Also verified: clang-format, clang-tidy, 20,000 schema-fuzzer runs, seven-target
+libFuzzer smoke coverage with inputs above 4 KiB, Doxygen API
 validation, relocatable static/shared CMake and pkg-config consumers, REUSE
 licensing, GCC, and a direct ThreadSanitizer concurrency probe.
 

@@ -772,7 +772,7 @@ fi
 # Optional fuzz, documentation, and packaging validation.
 # ---------------------------------------------------------------------------
 
-# Probes for a usable Clang/libFuzzer pair, builds all four harnesses, and
+# Probes for a usable Clang/libFuzzer pair, builds every harness, and
 # replays each checked-in seed corpus with deterministic bounds.
 run_fuzz_smoke() {
     case "$(uname -s)" in
@@ -859,15 +859,16 @@ run_fuzz_smoke() {
         -DPJSON_BUILD_FUZZERS=ON \
         ${GEN_ARG}
     "${CMAKE}" --build "${fuzz_build_dir}" --parallel --target \
-        pjson_fuzz_parse pjson_fuzz_stream pjson_fuzz_schema pjson_fuzz_patch
+        pjson_fuzz_parse pjson_fuzz_stream pjson_fuzz_serialize pjson_fuzz_schema \
+        pjson_fuzz_pointer pjson_fuzz_patch pjson_fuzz_merge_patch
 
     local target corpus_dir
-    for target in parse stream schema patch; do
+    for target in parse stream serialize schema pointer patch merge_patch; do
         corpus_dir="${OUT_DIR}/fuzz-corpus/${target}"
         mkdir -p "${corpus_dir}" "${OUT_DIR}/fuzz-artifacts/${target}"
         echo ">> Fuzz corpus smoke: pjson_fuzz_${target}"
         "${fuzz_build_dir}/fuzz/pjson_fuzz_${target}" \
-            -runs=1000 -seed=1337 -max_len=4096 -timeout=5 -verbosity=0 \
+            -runs=1000 -seed=1337 -max_len=65536 -timeout=5 -verbosity=0 \
             -dict="${SCRIPT_DIR}/fuzz/json.dict" \
             -artifact_prefix="${OUT_DIR}/fuzz-artifacts/${target}/" \
             "${corpus_dir}" "${SCRIPT_DIR}/fuzz/corpus/${target}"

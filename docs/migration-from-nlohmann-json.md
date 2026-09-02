@@ -295,6 +295,11 @@ does not validate against a meta-schema. The collecting overload appends
 `pJsonSchemaValidator::Error` entries; clear a reused vector first. Error paths
 are RFC 6901 pointers, with the empty string denoting the root.
 
+The validator implements pjson's explicitly named subset dialect, not the
+official 2020-12 dialect. An unsupported root `$schema` or required
+`$vocabulary` makes `isSchemaValid()` false; inspect `schemaErrors()` before
+trusting validation. Unknown optional vocabularies are accepted as annotations.
+
 The documented pjson subset is the complete enforced vocabulary; it is not a
 complete JSON Schema draft implementation:
 

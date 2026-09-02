@@ -56,6 +56,10 @@ Build a validator from the schema, then validate instances against it:
 
 ```cpp
 pJsonSchemaValidator validator(schema);
+if (!validator.isSchemaValid()) {
+    for (const pJsonSchemaValidator::Error& e : validator.schemaErrors())
+        std::cerr << "invalid schema at " << e.path << ": " << e.message << "\n";
+}
 
 pjson data = pjson::parse(R"({ "name": "Ada", "age": 36 })", err);
 
@@ -66,6 +70,29 @@ bool ok = validator.validate(data);
 The validator deep-copies the schema on construction, so the original `schema`
 value may change or be destroyed afterward. A single validator can check any
 number of instances and is cheap to reuse.
+
+## Dialect and vocabulary contract
+
+pjson deliberately does not claim the complete JSON Schema 2020-12 dialect. It
+implements one named dialect for the documented subset:
+
+```cpp
+const char* dialect = pJsonSchemaValidator::documentedSubsetDialectUri();
+const char* vocabulary = pJsonSchemaValidator::documentedSubsetVocabularyUri();
+```
+
+When the root schema contains `$schema`, it must equal that dialect URI. When it
+is absent, `Options::defaultDialectUri` selects the dialect and defaults to the
+same URI. Setting it to another URI, or declaring the official 2020-12 URI,
+makes `isSchemaValid()` false: pjson will not silently interpret a dialect it
+does not completely implement.
+
+Under this subset dialect, `$vocabulary` is an object mapping vocabulary URIs
+to booleans. The pjson subset vocabulary may be required (`true`); unknown
+optional vocabularies (`false`) are accepted as annotations; unknown required
+vocabularies fail schema compilation. Malformed `$schema`/`$vocabulary` shapes
+also fail compilation. `schemaErrors()` reports these failures with
+`Error::SchemaCompilation`; instance failures use `Error::InstanceValidation`.
 
 To learn *what* failed, pass a vector — the validator normally collects every
 applicable failure instead of stopping at the first (a resource-budget failure
@@ -87,7 +114,8 @@ collected; reaching a validation-depth or reference-resolution budget stops
 that traversal safely.
 
 Each `pJsonSchemaValidator::Error` has a `path` (a **JSON Pointer** like `/age`
-or `/friends/2/name`, empty for the document root) and a `message`. From the
+or `/friends/2/name`, empty for the document root), a `message`, and a `category`
+distinguishing instance failures from schema-compilation failures. From the
 example, an all-bad document reports:
 
 ```
@@ -166,6 +194,7 @@ options.maxValidationWork = 1000000;
 options.maxErrors = 100;
 options.validateFormats = true;
 options.strictSubset = false; // set true to fail closed on unsupported keywords
+options.defaultDialectUri = pJsonSchemaValidator::documentedSubsetDialectUri();
 
 pJsonSchemaValidator validator(schema, options);
 std::vector<pJsonSchemaValidator::Error> errors;

@@ -23,6 +23,14 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases follow
   public API and touches no library internals, so the core DOM no longer links
   the schema/regex machinery. A new public `pjson::tryCompareNumber()` exposes
   the exact cross-kind numeric ordering the validator needs.
+- Added an explicit schema-compilation contract. pjson now names its supported
+  subset dialect/vocabulary, honors root `$schema`, supports a configurable
+  default dialect, rejects unsupported dialects and required vocabularies, and
+  exposes `isSchemaValid()`, `schemaErrors()`, and `dialect()`. Schema errors are
+  categorized as `SchemaCompilation` versus `InstanceValidation`.
+- Added a pinned, manifest-driven Draft 2020-12 conformance gate: 924 supported
+  cases run today; 90 cases requiring deferred features are explicitly skipped
+  with reasons so coverage cannot silently shrink.
 
 ## [2.0.0] - 2026-08-31
 

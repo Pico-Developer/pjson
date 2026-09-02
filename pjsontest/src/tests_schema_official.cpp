@@ -579,7 +579,8 @@ namespace {
 
     // Runs one upstream case while preserving its file/group/case hierarchy in diagnostics.
     void runOneOfficialCase(const std::string& relativePath, const std::string& groupDesc,
-                            const pjson& schema, const pjson& testCase, RunSummary& summary) {
+                            const pJsonSchemaValidator& validator, const pjson& testCase,
+                            RunSummary& summary) {
         const pjson* data = testCase.find("data");
         const pjson* valid = testCase.find("valid");
         const std::string caseDesc = testDescription(testCase);
@@ -601,7 +602,7 @@ namespace {
         }
 
         std::vector<pjson_test::SchemaError> errors;
-        const bool actual = pjson_test::schemaValidate(*data, schema, errors);
+        const bool actual = validator.validate(*data, errors);
         if (actual == expected) {
             return;
         }
@@ -627,6 +628,16 @@ namespace {
             return;
         }
 
+        // The upstream files declare their official draft URI. pjson does not
+        // claim those complete dialects: this manifest intentionally exercises
+        // selected cases under pjson's named documented-subset dialect instead.
+        // Removing only the root declaration is the explicit adaptation; every
+        // validation/applicator keyword and instance remains unchanged. Compile
+        // once per upstream group, matching the public validator lifecycle.
+        pjson subsetSchema(*schema);
+        subsetSchema.erase("$schema");
+        pJsonSchemaValidator validator(subsetSchema);
+
         const size_t count = tests->size();
         summary.groupsRun += 1;
         for (size_t i = 0; i < count; ++i) {
@@ -637,7 +648,7 @@ namespace {
                                   pjson_test::to_str(static_cast<int>(i)));
                 continue;
             }
-            runOneOfficialCase(relativePath, groupDesc, *schema, *testCase, summary);
+            runOneOfficialCase(relativePath, groupDesc, validator, *testCase, summary);
         }
     }
 

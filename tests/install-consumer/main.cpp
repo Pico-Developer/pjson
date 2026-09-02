@@ -45,6 +45,11 @@ int main() {
         return 1;
     }
     pJsonSchemaValidator validator(schema);
+    if (!validator.isSchemaValid() ||
+        validator.dialect() != pJsonSchemaValidator::documentedSubsetDialectUri()) {
+        std::cerr << "installed pjson_schema failed its dialect contract" << std::endl;
+        return 1;
+    }
     std::vector<pJsonSchemaValidator::Error> schemaErrors;
     pjson missing = pjson::parse("{}", schemaError);
     if (!validator.validate(document) || validator.validate(missing, schemaErrors) ||

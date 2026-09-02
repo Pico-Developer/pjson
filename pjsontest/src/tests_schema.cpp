@@ -457,10 +457,12 @@ TEST(schema_error_constructors_and_collector_append) {
     pjson_test::SchemaError empty;
     CHECK_EQ(empty.path, std::string());
     CHECK_EQ(empty.message, std::string());
+    CHECK_EQ(empty.category, pJsonSchemaValidator::Error::InstanceValidation);
 
     pjson_test::SchemaError concrete("/age", "expected integer");
     CHECK_EQ(concrete.path, std::string("/age"));
     CHECK_EQ(concrete.message, std::string("expected integer"));
+    CHECK_EQ(concrete.category, pJsonSchemaValidator::Error::InstanceValidation);
 
     std::vector<pjson_test::SchemaError> errors;
     errors.push_back(pjson_test::SchemaError("/seed", "existing"));

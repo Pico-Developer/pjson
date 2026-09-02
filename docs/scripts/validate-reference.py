@@ -83,6 +83,18 @@ REQUIRED_MEMBERS = {
     "operator!=": 1,
 }
 
+REQUIRED_SCHEMA_VALIDATOR_MEMBERS = {
+    "pJsonSchemaValidator": 1,
+    "validate": 2,
+    "documentedSubsetDialectUri": 1,
+    "documentedSubsetVocabularyUri": 1,
+    "isSchemaValid": 1,
+    "schemaErrors": 1,
+    "dialect": 1,
+    "schema": 1,
+    "options": 1,
+}
+
 REMOVED_PUBLIC_MEMBERS = {
     "PJSONARRAY",
     "PJSONMAP",
@@ -105,6 +117,10 @@ REMOVED_PUBLIC_MEMBERS = {
 }
 
 EXPECTED_PUBLIC_ENUMS = {
+    ("ByteDance::pJsonSchemaValidator::Error", "Category"): {
+        "InstanceValidation",
+        "SchemaCompilation",
+    },
     ("ByteDance::pjson", "jsonType"): {
         "jsonNull",
         "jsonString",
@@ -260,6 +276,23 @@ EXPECTED_PARAMETER_TYPES = {
 }
 
 REQUIRED_PUBLIC_FIELDS = {
+    "ByteDance::pJsonSchemaValidator::Error": {
+        "path",
+        "message",
+        "category",
+    },
+    "ByteDance::pJsonSchemaValidator::Options": {
+        "maxRegexPatternBytes",
+        "maxRegexSubjectBytes",
+        "allowUnsafeRegex",
+        "maxValidationDepth",
+        "maxRefResolutions",
+        "maxValidationWork",
+        "maxErrors",
+        "validateFormats",
+        "strictSubset",
+        "defaultDialectUri",
+    },
     "ByteDance::pjson::PatchOptions": {
         "maxOperations",
         "maxClonedNodes",
@@ -380,6 +413,20 @@ def main() -> int:
         if members[name] < minimum:
             errors.append(f"{name}: expected at least {minimum} overload(s), found {members[name]}")
 
+    schema_validator_node = compounds.get("ByteDance::pJsonSchemaValidator")
+    schema_validator_members: collections.Counter[str] = collections.Counter()
+    if schema_validator_node is not None:
+        schema_validator_members.update(
+            node.findtext("name", default="")
+            for node in schema_validator_node.findall("member")
+        )
+    for name, minimum in REQUIRED_SCHEMA_VALIDATOR_MEMBERS.items():
+        if schema_validator_members[name] < minimum:
+            errors.append(
+                f"pJsonSchemaValidator::{name}: expected at least {minimum}, "
+                f"found {schema_validator_members[name]}"
+            )
+
     def compound_definition(name: str):
         """Load one compound XML definition when its index entry exists."""
         node = compounds.get(name)
@@ -494,8 +541,11 @@ def main() -> int:
     # makes a newly added enum fail until the reference contract is updated.
     actual_public_enums: dict[tuple[str, str], set[str]] = {}
     for compound_name in sorted(compounds):
-        if compound_name != "ByteDance::pjson" and not compound_name.startswith(
-            "ByteDance::pjson::"
+        if (
+            compound_name != "ByteDance::pjson"
+            and not compound_name.startswith("ByteDance::pjson::")
+            and compound_name != "ByteDance::pJsonSchemaValidator"
+            and not compound_name.startswith("ByteDance::pJsonSchemaValidator::")
         ):
             continue
         definition = compound_definition(compound_name)

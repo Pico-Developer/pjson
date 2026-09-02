@@ -227,18 +227,29 @@ promotes the exact cross-kind numeric ordering the validator needs from a
 former private helper. This also delivers the compiled/immutable validator
 object requested by PJSON-SCHEMA-002.
 
-### PJSON-SCHEMA-001..006 — Partially implemented / Deferred
+### PJSON-SCHEMA-001 — Explicit dialect contract — Implemented for the subset
+`pJsonSchemaValidator` now names its contract with
+`documentedSubsetDialectUri()` and `documentedSubsetVocabularyUri()`.
+`Options::defaultDialectUri` selects the dialect when `$schema` is absent; a
+root `$schema` overrides it. Any unsupported declared/default dialect fails
+schema compilation with a `SchemaCompilation` diagnostic. `$vocabulary` accepts
+the pjson subset vocabulary, ignores unknown optional vocabularies, and rejects
+unknown required vocabularies or malformed shapes. Callers inspect
+`isSchemaValid()`, `schemaErrors()`, and `dialect()`. The official 2020-12 URI is
+intentionally unsupported until pjson implements that complete dialect.
+
+### PJSON-SCHEMA-002..006 — Partially implemented / Deferred
 This pass materially expanded the validator toward 2020-12 by adding
 `if`/`then`/`else`, `prefixItems`, `contains`/`minContains`/`maxContains`, and
 `dependentSchemas` (fixing the A.5 conditional-schema gap), plus the strict
-gate above, and by extracting a reusable compiled validator object
-(SCHEMA-002, above). Not yet implemented:
+gate above, by extracting a reusable compiled validator object (SCHEMA-002),
+and by adding the manifest-driven conformance gate (SCHEMA-006). Not yet
+implemented:
 `$dynamicRef`/`$dynamicAnchor`, `unevaluatedItems`/`unevaluatedProperties`,
-`$vocabulary` negotiation, external resolver callbacks, and the full
-`draft2020-12` `JSON-Schema-Test-Suite` CI gate. Per the requirement's own
-rule, documentation continues to describe this as a **documented subset** and
-does not claim general 2020-12 conformance. Remaining SCHEMA-001/003/004/006
-work is tracked in `Todo.md` as a separately gated module effort.
+standard JSON Schema vocabulary/meta-schema loading, and external resolver
+callbacks. Per the requirement's own rule, documentation continues to describe
+this as a **documented subset** and does not claim general 2020-12 conformance.
+Remaining SCHEMA-003/004 work is tracked in `Todo.md`.
 
 ## 9. Existing extensions
 

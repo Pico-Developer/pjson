@@ -66,6 +66,12 @@ int main() {
     options.maxRefResolutions = 1024;
     options.validateFormats = true;
     pJsonSchemaValidator validator(schema, options);
+    if (!validator.isSchemaValid()) {
+        for (const pJsonSchemaValidator::Error& e : validator.schemaErrors()) {
+            std::cerr << "invalid schema at " << e.path << ": " << e.message << "\n";
+        }
+        return 1;
+    }
     std::cout << "good is valid: " << (validator.validate(good) ? "yes" : "no") << "\n";
 
     // --- Collect failures for a non-conforming instance -------------------

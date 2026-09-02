@@ -45,6 +45,11 @@ namespace {
     typedef pJsonSchemaValidator::Error SchemaError;
     typedef pJsonSchemaValidator::Options Options;
 
+    const char kDocumentedSubsetDialect[] =
+        "urn:bytedance:pjson:schema:documented-subset:2";
+    const char kDocumentedSubsetVocabulary[] =
+        "urn:bytedance:pjson:schema:vocabulary:documented-subset:2";
+
     // Recursive validation still uses native recursion for applicator keywords.
     // Keep its logical depth below a conservative stack-safe ceiling even when a
     // caller requests a larger value.
@@ -941,7 +946,7 @@ namespace {
 
     bool isStandardSchemaKeyword(const std::string& keyword) {
         static const char* const kStandardUnsupported[] = {
-            "$dynamicRef",      "$dynamicAnchor",   "$vocabulary",           "$recursiveRef",
+            "$dynamicRef",      "$dynamicAnchor",   "$recursiveRef",
             "$recursiveAnchor", "unevaluatedItems", "unevaluatedProperties", "additionalItems",
             "contentEncoding",  "contentMediaType", "contentSchema",
         };
@@ -950,6 +955,74 @@ namespace {
                 return true;
         }
         return false;
+    }
+
+    std::string schemaPointer(const std::string& keyword) {
+        return "/" + pjson::escapePointerToken(keyword);
+    }
+
+    void addCompilationError(std::vector<SchemaError>& errors, const std::string& path,
+                             const std::string& message) {
+        errors.push_back(SchemaError(path, message, SchemaError::SchemaCompilation));
+    }
+
+    // Establishes the root schema's dialect and required-vocabulary contract.
+    // pjson deliberately names its implemented subset with a private URN rather
+    // than accepting the official 2020-12 meta-schema URI and over-claiming
+    // conformance. Unknown optional vocabularies are annotations; unknown
+    // required vocabularies fail compilation.
+    void compileDialectContract(const pjson& schema, const Options& options,
+                                std::string& dialect,
+                                std::vector<SchemaError>& errors) {
+        dialect = options.defaultDialectUri.empty() ? kDocumentedSubsetDialect
+                                                     : options.defaultDialectUri;
+
+        if (schema.isObject()) {
+            const pjson* declared = schema.find("$schema");
+            if (declared != nullptr) {
+                if (!declared->isString()) {
+                    addCompilationError(errors, schemaPointer("$schema"),
+                                        "$schema must be a string URI");
+                } else {
+                    dialect = strOf(*declared);
+                }
+            }
+        }
+
+        if (dialect != kDocumentedSubsetDialect) {
+            addCompilationError(errors, schemaPointer("$schema"),
+                                "unsupported schema dialect: " + dialect);
+            return;
+        }
+
+        if (!schema.isObject())
+            return;
+        const pjson* vocabularies = schema.find("$vocabulary");
+        if (vocabularies == nullptr)
+            return;
+        if (!vocabularies->isObject()) {
+            addCompilationError(errors, schemaPointer("$vocabulary"),
+                                "$vocabulary must be an object mapping URI strings to booleans");
+            return;
+        }
+
+        const std::vector<std::string> uris = vocabularies->keys();
+        for (size_t i = 0; i < uris.size(); ++i) {
+            const pjson* requirement = vocabularies->find(uris[i]);
+            const std::string path = schemaPointer("$vocabulary") + "/" +
+                                     pjson::escapePointerToken(uris[i]);
+            if (requirement == nullptr || !requirement->isBool()) {
+                addCompilationError(errors, path,
+                                    "$vocabulary entries must be boolean");
+                continue;
+            }
+            bool required = false;
+            requirement->tryGet(required);
+            if (required && uris[i] != kDocumentedSubsetVocabulary) {
+                addCompilationError(errors, path,
+                                    "unsupported required schema vocabulary: " + uris[i]);
+            }
+        }
     }
 
     // Forward declaration: the recursive core.
@@ -1689,10 +1762,13 @@ namespace {
 //===----------------------------------------------------------------------===//
 // Public pJsonSchemaValidator surface
 //===----------------------------------------------------------------------===//
-pJsonSchemaValidator::Error::Error() {}
-pJsonSchemaValidator::Error::Error(const std::string& aPath, const std::string& aMsg)
+pJsonSchemaValidator::Error::Error()
+        : category(InstanceValidation) {}
+pJsonSchemaValidator::Error::Error(const std::string& aPath, const std::string& aMsg,
+                                   Category aCategory)
         : path(aPath)
-        , message(aMsg) {}
+        , message(aMsg)
+        , category(aCategory) {}
 
 pJsonSchemaValidator::Options::Options()
         : maxRegexPatternBytes(256)
@@ -1703,7 +1779,8 @@ pJsonSchemaValidator::Options::Options()
         , maxValidationWork(1000000)
         , maxErrors(100)
         , validateFormats(true)
-        , strictSubset(false) {}
+        , strictSubset(false)
+        , defaultDialectUri(kDocumentedSubsetDialect) {}
 
 /*static*/
 pJsonSchemaValidator::Options pJsonSchemaValidator::Options::trustedRegex() {
@@ -1723,18 +1800,54 @@ pJsonSchemaValidator::Options pJsonSchemaValidator::Options::strict() {
 
 pJsonSchemaValidator::pJsonSchemaValidator(const pjson& aSchema, const Options& aOptions)
         : _schema(aSchema) // deep copy: the compiled schema is owned
-        , _options(aOptions) {}
+        , _options(aOptions) {
+    compileDialectContract(_schema, _options, _dialect, _schemaErrors);
+}
 
 pJsonSchemaValidator::~pJsonSchemaValidator() {}
 
 bool pJsonSchemaValidator::validate(const pjson& aInstance) const noexcept {
+    if (!isSchemaValid())
+        return false;
     std::vector<Error> errors;
     return runValidation(aInstance, _schema, errors, _options);
 }
 
 bool pJsonSchemaValidator::validate(const pjson& aInstance,
                                     std::vector<Error>& aErrors) const noexcept {
+    if (!isSchemaValid()) {
+        try {
+            aErrors.insert(aErrors.end(), _schemaErrors.begin(), _schemaErrors.end());
+        } catch (...) {
+            // The invalid-schema result remains reliable even when the
+            // best-effort diagnostic copy cannot allocate.
+        }
+        return false;
+    }
     return runValidation(aInstance, _schema, aErrors, _options);
+}
+
+/*static*/
+const char* pJsonSchemaValidator::documentedSubsetDialectUri() noexcept {
+    return kDocumentedSubsetDialect;
+}
+
+/*static*/
+const char* pJsonSchemaValidator::documentedSubsetVocabularyUri() noexcept {
+    return kDocumentedSubsetVocabulary;
+}
+
+bool pJsonSchemaValidator::isSchemaValid() const noexcept {
+    return _schemaErrors.empty();
+}
+
+const std::vector<pJsonSchemaValidator::Error>&
+pJsonSchemaValidator::schemaErrors() const noexcept {
+    return _schemaErrors;
+}
+
+const std::string& pJsonSchemaValidator::dialect() const noexcept {
+    return _dialect;
 }
 
 const pjson& pJsonSchemaValidator::schema() const noexcept {

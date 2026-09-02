@@ -81,7 +81,10 @@
  * schema or regex machinery and applications that do not validate never link it.
  * Construct one validator from a schema (deep-copied on construction) and reuse
  * it to validate many instances; validation never throws and never mutates its
- * inputs.
+ * inputs. The class implements one explicitly named subset dialect. A root
+ * `$schema` or Options::defaultDialectUri selects it; unsupported dialects and
+ * required vocabularies fail compilation. Inspect isSchemaValid(),
+ * schemaErrors(), and dialect() before trusting validation results.
  *
  * @see ByteDance::pJsonSchemaValidator::Options
  * @see ByteDance::pJsonSchemaValidator::Error
@@ -96,11 +99,17 @@
  * caller configuration can make recursive keyword evaluation exceed the
  * conservative native-stack bound. Other zero-valued validation budgets retain their
  * documented hard ceilings; only regex byte limits use zero as unlimited.
+ * defaultDialectUri defaults to documentedSubsetDialectUri(); an empty value
+ * selects the same default.
  */
 
 /**
  * @struct ByteDance::pJsonSchemaValidator::Error
- * @brief One schema-validation failure: a JSON Pointer path and a message.
+ * @brief One schema or instance-validation failure.
+ *
+ * category distinguishes SchemaCompilation diagnostics (whose JSON Pointer path
+ * addresses the schema) from InstanceValidation diagnostics (whose path
+ * addresses the validated instance).
  */
 
 /**

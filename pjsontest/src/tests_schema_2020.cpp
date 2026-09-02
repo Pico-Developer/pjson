@@ -123,3 +123,120 @@ TEST(schema_strict_mode_allows_extension_keywords) {
     CHECK(validates(schema, "\"hello\"", strict));
     CHECK(!validates(schema, "42", strict)); // the supported keyword still applies
 }
+
+//===----------------------------------------------------------------------===//
+// PJSON-SCHEMA-001: explicit dialect and vocabulary contract.
+//===----------------------------------------------------------------------===//
+TEST(schema_documented_subset_dialect_is_explicit_and_reusable) {
+    pjson schema;
+    schema["$schema"] = pJsonSchemaValidator::documentedSubsetDialectUri();
+    schema["type"] = "integer";
+
+    pJsonSchemaValidator validator(schema);
+    CHECK(validator.isSchemaValid());
+    CHECK(validator.schemaErrors().empty());
+    CHECK_EQ(validator.dialect(),
+             std::string(pJsonSchemaValidator::documentedSubsetDialectUri()));
+
+    pjson integerValue;
+    integerValue = int64_t(7);
+    pjson stringValue;
+    stringValue = "seven";
+    CHECK(validator.validate(integerValue));
+    CHECK(!validator.validate(stringValue));
+}
+
+TEST(schema_unsupported_declared_dialect_fails_compilation) {
+    pjson schema;
+    schema["$schema"] = "https://json-schema.org/draft/2020-12/schema";
+    schema["type"] = "integer";
+    pJsonSchemaValidator validator(schema);
+
+    CHECK(!validator.isSchemaValid());
+    CHECK_EQ(validator.schemaErrors().size(), size_t(1));
+    CHECK_EQ(validator.schemaErrors()[0].category,
+             pJsonSchemaValidator::Error::SchemaCompilation);
+    CHECK_EQ(validator.schemaErrors()[0].path, std::string("/$schema"));
+
+    pjson value;
+    value = int64_t(7);
+    std::vector<pJsonSchemaValidator::Error> errors;
+    CHECK(!validator.validate(value, errors));
+    CHECK_EQ(errors.size(), size_t(1));
+    CHECK_EQ(errors[0].category, pJsonSchemaValidator::Error::SchemaCompilation);
+}
+
+TEST(schema_unsupported_default_dialect_fails_when_schema_omits_schema_keyword) {
+    pjson schema;
+    schema["type"] = "integer";
+    pJsonSchemaValidator::Options options;
+    options.defaultDialectUri = "urn:example:unsupported-dialect";
+    pJsonSchemaValidator validator(schema, options);
+    CHECK(!validator.isSchemaValid());
+    CHECK_EQ(validator.dialect(), std::string("urn:example:unsupported-dialect"));
+}
+
+TEST(schema_vocabulary_contract_accepts_supported_and_optional_unknown) {
+    pjson schema;
+    schema["$schema"] = pJsonSchemaValidator::documentedSubsetDialectUri();
+    schema["$vocabulary"][pJsonSchemaValidator::documentedSubsetVocabularyUri()] = true;
+    schema["$vocabulary"]["urn:example:optional-annotations"] = false;
+    schema["type"] = "string";
+
+    pJsonSchemaValidator validator(schema);
+    CHECK(validator.isSchemaValid());
+    pjson value;
+    value = "ok";
+    CHECK(validator.validate(value));
+}
+
+TEST(schema_vocabulary_contract_rejects_unknown_required_vocabulary) {
+    pjson schema;
+    schema["$schema"] = pJsonSchemaValidator::documentedSubsetDialectUri();
+    schema["$vocabulary"]["urn:example:required-but-unsupported"] = true;
+    pJsonSchemaValidator validator(schema);
+
+    CHECK(!validator.isSchemaValid());
+    CHECK_EQ(validator.schemaErrors().size(), size_t(1));
+    CHECK(validator.schemaErrors()[0].message.find("unsupported required") !=
+          std::string::npos);
+}
+
+TEST(schema_vocabulary_contract_accepts_supported_required_vocabulary) {
+    pjson schema;
+    schema["$vocabulary"][pJsonSchemaValidator::documentedSubsetVocabularyUri()] = true;
+    schema["minimum"] = int64_t(10);
+    pJsonSchemaValidator validator(schema);
+    CHECK(validator.isSchemaValid());
+
+    pjson below;
+    below = int64_t(9);
+    CHECK(!validator.validate(below));
+}
+
+TEST(schema_empty_default_dialect_selects_documented_subset) {
+    pjson schema;
+    pJsonSchemaValidator::Options options;
+    options.defaultDialectUri.clear();
+    pJsonSchemaValidator validator(schema, options);
+    CHECK(validator.isSchemaValid());
+    CHECK_EQ(validator.dialect(),
+             std::string(pJsonSchemaValidator::documentedSubsetDialectUri()));
+}
+
+TEST(schema_dialect_and_vocabulary_shapes_are_compilation_errors) {
+    pjson badDialect;
+    badDialect["$schema"] = int64_t(202012);
+    pJsonSchemaValidator dialectValidator(badDialect);
+    CHECK(!dialectValidator.isSchemaValid());
+
+    pjson badVocabulary;
+    badVocabulary["$vocabulary"] = "not-an-object";
+    pJsonSchemaValidator vocabularyValidator(badVocabulary);
+    CHECK(!vocabularyValidator.isSchemaValid());
+
+    pjson badEntry;
+    badEntry["$vocabulary"]["urn:example:vocabulary"] = "required";
+    pJsonSchemaValidator entryValidator(badEntry);
+    CHECK(!entryValidator.isSchemaValid());
+}

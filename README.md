@@ -890,8 +890,9 @@ vocabulary is a deliberately limited subset of
 [JSON Schema](https://json-schema.org), not a complete draft implementation.
 `validate()` is `noexcept` and normally collects every applicable failure (a
 resource-budget failure stops traversal), each reported as a
-`pJsonSchemaValidator::Error { std::string path; std::string message; }` where
-`path` is a JSON Pointer to the offending node.
+`pJsonSchemaValidator::Error { path, message, category }` where `path` is a JSON
+Pointer to the offending instance or schema node. `category` distinguishes
+`InstanceValidation` from `SchemaCompilation`.
 
 ```cpp
 #include "pjson_schema.h"
@@ -911,6 +912,10 @@ pjson data = pjson::parse(R"({ "name": "Ada", "age": 36, "tags": ["x","y"] })");
 
 // Compile the schema once, then reuse the validator.
 pJsonSchemaValidator validator(schema);
+if (!validator.isSchemaValid()) {
+    for (const auto& e : validator.schemaErrors())
+        std::cerr << "invalid schema at " << e.path << ": " << e.message << "\n";
+}
 
 // Simple pass/fail:
 if (validator.validate(data)) {
@@ -926,6 +931,16 @@ if (!validator.validate(data, errors)) {
     }
 }
 ```
+
+The validator implements one explicitly named dialect for this documented
+subset. If a root schema declares `$schema`, it must equal
+`pJsonSchemaValidator::documentedSubsetDialectUri()`; otherwise schema
+compilation fails. When `$schema` is absent, `Options::defaultDialectUri`
+selects the dialect and defaults to that same URI. `$vocabulary` may require
+`documentedSubsetVocabularyUri()`; unknown optional vocabularies are accepted
+as annotations, while unknown required vocabularies fail compilation. This is
+why pjson does not accept the official 2020-12 meta-schema URI: doing so would
+incorrectly claim the complete dialect.
 
 Example failure output for `{ "age": "old" }` against the schema above:
 ```text

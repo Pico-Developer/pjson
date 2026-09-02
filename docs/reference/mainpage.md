@@ -27,7 +27,8 @@ types are intentionally excluded.
   (itself a pjson value); its nested @ref ByteDance::pJsonSchemaValidator::Options
   and @ref ByteDance::pJsonSchemaValidator::Error configure and report schema
   validation. It is a standalone helper in `<pjson_schema.h>` that consumes only
-  pjson's public API.
+  pjson's public API. Its named subset dialect rejects unsupported `$schema`
+  declarations and required `$vocabulary` entries during compilation.
 
 Use the navigation tree to browse classes, nested option/error types, enums,
 typedefs, and every public overload. Each entry is generated from the current

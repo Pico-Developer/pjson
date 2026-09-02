@@ -33,12 +33,14 @@ manifest-driven `draft2020-12` conformance gate
 (`schema_official_draft2020_optional`, SCHEMA-006) that runs the pinned
 JSON-Schema-Test-Suite: supported-keyword files run whole and every deferred
 feature is skipped with a concrete reason (measured baseline 924 cases pass /
-90 skipped).
+90 skipped). An explicit dialect contract (SCHEMA-001) names pjson's subset
+dialect and vocabulary, honors root `$schema`, rejects unsupported dialects and
+required vocabularies, and accepts unknown optional vocabularies.
 
-**What remains (PJSON-SCHEMA-001/003/004):**
-`$schema`/dialect negotiation and `$vocabulary`,
+**What remains (PJSON-SCHEMA-003/004):**
 `$id`/`$anchor`/`$dynamicAnchor`/`$dynamicRef` with URI base resolution,
-`unevaluatedItems`/`unevaluatedProperties`, and an external resolver callback
+`unevaluatedItems`/`unevaluatedProperties`, full standard-vocabulary/meta-schema
+loading, and an external resolver callback
 with cycle/byte/work budgets for remote references. As each lands, flip its
 skipped groups in the draft2020-12 manifest to enabled. Until all land, docs
 must keep saying "documented subset" and must not claim general 2020-12

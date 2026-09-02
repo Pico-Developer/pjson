@@ -7,6 +7,7 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
 # Read the public version macro so generated pages always match the library.
 set(PJSON_PUBLIC_HEADER "${PROJECT_SOURCE_DIR}/pjsonlib/include/pjson.h")
+set(PJSON_SCHEMA_PUBLIC_HEADER "${PROJECT_SOURCE_DIR}/pjsonlib/include/pjson_schema.h")
 file(STRINGS "${PJSON_PUBLIC_HEADER}" PJSON_VERSION_DEFINE
      REGEX "^#define PJSON_VERSION \"[^\"]+\"$")
 string(REGEX REPLACE "^#define PJSON_VERSION \"([^\"]+)\"$" "\\1"
@@ -37,6 +38,7 @@ set(PJSON_DOCS_COMMANDS
             --xml "${PJSON_DOCS_OUTPUT_DIR}/xml" --html "${PJSON_DOCS_OUTPUT_DIR}/html")
 set(PJSON_DOCS_DEPENDS
         "${PJSON_PUBLIC_HEADER}"
+        "${PJSON_SCHEMA_PUBLIC_HEADER}"
         "${CMAKE_CURRENT_BINARY_DIR}/Doxyfile"
         "${PJSON_DOXYGEN_FILTER}"
         "${PJSON_DOCS_VALIDATOR}"

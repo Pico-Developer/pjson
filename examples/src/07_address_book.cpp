@@ -65,6 +65,10 @@ int main() {
     }
     // Compile the schema once; every contact is checked against this validator.
     pJsonSchemaValidator validator(schema);
+    if (!validator.isSchemaValid()) {
+        std::cerr << "embedded contact schema is unsupported\n";
+        return 1;
+    }
 
     // Start an empty address book.
     pjson book;

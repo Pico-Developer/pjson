@@ -136,6 +136,46 @@ namespace {
 #endif
     }
 
+    void listJsonFiles(const std::string& root, const std::string& relative,
+                       std::vector<std::string>& output) {
+        const std::string directory = relative.empty() ? root : joinPath(root, relative);
+#if defined(_WIN32)
+        WIN32_FIND_DATAA entry;
+        const std::string pattern = joinPath(directory, "*");
+        HANDLE handle = FindFirstFileA(pattern.c_str(), &entry);
+        if (handle == INVALID_HANDLE_VALUE)
+            return;
+        do {
+            const std::string name = entry.cFileName;
+            if (name == "." || name == "..")
+                continue;
+            const std::string child = relative.empty() ? name : relative + "/" + name;
+            if ((entry.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0)
+                listJsonFiles(root, child, output);
+            else if (name.size() >= 5 && name.substr(name.size() - 5) == ".json")
+                output.push_back(child);
+        } while (FindNextFileA(handle, &entry));
+        FindClose(handle);
+#else
+        DIR* handle = ::opendir(directory.c_str());
+        if (handle == NULL)
+            return;
+        while (dirent* entry = ::readdir(handle)) {
+            const std::string name = entry->d_name;
+            if (name == "." || name == "..")
+                continue;
+            const std::string child = relative.empty() ? name : relative + "/" + name;
+            const std::string path = joinPath(root, child);
+            if (isDirectory(path))
+                listJsonFiles(root, child, output);
+            else if (isRegularFile(path) && name.size() >= 5 &&
+                     name.substr(name.size() - 5) == ".json")
+                output.push_back(child);
+        }
+        ::closedir(handle);
+#endif
+    }
+
     std::string readFile(const std::string& path) {
         std::ifstream in(path.c_str(), std::ios::binary);
         if (!in) {
@@ -773,6 +813,73 @@ namespace {
                       false, "requires $vocabulary negotiation and custom metaschema resolution"});
         r.groups.push_back(GroupRule{"ignore unrecognized optional vocabulary", true, "supported"});
         rules.push_back(r);
+
+        // Optional suites remain explicit as well. Running subsets that exercise
+        // already documented behavior prevents the small mandatory skip count
+        // from being mistaken for a full conformance denominator.
+        const auto addWhole = [&rules](const char* path, const char* reason) {
+            FileRule rule;
+            rule.relativePath = path;
+            rule.mode = RunWholeFile;
+            rule.reason = reason;
+            rules.push_back(rule);
+        };
+        const auto addSkip = [&rules](const char* path, const char* reason) {
+            FileRule rule;
+            rule.relativePath = path;
+            rule.mode = SkipWholeFile;
+            rule.reason = reason;
+            rules.push_back(rule);
+        };
+        addWhole("optional/anchor.json", "identifier isolation inside instance-valued keywords");
+        addWhole("optional/dependencies-compatibility.json",
+                 "supported legacy compatibility keyword");
+        addWhole("optional/dynamicRef.json", "supported dynamic-scope behavior");
+        addWhole("optional/float-overflow.json", "bounded binary64 arithmetic behavior");
+        addWhole("optional/id.json", "identifier isolation inside instance-valued keywords");
+        addWhole("optional/no-schema.json", "documented default dialect behavior");
+        addWhole("optional/refOfUnknownKeyword.json",
+                 "JSON Pointer references may target arbitrary schema-shaped locations");
+        addWhole("optional/unknownKeyword.json",
+                 "unknown-keyword contents are not traversed as schemas");
+
+        addSkip("optional/bignum.json",
+                "pjson intentionally rejects integers outside its signed/unsigned 64-bit model");
+        addSkip("optional/cross-draft.json",
+                "historic JSON Schema dialect interpretation is not implemented");
+        addSkip("optional/ecmascript-regex.json",
+                "std::regex is not a Unicode ECMAScript regular-expression engine");
+        addSkip("optional/non-bmp-regex.json",
+                "std::regex does not provide portable Unicode code-point semantics");
+        addSkip("optional/format-assertion.json",
+                "custom meta-schema format-assertion vocabulary selection is not implemented");
+
+        static const char* const kFormatSuites[] = {
+            "optional/format/date-time.json",
+            "optional/format/date.json",
+            "optional/format/duration.json",
+            "optional/format/ecmascript-regex.json",
+            "optional/format/email.json",
+            "optional/format/hostname.json",
+            "optional/format/idn-email.json",
+            "optional/format/idn-hostname.json",
+            "optional/format/ipv4.json",
+            "optional/format/ipv6.json",
+            "optional/format/iri-reference.json",
+            "optional/format/iri.json",
+            "optional/format/json-pointer.json",
+            "optional/format/regex.json",
+            "optional/format/relative-json-pointer.json",
+            "optional/format/time.json",
+            "optional/format/unknown.json",
+            "optional/format/uri-reference.json",
+            "optional/format/uri-template.json",
+            "optional/format/uri.json",
+            "optional/format/uuid.json",
+        };
+        for (size_t i = 0; i < sizeof(kFormatSuites) / sizeof(kFormatSuites[0]); ++i)
+            addSkip(kFormatSuites[i],
+                    "Draft 2020-12 format assertions require vocabulary-controlled activation");
         return rules;
     }
 
@@ -822,6 +929,32 @@ namespace {
 
     void recordFailure(const std::string& scope, const std::string& detail) {
         ::pjson_test::report_failure(__FILE__, __LINE__, scope.c_str(), detail);
+    }
+
+    void requireCompleteManifest(const std::string& suiteDir, const std::vector<FileRule>& rules) {
+        std::vector<std::string> files;
+        listJsonFiles(suiteDir, std::string(), files);
+        std::sort(files.begin(), files.end());
+
+        std::vector<std::string> declared;
+        for (size_t i = 0; i < rules.size(); ++i)
+            declared.push_back(rules[i].relativePath);
+        std::sort(declared.begin(), declared.end());
+
+        for (size_t i = 1; i < declared.size(); ++i) {
+            if (declared[i] == declared[i - 1])
+                recordFailure("official schema suite manifest duplicate", declared[i]);
+        }
+        for (size_t i = 0; i < files.size(); ++i) {
+            if (!std::binary_search(declared.begin(), declared.end(), files[i]))
+                recordFailure("official schema suite manifest gap",
+                              files[i] + " has no explicit run/skip decision");
+        }
+        for (size_t i = 0; i < declared.size(); ++i) {
+            if (!std::binary_search(files.begin(), files.end(), declared[i]))
+                recordFailure("official schema suite manifest stale",
+                              declared[i] + " is not present in the suite");
+        }
     }
 
     // Runs one upstream case while preserving its file/group/case hierarchy in diagnostics.
@@ -1057,5 +1190,7 @@ TEST(schema_official_draft2020_optional) {
     pJsonSchemaValidator::Options options = pJsonSchemaValidator::Options::modernSubset();
     options.resolver = resolveOfficialSchema;
     options.resolverContext = &resolverContext;
-    runOfficialSuite(dir, manifest2020(), "draft2020-12", options, true);
+    const std::vector<FileRule> rules = manifest2020();
+    requireCompleteManifest(dir, rules);
+    runOfficialSuite(dir, rules, "draft2020-12", options, true);
 }

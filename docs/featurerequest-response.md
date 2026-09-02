@@ -247,10 +247,13 @@ gate above, by extracting a reusable compiled validator object (SCHEMA-002),
 and by adding the manifest-driven conformance gate (SCHEMA-006). SCHEMA-003/004
 now add `$id` resource bases, anchors, dynamic references, explicit no-I/O
 external resolution with document/byte/work/depth budgets, and annotation
-propagation for both `unevaluated*` keywords. The official gate runs 1,287
-Draft 2020-12 cases across 378 groups. Remaining gaps are standard meta-schema
-loading/vocabulary-driven keyword selection and ECMA-262 Unicode property
-escapes. Documentation therefore continues to describe this as a **documented
+propagation for both `unevaluated*` keywords. The official gate now accounts for
+all 80 files in the pinned Draft 2020-12 corpus: it runs 1,349 cases across 396
+groups, skips 10 cases across four selected groups, and explicitly defers 27
+whole optional files. Remaining conformance gaps include meta-schema-controlled
+vocabulary/format behavior and a real ECMA-262 Unicode regex implementation;
+optional big-number and cross-draft behavior are outside pjson's data/dialect
+model. Documentation therefore continues to describe this as a **documented
 subset**, not general 2020-12 conformance.
 
 PJSON-SCHEMA-002 strict keyword-shape compilation is implemented for the full
@@ -317,9 +320,11 @@ test registry rather than source-text scraping. A manifest-driven
 (`schema_official_draft2020_optional`) now runs alongside the existing draft-07
 gate: supported-keyword files run whole, and each remaining unsupported group
 (official meta-schema behavior and Unicode `\p{}` regex)
-is skipped with a concrete reason so coverage cannot silently shrink. Measured
-baseline: 1,287 Draft 2020-12 cases pass across 378 groups; four groups (10
-cases) and one two-case meta-schema file are skipped. Full unconditional 2020-12
+is skipped with a concrete reason so coverage cannot silently shrink. The
+manifest also enumerates every optional file, and a bidirectional filesystem
+check fails on unclassified additions or stale entries. Measured baseline: 1,349
+Draft 2020-12 cases pass across 396 groups; four selected groups (10 cases) and
+27 whole optional files are explicitly deferred. Full unconditional 2020-12
 conformance remains unclaimed.
 
 ## 13. Documentation and governance

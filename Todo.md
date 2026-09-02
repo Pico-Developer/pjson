@@ -63,9 +63,11 @@ PJSON_JSON_SCHEMA_TEST_SUITE_DIR="$PWD/.test-corpora/JSON-Schema-Test-Suite" \
 ```
 
 The last complete Debug/ASan/Release runs passed 522/522 tests. The current
-Draft 2020-12 manifest executes 1,287 official cases across 378 groups and skips
-10 cases across four groups. The remaining groups require the official
-meta-schema/custom vocabulary behavior or ECMA-262 Unicode property escapes.
+Draft 2020-12 manifest explicitly accounts for all 80 files in the pinned
+corpus. It executes 1,349 official cases across 396 groups, skips 10 cases across
+four selected groups, and explicitly defers 27 whole optional files. The latter
+cover unsupported big-number/cross-draft behavior, full ECMA-262 regex and format
+suites, and custom meta-schema-controlled vocabulary activation.
 Also verified: clang-format, clang-tidy, 20,000 schema-fuzzer runs, seven-target
 libFuzzer smoke coverage with inputs above 4 KiB, Doxygen API
 validation, relocatable static/shared CMake and pkg-config consumers, REUSE
@@ -99,17 +101,19 @@ required vocabularies, and accepts unknown optional vocabularies. SCHEMA-003 and
 SCHEMA-004 now provide `$id`/URI resources, `$anchor`, `$dynamicAnchor`, `$ref`,
 `$dynamicRef`, an explicit resolver with document/byte/work/depth budgets, and
 annotation propagation for `unevaluatedItems`/`unevaluatedProperties`. The
-official Draft 2020-12 gate now runs 1,287 cases across 378 groups; it skips four
-groups (10 cases) and one two-case meta-schema file with explicit reasons.
+official Draft 2020-12 gate now explicitly accounts for all 80 pinned files. It
+runs 1,349 cases across 396 groups, skips four selected groups (10 cases), and
+defers 27 whole optional files with concrete reasons.
 
 Strict mode now performs a complete pre-validation pass over the documented
 keyword set and rejects malformed keyword shapes before instance validation.
 
-**What remains:** full standard-vocabulary/meta-schema loading and ECMA-262
-Unicode property escapes. The
-remaining skipped official groups document these gaps. Until they land, docs
-must keep saying "documented subset" and must not claim general 2020-12
-conformance.
+**What remains:** standard/custom meta-schema-driven vocabulary activation and a
+real ECMA-262 Unicode regular-expression implementation. The optional bignum and
+cross-draft suites are outside pjson's explicit numeric/dialect contracts. Format
+assertion suites also require vocabulary-driven activation; several individual
+format implementations are intentionally absent. Until those gaps land, docs must
+keep saying "documented subset" and must not claim general 2020-12 conformance.
 
 ### [~] PERF-BASELINE — Controlled regression policy and auxiliary metrics
 

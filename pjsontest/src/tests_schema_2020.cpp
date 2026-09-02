@@ -314,6 +314,80 @@ TEST(schema_reference_and_anchor_shapes_fail_validation_safely) {
     CHECK(!targetValidator.isSchemaValid());
 }
 
+TEST(schema_strict_mode_rejects_every_supported_keyword_shape) {
+    struct ShapeCase {
+        const char* schema;
+        const char* location;
+        const char* keyword;
+        pJsonSchemaValidator::Error::Code code;
+    };
+    const ShapeCase cases[] = {
+        {R"({"type":"unknown"})", "/type", "type", pJsonSchemaValidator::Error::InvalidSchema},
+        {R"({"type":["string","string"]})", "/type", "type",
+         pJsonSchemaValidator::Error::InvalidSchema},
+        {R"({"enum":[]})", "/enum", "enum", pJsonSchemaValidator::Error::InvalidSchema},
+        {R"({"enum":[1,1.0]})", "/enum", "enum", pJsonSchemaValidator::Error::InvalidSchema},
+        {R"({"pattern":3})", "/pattern", "pattern", pJsonSchemaValidator::Error::InvalidSchema},
+        {R"({"pattern":"["})", "/pattern", "pattern", pJsonSchemaValidator::Error::RegexFailure},
+        {R"({"format":false})", "/format", "format", pJsonSchemaValidator::Error::InvalidSchema},
+        {R"({"uniqueItems":1})", "/uniqueItems", "uniqueItems",
+         pJsonSchemaValidator::Error::InvalidSchema},
+        {R"({"minimum":"0"})", "/minimum", "minimum", pJsonSchemaValidator::Error::InvalidSchema},
+        {R"({"multipleOf":0})", "/multipleOf", "multipleOf",
+         pJsonSchemaValidator::Error::InvalidSchema},
+        {R"({"minLength":-1})", "/minLength", "minLength",
+         pJsonSchemaValidator::Error::InvalidSchema},
+        {R"({"maxItems":1.5})", "/maxItems", "maxItems",
+         pJsonSchemaValidator::Error::InvalidSchema},
+        {R"({"additionalProperties":7})", "/additionalProperties", "additionalProperties",
+         pJsonSchemaValidator::Error::InvalidSchema},
+        {R"({"items":"schema"})", "/items", "items", pJsonSchemaValidator::Error::InvalidSchema},
+        {R"({"allOf":[]})", "/allOf", "allOf", pJsonSchemaValidator::Error::InvalidSchema},
+        {R"({"anyOf":[true,7]})", "/anyOf/1", "anyOf", pJsonSchemaValidator::Error::InvalidSchema},
+        {R"({"prefixItems":false})", "/prefixItems", "prefixItems",
+         pJsonSchemaValidator::Error::InvalidSchema},
+        {R"({"prefixItems":[]})", "/prefixItems", "prefixItems",
+         pJsonSchemaValidator::Error::InvalidSchema},
+        {R"({"properties":[]})", "/properties", "properties",
+         pJsonSchemaValidator::Error::InvalidSchema},
+        {R"({"properties":{"x":7}})", "/properties/x", "properties",
+         pJsonSchemaValidator::Error::InvalidSchema},
+        {R"({"required":["x","x"]})", "/required", "required",
+         pJsonSchemaValidator::Error::InvalidSchema},
+        {R"({"dependentRequired":{"x":["y","y"]}})", "/dependentRequired/x", "dependentRequired",
+         pJsonSchemaValidator::Error::InvalidSchema},
+        {R"({"dependencies":{"x":7}})", "/dependencies/x", "dependencies",
+         pJsonSchemaValidator::Error::InvalidSchema},
+        {R"({"examples":false})", "/examples", "examples",
+         pJsonSchemaValidator::Error::InvalidSchema},
+        {R"({"contentSchema":{}})", "/contentSchema", "contentSchema",
+         pJsonSchemaValidator::Error::UnsupportedKeyword},
+    };
+
+    const pJsonSchemaValidator::Options strict = pJsonSchemaValidator::Options::strict();
+    for (const ShapeCase& test : cases) {
+        const pjson schema = pjson::parse(test.schema);
+        const pJsonSchemaValidator validator(schema, strict);
+        CHECK(!validator.isSchemaValid());
+        CHECK(!validator.schemaErrors().empty());
+        if (!validator.schemaErrors().empty()) {
+            CHECK_EQ(validator.schemaErrors()[0].code, test.code);
+            CHECK_EQ(validator.schemaErrors()[0].schemaLocation, std::string(test.location));
+            CHECK_EQ(validator.schemaErrors()[0].keyword, std::string(test.keyword));
+        }
+    }
+}
+
+TEST(schema_permissive_mode_still_ignores_malformed_keyword_shapes) {
+    pjson schema = pjson::parse(
+        R"({"type":7,"required":false,"properties":[],"allOf":false,"minimum":"zero"})");
+    pJsonSchemaValidator validator(schema);
+    CHECK(validator.isSchemaValid());
+    pjson value;
+    value = "accepted";
+    CHECK(validator.validate(value));
+}
+
 TEST(schema_ids_inside_instance_valued_keywords_are_not_indexed) {
     pjson schema = pjson::parse(
         R"({"const":{"$id":"https://example.test/not-a-schema","value":1},"$defs":{"actual":{"$id":"https://example.test/not-a-schema","type":"integer"}}})");

@@ -1275,6 +1275,300 @@ namespace {
                                      keyword, message));
     }
 
+    bool isSchemaNode(const pjson& value) {
+        return value.isObject() || value.isBool();
+    }
+
+    bool isFiniteSchemaNumber(const pjson& value) {
+        if (!value.isNumber())
+            return false;
+        if (!value.isDouble())
+            return true;
+        double number = 0.0;
+        return value.tryGet(number) && std::isfinite(number);
+    }
+
+    bool isNonnegativeInteger(const pjson& value) {
+        size_t ignored = 0;
+        bool aboveRange = false;
+        return schemaSize(value, ignored, aboveRange);
+    }
+
+    bool validTypeName(const std::string& value) {
+        static const char* const kTypes[] = {
+            "null", "boolean", "object", "array", "number", "string", "integer",
+        };
+        for (const char* type : kTypes) {
+            if (value == type)
+                return true;
+        }
+        return false;
+    }
+
+    bool isUniqueStringArray(const pjson& value, bool allowEmpty) {
+        if (!value.isArray() || (!allowEmpty && value.empty()))
+            return false;
+        std::set<std::string> seen;
+        for (size_t i = 0; i < value.size(); ++i) {
+            const pjson* item = value.find(i);
+            if (item == nullptr || !item->isString() || !seen.insert(strOf(*item)).second)
+                return false;
+        }
+        return true;
+    }
+
+    bool isTypeDeclaration(const pjson& value) {
+        if (value.isString())
+            return validTypeName(strOf(value));
+        if (!isUniqueStringArray(value, false))
+            return false;
+        for (size_t i = 0; i < value.size(); ++i) {
+            const pjson* item = value.find(i);
+            if (item == nullptr || !validTypeName(strOf(*item)))
+                return false;
+        }
+        return true;
+    }
+
+    bool hasDuplicateArrayValue(const pjson& value) {
+        if (!value.isArray())
+            return false;
+        for (size_t i = 0; i < value.size(); ++i) {
+            const pjson* left = value.find(i);
+            for (size_t j = i + 1; left != nullptr && j < value.size(); ++j) {
+                const pjson* right = value.find(j);
+                if (right != nullptr && *left == *right)
+                    return true;
+            }
+        }
+        return false;
+    }
+
+    // Validates every implemented keyword before strict-mode validation begins.
+    // Permissive mode deliberately retains the historical ignore-malformed behavior.
+    void validateKeywordShapes(const pjson& schema, const Options& options,
+                               std::vector<SchemaError>& errors, const std::string& documentUri,
+                               const std::string& path) {
+        if (!options.strictSubset || !schema.isObject())
+            return;
+        const size_t limit = diagnosticLimit(options);
+        const auto reject = [&](const char* keyword, const std::string& expectation,
+                                SchemaError::Code code = SchemaError::InvalidSchema) {
+            if (errors.size() < limit)
+                addCompilationError(
+                    errors, code, absoluteSchemaLocation(documentUri, pointerAppend(path, keyword)),
+                    keyword, std::string(keyword) + " " + expectation);
+        };
+        const auto valueOf = [&](const char* keyword) { return schema.find(keyword); };
+        const auto rejectSchemaContainerValues = [&](const char* keyword, const pjson& value) {
+            const std::vector<std::string> keys = value.keys();
+            for (size_t i = 0; i < keys.size() && errors.size() < limit; ++i) {
+                const pjson* child = value.find(keys[i]);
+                if (child == nullptr || !isSchemaNode(*child))
+                    addCompilationError(
+                        errors, SchemaError::InvalidSchema,
+                        absoluteSchemaLocation(
+                            documentUri, pointerAppend(pointerAppend(path, keyword), keys[i])),
+                        keyword, "schema must be an object or boolean");
+            }
+        };
+        const auto rejectSchemaArrayValues = [&](const char* keyword, const pjson& value) {
+            for (size_t i = 0; i < value.size() && errors.size() < limit; ++i) {
+                const pjson* child = value.find(i);
+                if (child == nullptr || !isSchemaNode(*child))
+                    addCompilationError(errors, SchemaError::InvalidSchema,
+                                        absoluteSchemaLocation(
+                                            documentUri, pointerAppend(pointerAppend(path, keyword),
+                                                                       std::to_string(i))),
+                                        keyword, "schema must be an object or boolean");
+            }
+        };
+
+        if (const pjson* value = valueOf("type")) {
+            if (!isTypeDeclaration(*value))
+                reject("type",
+                       "must be a valid type name or a non-empty array of unique type names");
+        }
+        if (const pjson* value = valueOf("enum")) {
+            if (!value->isArray() || value->empty() || hasDuplicateArrayValue(*value))
+                reject("enum", "must be a non-empty array of unique values");
+        }
+        for (const char* keyword :
+             {"$schema", "$comment", "title", "description", "pattern", "format"}) {
+            const pjson* value = valueOf(keyword);
+            if (value != nullptr && !value->isString())
+                reject(keyword, "must be a string");
+        }
+        for (const char* keyword : {"deprecated", "readOnly", "writeOnly", "uniqueItems"}) {
+            const pjson* value = valueOf(keyword);
+            if (value != nullptr && !value->isBool())
+                reject(keyword, "must be a boolean");
+        }
+        for (const char* keyword : {"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum"}) {
+            const pjson* value = valueOf(keyword);
+            if (value != nullptr && !isFiniteSchemaNumber(*value))
+                reject(keyword, "must be a finite number");
+        }
+        if (const pjson* value = valueOf("multipleOf")) {
+            if (!isFiniteSchemaNumber(*value) || numberAsDouble(*value) <= 0.0)
+                reject("multipleOf", "must be a finite number greater than zero");
+        }
+        for (const char* keyword : {"minLength", "maxLength", "minItems", "maxItems", "minContains",
+                                    "maxContains", "minProperties", "maxProperties"}) {
+            const pjson* value = valueOf(keyword);
+            if (value != nullptr && !isNonnegativeInteger(*value))
+                reject(keyword, "must be a non-negative integer");
+        }
+        for (const char* keyword :
+             {"additionalProperties", "unevaluatedProperties", "unevaluatedItems", "contains",
+              "propertyNames", "not", "if", "then", "else"}) {
+            const pjson* value = valueOf(keyword);
+            if (value != nullptr && !isSchemaNode(*value))
+                reject(keyword, "must be an object or boolean schema");
+        }
+        if (const pjson* value = valueOf("items")) {
+            if (!isSchemaNode(*value) && !value->isArray())
+                reject("items", "must be a schema or an array of schemas");
+            else if (value->isArray())
+                rejectSchemaArrayValues("items", *value);
+        }
+        for (const char* keyword : {"allOf", "anyOf", "oneOf"}) {
+            const pjson* value = valueOf(keyword);
+            if (value != nullptr) {
+                if (!value->isArray() || value->empty())
+                    reject(keyword, "must be a non-empty array of schemas");
+                else
+                    rejectSchemaArrayValues(keyword, *value);
+            }
+        }
+        if (const pjson* value = valueOf("prefixItems")) {
+            if (!value->isArray() || value->empty())
+                reject("prefixItems", "must be a non-empty array of schemas");
+            else
+                rejectSchemaArrayValues("prefixItems", *value);
+        }
+        for (const char* keyword :
+             {"$defs", "definitions", "properties", "patternProperties", "dependentSchemas"}) {
+            const pjson* value = valueOf(keyword);
+            if (value != nullptr) {
+                if (!value->isObject())
+                    reject(keyword, "must be an object whose values are schemas");
+                else
+                    rejectSchemaContainerValues(keyword, *value);
+            }
+        }
+        if (const pjson* value = valueOf("required")) {
+            if (!isUniqueStringArray(*value, true))
+                reject("required", "must be an array of unique strings");
+        }
+        if (const pjson* value = valueOf("dependentRequired")) {
+            if (!value->isObject()) {
+                reject("dependentRequired", "must be an object");
+            } else {
+                const std::vector<std::string> keys = value->keys();
+                for (size_t i = 0; i < keys.size(); ++i) {
+                    const pjson* entry = value->find(keys[i]);
+                    if (entry == nullptr || !isUniqueStringArray(*entry, true)) {
+                        addCompilationError(
+                            errors, SchemaError::InvalidSchema,
+                            absoluteSchemaLocation(
+                                documentUri,
+                                pointerAppend(pointerAppend(path, "dependentRequired"), keys[i])),
+                            "dependentRequired", "value must be an array of unique strings");
+                        break;
+                    }
+                }
+            }
+        }
+        if (const pjson* value = valueOf("dependencies")) {
+            if (!value->isObject()) {
+                reject("dependencies", "must be an object");
+            } else {
+                const std::vector<std::string> keys = value->keys();
+                for (size_t i = 0; i < keys.size(); ++i) {
+                    const pjson* entry = value->find(keys[i]);
+                    if (entry == nullptr ||
+                        (!isSchemaNode(*entry) && !isUniqueStringArray(*entry, true))) {
+                        addCompilationError(
+                            errors, SchemaError::InvalidSchema,
+                            absoluteSchemaLocation(
+                                documentUri,
+                                pointerAppend(pointerAppend(path, "dependencies"), keys[i])),
+                            "dependencies", "value must be a schema or an array of unique strings");
+                        break;
+                    }
+                }
+            }
+        }
+        if (const pjson* value = valueOf("$vocabulary")) {
+            if (!value->isObject()) {
+                reject("$vocabulary", "must be an object mapping URI strings to booleans");
+            } else {
+                const std::vector<std::string> keys = value->keys();
+                for (size_t i = 0; i < keys.size(); ++i) {
+                    const pjson* entry = value->find(keys[i]);
+                    if (entry == nullptr || !entry->isBool()) {
+                        reject("$vocabulary", "entries must be boolean");
+                        break;
+                    }
+                }
+            }
+        }
+        if (const pjson* value = valueOf("examples")) {
+            if (!value->isArray())
+                reject("examples", "must be an array");
+        }
+        const auto rejectRegex = [&](const std::string& pattern, const std::string& location,
+                                     const char* keyword) {
+            if (options.maxRegexPatternBytes != 0 &&
+                pattern.size() > options.maxRegexPatternBytes) {
+                if (errors.size() < limit)
+                    addCompilationError(errors, SchemaError::RegexFailure, location, keyword,
+                                        "schema regex pattern exceeds safety limit");
+                return;
+            }
+            if (!options.allowUnsafeRegex && !isSafeRegex(pattern)) {
+                if (errors.size() < limit)
+                    addCompilationError(errors, SchemaError::RegexFailure, location, keyword,
+                                        "schema regex pattern rejected by safety policy");
+                return;
+            }
+            try {
+                std::regex compiled(pattern, std::regex::ECMAScript);
+                (void)compiled;
+            } catch (const std::regex_error&) {
+                if (errors.size() < limit)
+                    addCompilationError(errors, SchemaError::RegexFailure, location, keyword,
+                                        "schema has an invalid regex pattern");
+            }
+        };
+        if (const pjson* value = valueOf("pattern")) {
+            if (value->isString())
+                rejectRegex(strOf(*value),
+                            absoluteSchemaLocation(documentUri, pointerAppend(path, "pattern")),
+                            "pattern");
+        }
+        if (const pjson* value = valueOf("patternProperties")) {
+            if (value->isObject()) {
+                const std::vector<std::string> patterns = value->keys();
+                for (size_t i = 0; i < patterns.size() && errors.size() < limit; ++i)
+                    rejectRegex(
+                        patterns[i],
+                        absoluteSchemaLocation(
+                            documentUri,
+                            pointerAppend(pointerAppend(path, "patternProperties"), patterns[i])),
+                        "patternProperties");
+            }
+        }
+        for (const std::string& keyword : schema.keys()) {
+            if (errors.size() >= limit)
+                break;
+            if (!isSupportedSchemaKeyword(keyword) && isStandardSchemaKeyword(keyword))
+                reject(keyword.c_str(), "is not supported by the selected pjson dialect",
+                       SchemaError::UnsupportedKeyword);
+        }
+    }
+
     // Establishes the root schema's dialect and required-vocabulary contract.
     // pjson deliberately names its implemented subset with a private URN rather
     // than accepting the official 2020-12 meta-schema URI and over-claiming
@@ -1405,6 +1699,9 @@ namespace {
             const SchemaTarget nodeTarget(&node, currentResource, currentBase,
                                           absoluteSchemaLocation(documentUri, path));
             index.nodeTargets[&node] = nodeTarget;
+            validateKeywordShapes(node, options, errors, documentUri, path);
+            if (errors.size() >= errorLimit)
+                return;
 
             const pjson* anchor = node.find("$anchor");
             if (anchor != nullptr && (!anchor->isString() || !validAnchorName(strOf(*anchor)))) {

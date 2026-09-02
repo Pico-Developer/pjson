@@ -21,6 +21,9 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases follow
 - Expanded `pJsonSchemaValidator::Error` with stable codes, separate instance
   and schema locations, keyword names, optional combinator causes, and a
   first-error validation mode.
+- Strict schema mode now rejects malformed values for every supported keyword
+  during validator construction, including invalid and unsafe regular
+  expressions; permissive mode retains its ignore-malformed behavior.
 - **BREAKING (API):** JSON Schema validation is no longer a member of `pjson`.
   The `pjson::validate()` overloads and the nested `pjson::SchemaError` /
   `pjson::SchemaOptions` types are removed. Validation now lives in a standalone

@@ -214,8 +214,9 @@ The supported vocabulary is deliberately a subset. Tuple-form `items` validates
 the corresponding array positions, but elements beyond the tuple remain
 unconstrained because `additionalItems` is not implemented. `minLength` and
 `maxLength` count Unicode code points, not UTF-8 bytes. Unknown keywords and
-many malformed keyword forms are ignored, and pjson does not validate schemas
-against a meta-schema.
+malformed keyword forms are ignored in the default permissive mode. Strict mode
+rejects malformed values for every supported keyword before instance
+validation; pjson does not yet load or validate against standard meta-schemas.
 
 ## Validation options and resource budgets
 
@@ -231,6 +232,8 @@ options.maxValidationDepth = 64;
 options.maxRefResolutions = 1024;
 options.maxValidationWork = 1000000;
 options.maxErrors = 100;
+options.stopAfterFirstError = false;
+options.collectNestedCauses = false;
 options.validateFormats = true;
 options.strictSubset = false; // set true to fail closed on unsupported keywords
 options.refSiblings = false;  // modernSubset() sets true and validateFormats false
@@ -258,9 +261,9 @@ and permits unsafe regular expressions while retaining all other defaults. Set
 Set `strictSubset = true` (or use `pJsonSchemaValidator::Options::strict()`) to
 **fail closed**: a schema that uses a standard validation/applicator keyword
 pjson does not implement (for example `contentSchema` or `$recursiveRef`)
-then makes validation fail instead of silently ignoring the constraint. Unknown
-non-standard extension keywords are still allowed as annotations even in strict
-mode.
+or a malformed value for a supported keyword then makes schema compilation
+fail instead of silently ignoring the constraint. Unknown non-standard
+extension keywords are still allowed as annotations even in strict mode.
 
 ## Combinators and conditionals (composing schemas)
 

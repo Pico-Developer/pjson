@@ -93,6 +93,9 @@ annotation propagation for `unevaluatedItems`/`unevaluatedProperties`. The
 official Draft 2020-12 gate now runs 1,287 cases across 378 groups; it skips four
 groups (10 cases) and one two-case meta-schema file with explicit reasons.
 
+Strict mode now performs a complete pre-validation pass over the documented
+keyword set and rejects malformed keyword shapes before instance validation.
+
 **What remains:** full standard-vocabulary/meta-schema loading and ECMA-262
 Unicode property escapes. The
 remaining skipped official groups document these gaps. Until they land, docs

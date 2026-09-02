@@ -254,6 +254,10 @@ loading/vocabulary-driven keyword selection and ECMA-262 Unicode property
 escapes. Documentation therefore continues to describe this as a **documented
 subset**, not general 2020-12 conformance.
 
+PJSON-SCHEMA-002 strict keyword-shape compilation is implemented for the full
+documented keyword set; permissive mode retains its compatibility behavior.
+Standard meta-schema loading remains part of the broader 2020-12 work.
+
 PJSON-SCHEMA-005 is implemented: errors distinguish schema compilation from
 instance validation and provide stable fine-grained codes, separate instance
 and schema locations, keyword names, and optional nested causes for failing

@@ -144,20 +144,6 @@ those stateful families requires a shared private context interface and should
 be done only with the official schema and resource-budget suites green after
 each step.
 
-### [ ] MAINT-3 — Discover CTest cases from the compiled test registry
-
-**Where:** `pjsontest/CMakeLists.txt` currently extracts `TEST(name)` tokens
-from source text, while the executable separately exposes `--list-tests`.
-
-**Why:** comments, conditional compilation, or future macro wrappers could make
-source-text discovery drift from the cases compiled into the runner. CI compares
-both counts today, so this is guarded architectural debt rather than a release
-blocker.
-
-**How:** add a post-build discovery helper that invokes
-`pjsontest --list-tests` and generates the CTest entries from that output. Keep
-the CI nonzero/count check as a defense-in-depth assertion.
-
 ### [ ] FEAT-3 — Preserve object key insertion order
 
 **Where:** pjson currently stores objects in `std::map`, so serialization sorts

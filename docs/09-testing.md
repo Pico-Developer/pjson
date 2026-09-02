@@ -23,8 +23,9 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-CTest registers every `TEST()` separately, so progress and failures are
-reported case by case rather than as one aggregate `1/1` executable.
+After linking, CMake asks the compiled test registry for its test names and
+registers every `TEST()` separately, so progress and failures are reported case
+by case rather than as one aggregate `1/1` executable.
 You can run one case by name with `ctest --test-dir build -R pjson.test_name`.
 
 There is still only one test binary. Run it directly to execute every case:
@@ -142,12 +143,14 @@ points must not crash or emit unexpected exceptions, and successful parses must
 round-trip. Expected serialization and allocation failures keep their documented
 contracts.
 
-For mutation-guided coverage, Clang builds four standalone libFuzzer targets:
+For mutation-guided coverage, Clang builds seven standalone libFuzzer targets:
 `pjson_fuzz_parse` exercises RFC 8259 DOM round trips,
 `pjson_fuzz_stream` compares buffer, stream, and SAX paths, and
-`pjson_fuzz_schema` checks schema validation invariants. `pjson_fuzz_patch`
-exercises JSON Patch and Merge Patch, checking that failures leave the target
-unchanged and successful transformations remain serializable. Run the bounded
+`pjson_fuzz_serialize` checks serialization options and structured failures.
+`pjson_fuzz_schema` checks schema validation invariants,
+`pjson_fuzz_pointer` covers RFC 6901 lookup, and separate `pjson_fuzz_patch` and
+`pjson_fuzz_merge_patch` targets check atomic failure and successful
+transformations. Run the bounded
 seed corpus smoke used by CI with:
 
 ```sh
@@ -183,7 +186,8 @@ With no `PJSON_FUZZING_ENGINE`, this requires a full LLVM Clang distribution
 with libFuzzer; Apple Command Line Tools alone may not include that runtime. An
 external engine may instead be supplied through `PJSON_FUZZING_ENGINE`.
 OSS-Fuzz packaging is kept in `oss-fuzz/`, and every target uses
-`fuzz/json.dict`.
+`fuzz/json.dict`. The smoke and OSS-Fuzz configurations permit inputs up to
+64 KiB, and checked-in serializer/Merge Patch seeds exceed 4 KiB.
 
 `PJSON_BUILD_FUZZERS` controls only whether the targets are built. It does not
 run them; use `./build.sh --fuzz`, invoke the executables directly, or use the

@@ -304,7 +304,9 @@ differential, and fuzz jobs exist. This pass added the two mandatory regressions
 (embedded-NUL access; ancestor/descendant move under sanitizers), dedicated
 serialization, Pointer, and Merge Patch fuzz targets with 64 KiB input support, and new
 differential front-end tests, and every compiled case remains individually
-registered with CTest. A manifest-driven `draft2020-12` conformance gate
+registered with CTest through post-link discovery from the executable's actual
+test registry rather than source-text scraping. A manifest-driven
+`draft2020-12` conformance gate
 (`schema_official_draft2020_optional`) now runs alongside the existing draft-07
 gate: supported-keyword files run whole, and each remaining unsupported group
 (official meta-schema behavior and Unicode `\p{}` regex)

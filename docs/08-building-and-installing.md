@@ -161,7 +161,7 @@ Configure consumers with the usual vcpkg toolchain file, then use the same
 | `BUILD_SHARED_LIBS` | `OFF` | Build a shared library instead of the default static library |
 | `PJSON_SANITIZE` | `OFF` | Enable AddressSanitizer and UndefinedBehaviorSanitizer with GCC or Clang |
 | `PJSON_BUILD_DOCS` | `OFF` | Build the Doxygen reference; requires Doxygen and Python 3 |
-| `PJSON_BUILD_FUZZERS` | `OFF` | Build the four coverage-guided fuzz targets |
+| `PJSON_BUILD_FUZZERS` | `OFF` | Build the seven coverage-guided fuzz targets |
 | `PJSON_BENCH_COMPARE` | `OFF` | Add pinned nlohmann/json, RapidJSON, and simdjson comparisons to `pjsonbench` |
 | `PJSON_BENCH_DEPS_DIR` | `.benchmark-deps` | Locate the pinned comparison sources |
 | `PJSON_FUZZING_ENGINE` | empty | Supply an external fuzz-engine linker command instead of built-in libFuzzer |

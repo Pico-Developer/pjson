@@ -78,22 +78,21 @@ enable_testing()
 
 # ---- CTest case discovery ----------------------------------------------
 
-# Keep one test executable, but expose each self-registered TEST() separately to
-# CTest. Extracting TEST(name) declarations at configure time lets CMake resolve
-# the executable correctly for single- and multi-config generators on every OS.
-set(PJSON_REGISTERED_TESTS)
-foreach(test_source IN LISTS TEST_SRC_FILES)
-    file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/${test_source}" test_declarations
-         REGEX "TEST[(][A-Za-z0-9_]+[)]")
-    foreach(declaration IN LISTS test_declarations)
-        string(REGEX MATCH "TEST[(]([A-Za-z0-9_]+)[)]" unused "${declaration}")
-        set(test_name "${CMAKE_MATCH_1}")
-        if(test_name IN_LIST PJSON_REGISTERED_TESTS)
-            message(FATAL_ERROR "Duplicate pjson test name: ${test_name}")
-        endif()
-        list(APPEND PJSON_REGISTERED_TESTS "${test_name}")
-        add_test(NAME "pjson.${test_name}" COMMAND ${TARGET_NAME} --run-test "${test_name}")
-    endforeach()
-endforeach()
-list(LENGTH PJSON_REGISTERED_TESTS PJSON_TEST_COUNT)
-message(STATUS "Registered ${PJSON_TEST_COUNT} pjson test cases with CTest")
+# Generate CTest registrations from the executable's actual self-registered
+# test list after linking. This cannot drift when TEST() is wrapped, generated,
+# or conditionally compiled. Seed an empty include so configure-only workflows
+# remain valid; every successful build atomically replaces it.
+set(PJSON_DISCOVERED_TESTS "${CMAKE_CURRENT_BINARY_DIR}/pjsontest_tests.cmake")
+if(NOT EXISTS "${PJSON_DISCOVERED_TESTS}")
+    file(WRITE "${PJSON_DISCOVERED_TESTS}"
+        "# Build pjsontest to discover its compiled test registry.\n")
+endif()
+set_property(DIRECTORY APPEND PROPERTY TEST_INCLUDE_FILES "${PJSON_DISCOVERED_TESTS}")
+add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND}
+        -DPJSON_TEST_EXECUTABLE=$<TARGET_FILE:${TARGET_NAME}>
+        -DPJSON_TEST_OUTPUT=${PJSON_DISCOVERED_TESTS}
+        -P ${CMAKE_SOURCE_DIR}/cmake/DiscoverTests.cmake
+    BYPRODUCTS "${PJSON_DISCOVERED_TESTS}"
+    VERBATIM
+    COMMENT "Discovering pjson tests from the compiled registry")

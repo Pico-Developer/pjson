@@ -34,6 +34,8 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases follow
 - Unified DOM and SAX numeric-token classification/conversion behind one
   internal routine, including exact integer, overflow, underflow, and lossy
   policy decisions.
+- CTest cases are now discovered from the executable's compiled registry after
+  linking instead of scraping `TEST(...)` tokens from source text.
 - **BREAKING (API):** JSON Schema validation is no longer a member of `pjson`.
   The `pjson::validate()` overloads and the nested `pjson::SchemaError` /
   `pjson::SchemaOptions` types are removed. Validation now lives in a standalone

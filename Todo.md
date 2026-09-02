@@ -119,8 +119,9 @@ keep saying "documented subset" and must not claim general 2020-12 conformance.
 compiled schema resource, because external resources can select different
 meta-schemas. Bundle/pin the official 2020-12 meta-schema resources and apply a
 vocabulary mask during compilation/validation; do not special-case the handful of
-current fixtures. For regex, a standalone SRELL 2026.06 probe passed all 74 optional
-ECMAScript pattern cases, including Unicode properties. Adoption still requires a
+current fixtures. For regex, an SRELL 2026.06 validator integration probe passed all
+86 optional ECMAScript and non-BMP pattern cases, including Unicode properties.
+Adoption still requires a
 pinned BSD-2-Clause vendoring/update policy, integration of its roughly 900 KiB
 header/data footprint, explicit rejection of its nonstandard inline-flag extensions
 for `format: regex`, cross-platform verification, and proof that its internal work
@@ -206,3 +207,12 @@ object semantics do not require it.
 **How:** use an insertion-ordered representation, such as a vector of key/value
 pairs plus a lookup index. Preserve structural equality semantics and retain
 protection from hash-collision denial of service if a hash index is introduced.
+
+**Current disposition:** do not replace `std::map` with `std::unordered_map`. That
+would provide neither insertion order nor deterministic iteration and would add
+collision-sensitive behavior for attacker-controlled keys. A correct implementation
+needs an ordered sequence plus an index (or an audited ordered-map dependency), a new
+`SerializeOptions` order choice while retaining ascending/descending output, explicit
+key-view/traversal invalidation rules, and wide-object memory/lookup benchmarks. Treat
+the storage/default-order decision as a deliberate major-version change unless the
+new policy is fully opt-in.

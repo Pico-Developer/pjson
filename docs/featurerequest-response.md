@@ -373,6 +373,12 @@ Insertion-order object storage, big-integer/decimal types, `string_view`
 overloads, JSON Lines helpers, canonical JSON, and a pull-parser cursor remain
 optional and out of scope; several are listed in `Todo.md`.
 
+`std::unordered_map` was specifically rejected as the insertion-order solution:
+its iteration order is unspecified and collision-sensitive. A viable design must
+retain a separate insertion sequence and lookup index, preserve the existing
+ascending/descending serialization choices, define invalidation precisely, and
+justify its extra per-object memory with wide-object measurements.
+
 ## 16–17. Delivery sequence and definition of done
 
 Steps 1–6 of the requirement's own delivery order (the core correctness gate)

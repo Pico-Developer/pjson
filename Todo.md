@@ -117,19 +117,23 @@ rules, allocator/aliasing/thread-safety, and per-standard conformance scope.
 
 ## Medium Priority
 
-### [ ] MAINT-1 — Unify DOM and SAX parser grammar code
+### [ ] MAINT-1 — Further unify DOM and SAX parser grammar code
 
 **Where:** DOM parsing and SAX parsing currently use separate recursive-descent
 implementations in `pjson.cpp`, with differential conformance tests guarding
 their behavior.
 
-**Why:** duplicated token, number, Unicode, and container grammar logic raises
+**Progress:** numeric token classification and conversion now use one internal
+routine shared by DOM and SAX.
+
+**Why:** duplicated token scanning, Unicode, and container grammar logic raises
 the chance that a future parser fix reaches only one API. The current paths are
 well tested, so this is architectural debt rather than a release blocker.
 
-**How:** extract a shared lexer/parser core parameterized by a DOM builder or SAX
-event sink. Preserve the current error offsets, duplicate-key policies, resource
-budgets, streaming cursor behavior, and DOM/SAX differential regression suite.
+**How:** incrementally extract the remaining shared lexer/parser operations
+behind the existing buffer/stream cursors and DOM/event sinks. Preserve error
+offsets, duplicate-key policies, resource budgets, streaming behavior, and the
+DOM/SAX differential regression suite.
 
 ### [ ] MAINT-2 — Further split the stateful schema dispatcher
 

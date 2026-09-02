@@ -516,38 +516,17 @@ namespace {
             if (!reserveNode())
                 return false;
 
-            const bool allowLossy = opts.numberPolicy == ParseOptions::AllowLossyNumbers;
-            if (isFloat) {
-                double d = 0.0;
-                bool underflowToZero = false;
-                if (!pjsonImpl::_parseDouble(text, d, &underflowToZero) || !std::isfinite(d))
-                    return fail("number out of range");
-                if (underflowToZero && !allowLossy)
-                    return fail(
-                        "number underflows to zero; enable AllowLossyNumbers to permit rounding");
-                return !emit || dispatch(handler.onDouble(d));
-            }
-
-            const bool negative = !text.empty() && text[0] == '-';
-
-            errno = 0;
-            const long long llVal = strtoll(text.c_str(), nullptr, 10);
-            if (errno != ERANGE)
-                return !emit || dispatch(handler.onInt(static_cast<int64_t>(llVal)));
-
-            if (!negative) {
-                errno = 0;
-                const unsigned long long ullVal = strtoull(text.c_str(), nullptr, 10);
-                if (errno != ERANGE)
-                    return !emit || dispatch(handler.onUInt(static_cast<uint64_t>(ullVal)));
-            }
-
-            if (!allowLossy)
-                return fail("integer out of range; enable AllowLossyNumbers to store as double");
-            double d = 0.0;
-            if (!pjsonImpl::_parseDouble(text, d) || !std::isfinite(d))
-                return fail("number out of range");
-            return !emit || dispatch(handler.onDouble(d));
+            pjsonImpl::ParsedNumber number;
+            const char* message = nullptr;
+            if (!pjsonImpl::_convertNumberToken(text, isFloat, opts.numberPolicy, number, message))
+                return fail(message);
+            if (!emit)
+                return true;
+            if (number.kind == pjsonImpl::ParsedNumber::SignedInteger)
+                return dispatch(handler.onInt(number.signedValue));
+            if (number.kind == pjsonImpl::ParsedNumber::UnsignedInteger)
+                return dispatch(handler.onUInt(number.unsignedValue));
+            return dispatch(handler.onDouble(number.floatingValue));
         }
 
         // Parses an array while explicitly tracking comma state so leading,
@@ -1970,6 +1949,51 @@ bool pjsonImpl::_parseDouble(const std::string& aText, double& aValue, bool* aUn
         return false;
     if (aUnderflowToZero != nullptr && aValue == 0.0)
         *aUnderflowToZero = true;
+    return true;
+}
+
+// Converts one already grammar-validated number token. Both DOM and SAX use
+// this routine so storage classification and lossy-number policy cannot drift.
+bool pjsonImpl::_convertNumberToken(const std::string& aText, bool aIsFloat,
+                                    pjson::ParseOptions::NumberPolicy aPolicy,
+                                    ParsedNumber& aResult, const char*& aErrorMessage) {
+    aErrorMessage = nullptr;
+    const bool allowLossy = aPolicy == pjson::ParseOptions::AllowLossyNumbers;
+    if (!aIsFloat) {
+        errno = 0;
+        const long long signedValue = strtoll(aText.c_str(), nullptr, 10);
+        if (errno != ERANGE) {
+            aResult.kind = ParsedNumber::SignedInteger;
+            aResult.signedValue = static_cast<int64_t>(signedValue);
+            return true;
+        }
+        if (aText.empty() || aText[0] != '-') {
+            errno = 0;
+            const unsigned long long unsignedValue = strtoull(aText.c_str(), nullptr, 10);
+            if (errno != ERANGE) {
+                aResult.kind = ParsedNumber::UnsignedInteger;
+                aResult.unsignedValue = static_cast<uint64_t>(unsignedValue);
+                return true;
+            }
+        }
+        if (!allowLossy) {
+            aErrorMessage = "integer out of range; enable AllowLossyNumbers to store as double";
+            return false;
+        }
+    }
+
+    double floatingValue = 0.0;
+    bool underflowToZero = false;
+    if (!_parseDouble(aText, floatingValue, &underflowToZero) || !std::isfinite(floatingValue)) {
+        aErrorMessage = "number out of range";
+        return false;
+    }
+    if (underflowToZero && !allowLossy) {
+        aErrorMessage = "number underflows to zero; enable AllowLossyNumbers to permit rounding";
+        return false;
+    }
+    aResult.kind = ParsedNumber::FloatingPoint;
+    aResult.floatingValue = floatingValue;
     return true;
 }
 namespace {
@@ -4292,7 +4316,6 @@ bool pjsonImpl::_parseNumber(ParseCtx& c, pjson*& aOut) {
     const size_t begin = c.pos;
     size_t i = c.pos;
     bool bFloat = false;
-    const bool negative = (i < c.end && c.src[i] == '-');
 
     if (i < c.end && c.src[i] == '-')
         ++i;
@@ -4331,68 +4354,20 @@ bool pjsonImpl::_parseNumber(ParseCtx& c, pjson*& aOut) {
             ++i;
     }
 
-    std::string sTemp(c.src + begin, i - begin);
-    const bool allowLossy = c.numberPolicy == pjson::ParseOptions::AllowLossyNumbers;
-    if (bFloat) {
-        double d = 0.0;
-        bool underflowToZero = false;
-        if (!_parseDouble(sTemp, d, &underflowToZero) || !std::isfinite(d)) {
-            return _fail(c, begin, "number out of range");
-        }
-        if (underflowToZero && !allowLossy) {
-            return _fail(c, begin,
-                         "number underflows to zero; enable AllowLossyNumbers to permit rounding");
-        }
-        pjsonImpl::OwnedNode value(_newNode(c));
-        if (!value)
-            return false;
-        *value = d;
-        aOut = value.release();
-        c.pos = i;
-        return true;
-    }
-
-    // Integer token. Try signed first, then unsigned for positive values above
-    // INT64_MAX, so the full 64-bit range is represented exactly.
-    errno = 0;
-    long long llVal = strtoll(sTemp.c_str(), nullptr, 10);
-    if (errno != ERANGE) {
-        pjsonImpl::OwnedNode value(_newNode(c));
-        if (!value)
-            return false;
-        *value = static_cast<int64_t>(llVal);
-        aOut = value.release();
-        c.pos = i;
-        return true;
-    }
-
-    if (!negative) {
-        errno = 0;
-        unsigned long long ullVal = strtoull(sTemp.c_str(), nullptr, 10);
-        if (errno != ERANGE) {
-            pjsonImpl::OwnedNode value(_newNode(c));
-            if (!value)
-                return false;
-            *value = static_cast<uint64_t>(ullVal);
-            aOut = value.release();
-            c.pos = i;
-            return true;
-        }
-    }
-
-    // Beyond the exact 64-bit integer range. Reject by default, or fall back to
-    // a lossy double when the caller opts in.
-    if (!allowLossy) {
-        return _fail(c, begin, "integer out of range; enable AllowLossyNumbers to store as double");
-    }
-    double d = 0.0;
-    if (!_parseDouble(sTemp, d) || !std::isfinite(d)) {
-        return _fail(c, begin, "number out of range");
-    }
+    const std::string text(c.src + begin, i - begin);
+    ParsedNumber number;
+    const char* message = nullptr;
+    if (!_convertNumberToken(text, bFloat, c.numberPolicy, number, message))
+        return _fail(c, begin, message);
     pjsonImpl::OwnedNode value(_newNode(c));
     if (!value)
         return false;
-    *value = d;
+    if (number.kind == ParsedNumber::SignedInteger)
+        *value = number.signedValue;
+    else if (number.kind == ParsedNumber::UnsignedInteger)
+        *value = number.unsignedValue;
+    else
+        *value = number.floatingValue;
     aOut = value.release();
     c.pos = i;
     return true;

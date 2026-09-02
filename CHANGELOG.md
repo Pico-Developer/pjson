@@ -31,6 +31,9 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases follow
   nonzero decimal token that underflows to zero, with explicit lossy opt-in.
 - Split stateless JSON Schema value/numeric/regex, format, and URI helpers into
   focused private translation units while retaining one public schema API.
+- Unified DOM and SAX numeric-token classification/conversion behind one
+  internal routine, including exact integer, overflow, underflow, and lossy
+  policy decisions.
 - **BREAKING (API):** JSON Schema validation is no longer a member of `pjson`.
   The `pjson::validate()` overloads and the nested `pjson::SchemaError` /
   `pjson::SchemaOptions` types are removed. Validation now lives in a standalone

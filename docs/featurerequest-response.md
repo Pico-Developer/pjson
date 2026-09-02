@@ -325,13 +325,14 @@ documentation follow-up.
 
 ## 14. Maintainability
 
-### PJSON-MAINT-001/002 — MAINT-002 implemented / MAINT-001 deferred
-Unifying the DOM and SAX grammar into one shared core (MAINT-001) remains an
-architectural-debt item in `Todo.md`. Splitting the schema validator out of the
-DOM translation unit (MAINT-002) is done: it now lives in its own
-`pjson_schema.cpp` behind the external `pJsonSchemaValidator` class, decoupled
-from the DOM via the public API. Both are guarded by the differential and schema
-tests.
+### PJSON-MAINT-001/002 — Partially implemented
+DOM and SAX now share numeric-token classification and conversion, including
+integer kind and lossy overflow/underflow policy. Their remaining token scanning,
+Unicode, and container control flow stays separate because streaming cursors and
+DOM ownership have materially different needs; further unification remains
+tracked. Schema validation is external to `pjson`, and stateless value/numeric,
+format, and URI helpers now use focused private translation units behind the one
+public `pjson_schema.h` surface.
 
 ## 15. P3 optional enhancements — Deferred
 Insertion-order object storage, big-integer/decimal types, `string_view`

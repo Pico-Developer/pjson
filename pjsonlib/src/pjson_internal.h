@@ -68,6 +68,16 @@ struct ByteDance::pjsonImpl {
         std::string errMsg;
     };
 
+    // Result of the shared DOM/SAX numeric-token conversion step. Grammar is
+    // scanned by each cursor, then this type/policy decision is made once.
+    struct ParsedNumber {
+        enum Kind { SignedInteger, UnsignedInteger, FloatingPoint };
+        Kind kind;
+        int64_t signedValue;
+        uint64_t unsignedValue;
+        double floatingValue;
+    };
+
     // One suspended container in the iterative serializer. Exactly one of
     // array/object is active according to isObject; the associated cursor
     // always denotes the next child to emit.
@@ -89,6 +99,9 @@ struct ByteDance::pjsonImpl {
     static std::string _formatDouble(double aValue);
     static bool _parseDouble(const std::string& aText, double& aValue,
                              bool* aUnderflowToZero = nullptr);
+    static bool _convertNumberToken(const std::string& aText, bool aIsFloat,
+                                    pjson::ParseOptions::NumberPolicy aPolicy,
+                                    ParsedNumber& aResult, const char*& aErrorMessage);
 
     static bool _fail(ParseCtx& c, size_t aPos, const char* aMsg);
     static pjson* _newNode(ParseCtx& c); // budget-checked allocation (nullptr on overflow)

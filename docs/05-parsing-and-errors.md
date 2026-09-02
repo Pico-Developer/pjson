@@ -111,7 +111,7 @@ tracking, and handler-owned state still consume memory.
 ## Why not exceptions?
 
 pjson does not throw JSON-specific parse exceptions. In-memory JSON and
-DOM-allocation failures produce an empty pointer plus optional `ParseError`; SAX
+DOM-allocation failures produce a null `pjson` value plus optional `ParseError`; SAX
 handler failures similarly become `false`. An exception-enabled input stream can
 still throw while `parseStream()` buffers bytes, and mutating APIs that allocate
 may report `std::bad_alloc` unless declared `noexcept`.

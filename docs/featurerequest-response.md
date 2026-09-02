@@ -324,13 +324,15 @@ conformance remains unclaimed.
 
 ## 13. Documentation and governance
 
-### PJSON-DOC-001..004 — Partially implemented
+### PJSON-DOC-001..004 — Implemented
 README, `CHANGELOG.md`, and `Todo.md` are updated for the new numeric model,
 non-finite policy, error codes, traversal/factory/checked APIs, and schema
 additions, and the 2.0.0 compatibility impact is called out (ABI break +
-behavioral changes) per DOC-004. `SECURITY.md`/`GOVERNANCE.md` already cover
-DOC-003. A single consolidated behavioral-contract reference (DOC-001) remains a
-documentation follow-up.
+behavioral changes) per DOC-004. `SECURITY.md`/`GOVERNANCE.md` cover DOC-003.
+`docs/behavioral-contract-2.0.md` is the single versioned contract for value and
+numeric representation, strictness/budgets, error and exception boundaries,
+mutation/invalidation, copy/move/allocator/aliasing behavior, serialization,
+thread safety, and each optional standard's exact conformance scope.
 
 ## 14. Maintainability
 

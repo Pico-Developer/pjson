@@ -122,12 +122,6 @@ thresholds. Allocation counts, peak RSS, binary/object size, and build-time
 measurements need separate platform/tooling protocols. Do not add them to the
 latency table or treat a near-zero move operation as a useful microbenchmark.
 
-### [ ] DOC-CONTRACT — Single consolidated behavioral contract (PJSON-DOC-001)
-
-One versioned reference covering value representations and numeric boundaries,
-strictness/limits, error/exception behavior per entry point, invalidation
-rules, allocator/aliasing/thread-safety, and per-standard conformance scope.
-
 ## Medium Priority
 
 ### [ ] MAINT-1 — Further unify DOM and SAX parser grammar code

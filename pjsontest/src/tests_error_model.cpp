@@ -27,6 +27,8 @@ using namespace ByteDance;
 
 namespace {
 
+    struct AcceptingSaxHandler : pjson::SaxHandler {};
+
     pjson::ParseError::Code codeOf(const std::string& doc,
                                    const pjson::ParseOptions& opt = pjson::ParseOptions()) {
         pjson::ParseError err;
@@ -77,6 +79,11 @@ TEST(error_code_success_state) {
 TEST(error_code_null_input_is_invalid_argument) {
     pjson::ParseError err;
     pjson_test::parse(static_cast<const char*>(nullptr), 5, err);
+    CHECK(!err.ok);
+    CHECK_EQ(err.code, pjson::ParseError::InvalidArgument);
+
+    AcceptingSaxHandler handler;
+    CHECK(!pjson::parseSax(static_cast<const char*>(nullptr), 5, handler, err));
     CHECK(!err.ok);
     CHECK_EQ(err.code, pjson::ParseError::InvalidArgument);
 }

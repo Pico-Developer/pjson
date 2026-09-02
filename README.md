@@ -1230,7 +1230,8 @@ upstream service enrollment.
 ## Benchmarking
 
 The Release benchmark suite measures parsing, compact serialization, read-only
-traversal, and deep copying on generated small, medium, and large JSON
+traversal, and deep copying on generated small, medium, large, wide-object,
+large-array, string-heavy, escape-heavy, integer-heavy, and floating-heavy JSON
 documents. Run pjson by itself or compare the same cases with pinned versions
 of nlohmann/json, RapidJSON, and simdjson:
 
@@ -1238,6 +1239,7 @@ of nlohmann/json, RapidJSON, and simdjson:
 ./build.sh --bench --release-only
 ./build.sh --bench-compare --release-only
 ./build.sh --bench-compare --release-only --auto # download pinned dependencies without prompting
+./build.sh --bench --release-only --bench-json out/benchmark.json
 ```
 
 Add real documents with repeatable `--bench-input` arguments:
@@ -1254,9 +1256,13 @@ rows. Parse, serialize, and traverse cover every library. Copy covers pjson,
 nlohmann/json, and RapidJSON; simdjson has no equivalent owned mutable-DOM
 deep-copy operation.
 
-### Reference comparison
+### Historical reference comparison
 
-The following snapshot was produced on this development machine with:
+The following pre-matrix-expansion snapshot covers only the original three mixed
+workloads. It is retained as a directional example, not a current release result.
+Generate a current, provenance-bearing report with `--bench-json` rather than
+copying these values into a performance claim. The snapshot was produced on this
+development machine with:
 
 ```sh
 ./build.sh --bench-compare --release-only --auto
@@ -1311,7 +1317,9 @@ machine before making performance-sensitive decisions.
 `MiB/s` is an input-size-normalized comparison, not actual serialized, visited,
 or copied bytes. The final `sink=` value is only an anti-optimization checksum.
 Benchmark results have no pass/fail threshold; compare Release runs made on the
-same machine under similar load. See the [benchmark guide](bench/README.md) for
+same machine under similar load. CI retains machine-readable reports as advisory
+artifacts but does not gate on noisy shared-runner timings. See the
+[benchmark guide](bench/README.md) for
 the exact timed work, dependency versions, methodology, and sample output.
 
 ---
@@ -1319,6 +1327,7 @@ the exact timed work, dependency versions, methodology, and sample output.
 ## Documentation & project resources
 
 - [Tutorials](docs/README.md) and [streaming guide](docs/11-streaming.md)
+- [pjson 2.0 behavioral contract](docs/behavioral-contract-2.0.md)
 - [Browsable API reference](https://pico-developer.github.io/pjson/) and its
   [source landing page](docs/reference/mainpage.md)
 - Migration guides for [nlohmann/json](docs/migration-from-nlohmann-json.md) and

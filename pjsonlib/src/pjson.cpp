@@ -4099,7 +4099,7 @@ bool pjsonImpl::_parseSaxTop(const char* aSrc, size_t aSize, SaxHandler& aHandle
                              const ParseOptions& aOpts, ParseError* aErr) {
     resetParseError(aErr);
     if (aSrc == nullptr) {
-        setParseError(aErr, "", 0, 0, "null input");
+        setParseError(aErr, "", 0, 0, "null input", ParseError::InvalidArgument);
         return false;
     }
     if (aOpts.maxInputBytes != 0 && aSize > aOpts.maxInputBytes) {

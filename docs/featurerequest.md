@@ -1056,7 +1056,7 @@ Status legend: [x] done, [~] partial (see `docs/featurerequest-response.md`),
 - [x] PJSON-TEST-003 — Strengthen fuzzing
 - [x] PJSON-TEST-004 — Require sanitizers and static analysis
 - [x] PJSON-TEST-005 — Add regression tests for every defect
-- [~] PJSON-DOC-001 — Publish one precise behavioral contract
+- [x] PJSON-DOC-001 — Publish one precise behavioral contract
 - [x] PJSON-DOC-002 — Maintain compatibility and migration guidance
 - [x] PJSON-DOC-003 — Keep security and maintenance expectations explicit
 - [x] PJSON-DOC-004 — Classify compatibility impact before implementation

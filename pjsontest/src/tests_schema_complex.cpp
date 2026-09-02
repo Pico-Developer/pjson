@@ -219,7 +219,8 @@ TEST(complex_schema_property_true_false) {
     const char* schema = R"({ "properties": { "yes": true, "no": false } })";
     pjson_test::Parsed schemaValue = parseJson(schema);
     CHECK(pjson_test::schemaValidate(*parseJson("{\"yes\":123}"), *schemaValue)); // true accepts
-    CHECK(!pjson_test::schemaValidate(*parseJson("{\"no\":1}"), *schemaValue));   // false rejects presence
+    CHECK(!pjson_test::schemaValidate(*parseJson("{\"no\":1}"),
+                                      *schemaValue)); // false rejects presence
 }
 
 //===----------------------------------------------------------------------===//
@@ -230,7 +231,8 @@ TEST(complex_schema_irrelevant_constraints_ignored) {
     CHECK(pjson_test::schemaValidate(*parseJson("5"), *parseJson(R"({"minItems":3})")));
     CHECK(pjson_test::schemaValidate(*parseJson("[1]"), *parseJson(R"({"minLength":3})")));
     CHECK(pjson_test::schemaValidate(*parseJson("\"hi\""), *parseJson(R"({"minimum":100})")));
-    CHECK(pjson_test::schemaValidate(*parseJson("5"), 
+    CHECK(pjson_test::schemaValidate(
+        *parseJson("5"),
         *parseJson(R"({"required":["a"]})"))); // required only checks objects
 }
 
@@ -282,11 +284,16 @@ TEST(complex_schema_multiple_of_fractions) {
 TEST(complex_schema_empty_and_unknown) {
     CHECK(pjson_test::schemaValidate(*parseJson("5"), *parseJson("{}")));
     CHECK(pjson_test::schemaValidate(*parseJson("[1,2,3]"), *parseJson("{}")));
-    CHECK(pjson_test::schemaValidate(*parseJson(R"({"a":1})"), *parseJson(R"({"title":"ignored","description":"also ignored"})")));
+    CHECK(pjson_test::schemaValidate(
+        *parseJson(R"({"a":1})"),
+        *parseJson(R"({"title":"ignored","description":"also ignored"})")));
     // A schema-valued additionalProperties constraint applies to every key
     // not matched by properties or patternProperties.
-    CHECK(!pjson_test::schemaValidate(*parseJson(R"({"x":"str"})"), *parseJson(R"({"additionalProperties":{"type":"integer"}})")));
-    CHECK(pjson_test::schemaValidate(*parseJson(R"({"x":7})"), *parseJson(R"({"additionalProperties":{"type":"integer"}})")));
+    CHECK(
+        !pjson_test::schemaValidate(*parseJson(R"({"x":"str"})"),
+                                    *parseJson(R"({"additionalProperties":{"type":"integer"}})")));
+    CHECK(pjson_test::schemaValidate(*parseJson(R"({"x":7})"),
+                                     *parseJson(R"({"additionalProperties":{"type":"integer"}})")));
 }
 
 //===----------------------------------------------------------------------===//

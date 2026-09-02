@@ -71,9 +71,8 @@ namespace pjson_fuzz {
 
     // Schema validation gets its own bounded knobs so one input can drive both
     // parser and validator resource limits.
-    inline ByteDance::pJsonSchemaValidator::Options boundedSchemaOptions(const uint8_t* data,
-                                                                         size_t size,
-                                                                         size_t offset = 0) {
+    inline ByteDance::pJsonSchemaValidator::Options
+    boundedSchemaOptions(const uint8_t* data, size_t size, size_t offset = 0) {
         ByteDance::pJsonSchemaValidator::Options options;
         static const size_t kPatternBudgets[] = {32U, 64U, 256U, 1024U};
         static const size_t kSubjectBudgets[] = {128U, 512U, 4096U, 16384U};

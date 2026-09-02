@@ -13,10 +13,9 @@
 // limitations under the License.
 //
 //===----------------------------------------------------------------------===//
-// Optional official draft-07 JSON-Schema-Test-Suite conformance integration.
-// This harness intentionally uses an explicit
-// manifest so unsupported files or groups are skipped with a concrete reason
-// instead of disappearing through ad-hoc filtering.
+// Optional official Draft 7 and Draft 2020-12 JSON-Schema-Test-Suite
+// integration. Explicit manifests record every selected run/skip decision so
+// unsupported files or groups cannot disappear through ad-hoc filtering.
 //
 #include "pjson.h"
 #include "test_harness.h"
@@ -169,6 +168,8 @@ namespace {
             return false;
         pjson::ParseError error;
         output = pjson::parse(readFile(path), error);
+        if (error.ok && output.isObject())
+            output.erase("$schema");
         return error.ok;
     }
 
@@ -368,77 +369,167 @@ namespace {
         return rules;
     }
 
-
     // Draft 2020-12 conformance ledger. Supported keyword files run whole; the
     // remaining custom-meta-schema, Unicode \\p{} regex, and annotation-only
     // format cases are skipped with a concrete reason.
     std::vector<FileRule> manifest2020() {
         std::vector<FileRule> rules;
         FileRule r;
-        r = FileRule(); r.relativePath = "additionalProperties.json"; r.mode = RunWholeFile;
-        r.reason = "supported documented-subset keywords"; rules.push_back(r);
-        r = FileRule(); r.relativePath = "allOf.json"; r.mode = RunWholeFile;
-        r.reason = "supported documented-subset keywords"; rules.push_back(r);
-        r = FileRule(); r.relativePath = "anchor.json"; r.mode = RunWholeFile;
-        r.reason = "requires $anchor plus $id base resolution"; rules.push_back(r);
-        r = FileRule(); r.relativePath = "anyOf.json"; r.mode = RunWholeFile;
-        r.reason = "supported documented-subset keywords"; rules.push_back(r);
-        r = FileRule(); r.relativePath = "boolean_schema.json"; r.mode = RunWholeFile;
-        r.reason = "supported documented-subset keywords"; rules.push_back(r);
-        r = FileRule(); r.relativePath = "const.json"; r.mode = RunWholeFile;
-        r.reason = "supported documented-subset keywords"; rules.push_back(r);
-        r = FileRule(); r.relativePath = "contains.json"; r.mode = RunWholeFile;
-        r.reason = "supported documented-subset keywords"; rules.push_back(r);
-        r = FileRule(); r.relativePath = "content.json"; r.mode = RunWholeFile;
-        r.reason = "supported documented-subset keywords"; rules.push_back(r);
-        r = FileRule(); r.relativePath = "default.json"; r.mode = RunWholeFile;
-        r.reason = "supported documented-subset keywords"; rules.push_back(r);
-        r = FileRule(); r.relativePath = "defs.json"; r.mode = SkipWholeFile;
-        r.reason = "requires metaschema remote $ref validation"; rules.push_back(r);
-        r = FileRule(); r.relativePath = "dependentRequired.json"; r.mode = RunWholeFile;
-        r.reason = "supported documented-subset keywords"; rules.push_back(r);
-        r = FileRule(); r.relativePath = "dependentSchemas.json"; r.mode = RunWholeFile;
-        r.reason = "supported documented-subset keywords"; rules.push_back(r);
-        r = FileRule(); r.relativePath = "dynamicRef.json"; r.mode = RunSelectedGroups; r.reason = "";
-        r.groups.push_back(GroupRule{"A $dynamicRef to a $dynamicAnchor in the same schema resource behaves like a normal $ref to an $anchor", true, "supported"});
-        r.groups.push_back(GroupRule{"A $dynamicRef to an $anchor in the same schema resource behaves like a normal $ref to an $anchor", true, "supported"});
-        r.groups.push_back(GroupRule{"A $ref to a $dynamicAnchor in the same schema resource behaves like a normal $ref to an $anchor", true, "supported"});
-        r.groups.push_back(GroupRule{"A $dynamicRef resolves to the first $dynamicAnchor still in scope that is encountered when the schema is evaluated", true, "supported"});
-        r.groups.push_back(GroupRule{"A $dynamicRef without anchor in fragment behaves identical to $ref", true, "supported"});
-        r.groups.push_back(GroupRule{"A $dynamicRef with intermediate scopes that don't include a matching $dynamicAnchor does not affect dynamic scope resolution", true, "supported"});
-        r.groups.push_back(GroupRule{"An $anchor with the same name as a $dynamicAnchor is not used for dynamic scope resolution", true, "supported"});
-        r.groups.push_back(GroupRule{"A $dynamicRef without a matching $dynamicAnchor in the same schema resource behaves like a normal $ref to $anchor", true, "supported"});
-        r.groups.push_back(GroupRule{"A $dynamicRef with a non-matching $dynamicAnchor in the same schema resource behaves like a normal $ref to $anchor", true, "supported"});
-        r.groups.push_back(GroupRule{"A $dynamicRef that initially resolves to a schema with a matching $dynamicAnchor resolves to the first $dynamicAnchor in the dynamic scope", true, "supported"});
-        r.groups.push_back(GroupRule{"A $dynamicRef that initially resolves to a schema without a matching $dynamicAnchor behaves like a normal $ref to $anchor", true, "supported"});
-        r.groups.push_back(GroupRule{"multiple dynamic paths to the $dynamicRef keyword", true, "supported"});
-        r.groups.push_back(GroupRule{"after leaving a dynamic scope, it is not used by a $dynamicRef", true, "supported"});
-        r.groups.push_back(GroupRule{"strict-tree schema, guards against misspelled properties", true, "supported"});
-        r.groups.push_back(GroupRule{"tests for implementation dynamic anchor and reference link", true, "supported"});
-        r.groups.push_back(GroupRule{"$ref and $dynamicAnchor are independent of order - $defs first", true, "supported"});
-        r.groups.push_back(GroupRule{"$ref and $dynamicAnchor are independent of order - $ref first", true, "supported"});
-        r.groups.push_back(GroupRule{"$ref to $dynamicRef finds detached $dynamicAnchor", true, "supported"});
-        r.groups.push_back(GroupRule{"$dynamicRef points to a boolean schema", true, "supported"});
-        r.groups.push_back(GroupRule{"$dynamicRef skips over intermediate resources - direct reference", true, "supported"});
-        r.groups.push_back(GroupRule{"$dynamicRef avoids the root of each schema, but scopes are still registered", true, "supported"});
+        r = FileRule();
+        r.relativePath = "additionalProperties.json";
+        r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords";
         rules.push_back(r);
-        r = FileRule(); r.relativePath = "enum.json"; r.mode = RunWholeFile;
-        r.reason = "supported documented-subset keywords"; rules.push_back(r);
-        r = FileRule(); r.relativePath = "exclusiveMaximum.json"; r.mode = RunWholeFile;
-        r.reason = "supported documented-subset keywords"; rules.push_back(r);
-        r = FileRule(); r.relativePath = "exclusiveMinimum.json"; r.mode = RunWholeFile;
-        r.reason = "supported documented-subset keywords"; rules.push_back(r);
-        r = FileRule(); r.relativePath = "format.json"; r.mode = RunSelectedGroups; r.reason = "";
+        r = FileRule();
+        r.relativePath = "allOf.json";
+        r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords";
+        rules.push_back(r);
+        r = FileRule();
+        r.relativePath = "anchor.json";
+        r.mode = RunWholeFile;
+        r.reason = "requires $anchor plus $id base resolution";
+        rules.push_back(r);
+        r = FileRule();
+        r.relativePath = "anyOf.json";
+        r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords";
+        rules.push_back(r);
+        r = FileRule();
+        r.relativePath = "boolean_schema.json";
+        r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords";
+        rules.push_back(r);
+        r = FileRule();
+        r.relativePath = "const.json";
+        r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords";
+        rules.push_back(r);
+        r = FileRule();
+        r.relativePath = "contains.json";
+        r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords";
+        rules.push_back(r);
+        r = FileRule();
+        r.relativePath = "content.json";
+        r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords";
+        rules.push_back(r);
+        r = FileRule();
+        r.relativePath = "default.json";
+        r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords";
+        rules.push_back(r);
+        r = FileRule();
+        r.relativePath = "defs.json";
+        r.mode = SkipWholeFile;
+        r.reason = "requires metaschema remote $ref validation";
+        rules.push_back(r);
+        r = FileRule();
+        r.relativePath = "dependentRequired.json";
+        r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords";
+        rules.push_back(r);
+        r = FileRule();
+        r.relativePath = "dependentSchemas.json";
+        r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords";
+        rules.push_back(r);
+        r = FileRule();
+        r.relativePath = "dynamicRef.json";
+        r.mode = RunSelectedGroups;
+        r.reason = "";
+        r.groups.push_back(GroupRule{"A $dynamicRef to a $dynamicAnchor in the same schema "
+                                     "resource behaves like a normal $ref to an $anchor",
+                                     true, "supported"});
+        r.groups.push_back(GroupRule{"A $dynamicRef to an $anchor in the same schema resource "
+                                     "behaves like a normal $ref to an $anchor",
+                                     true, "supported"});
+        r.groups.push_back(GroupRule{"A $ref to a $dynamicAnchor in the same schema resource "
+                                     "behaves like a normal $ref to an $anchor",
+                                     true, "supported"});
+        r.groups.push_back(GroupRule{"A $dynamicRef resolves to the first $dynamicAnchor still in "
+                                     "scope that is encountered when the schema is evaluated",
+                                     true, "supported"});
+        r.groups.push_back(
+            GroupRule{"A $dynamicRef without anchor in fragment behaves identical to $ref", true,
+                      "supported"});
+        r.groups.push_back(
+            GroupRule{"A $dynamicRef with intermediate scopes that don't include a matching "
+                      "$dynamicAnchor does not affect dynamic scope resolution",
+                      true, "supported"});
+        r.groups.push_back(GroupRule{"An $anchor with the same name as a $dynamicAnchor is not "
+                                     "used for dynamic scope resolution",
+                                     true, "supported"});
+        r.groups.push_back(GroupRule{"A $dynamicRef without a matching $dynamicAnchor in the same "
+                                     "schema resource behaves like a normal $ref to $anchor",
+                                     true, "supported"});
+        r.groups.push_back(GroupRule{"A $dynamicRef with a non-matching $dynamicAnchor in the same "
+                                     "schema resource behaves like a normal $ref to $anchor",
+                                     true, "supported"});
+        r.groups.push_back(
+            GroupRule{"A $dynamicRef that initially resolves to a schema with a matching "
+                      "$dynamicAnchor resolves to the first $dynamicAnchor in the dynamic scope",
+                      true, "supported"});
+        r.groups.push_back(
+            GroupRule{"A $dynamicRef that initially resolves to a schema without a matching "
+                      "$dynamicAnchor behaves like a normal $ref to $anchor",
+                      true, "supported"});
+        r.groups.push_back(
+            GroupRule{"multiple dynamic paths to the $dynamicRef keyword", true, "supported"});
+        r.groups.push_back(GroupRule{
+            "after leaving a dynamic scope, it is not used by a $dynamicRef", true, "supported"});
+        r.groups.push_back(GroupRule{"strict-tree schema, guards against misspelled properties",
+                                     true, "supported"});
+        r.groups.push_back(GroupRule{"tests for implementation dynamic anchor and reference link",
+                                     true, "supported"});
+        r.groups.push_back(GroupRule{
+            "$ref and $dynamicAnchor are independent of order - $defs first", true, "supported"});
+        r.groups.push_back(GroupRule{
+            "$ref and $dynamicAnchor are independent of order - $ref first", true, "supported"});
+        r.groups.push_back(
+            GroupRule{"$ref to $dynamicRef finds detached $dynamicAnchor", true, "supported"});
+        r.groups.push_back(GroupRule{"$dynamicRef points to a boolean schema", true, "supported"});
+        r.groups.push_back(GroupRule{
+            "$dynamicRef skips over intermediate resources - direct reference", true, "supported"});
+        r.groups.push_back(
+            GroupRule{"$dynamicRef avoids the root of each schema, but scopes are still registered",
+                      true, "supported"});
+        rules.push_back(r);
+        r = FileRule();
+        r.relativePath = "enum.json";
+        r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords";
+        rules.push_back(r);
+        r = FileRule();
+        r.relativePath = "exclusiveMaximum.json";
+        r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords";
+        rules.push_back(r);
+        r = FileRule();
+        r.relativePath = "exclusiveMinimum.json";
+        r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords";
+        rules.push_back(r);
+        r = FileRule();
+        r.relativePath = "format.json";
+        r.mode = RunSelectedGroups;
+        r.reason = "";
         r.groups.push_back(GroupRule{"email format", true, "supported"});
         r.groups.push_back(GroupRule{"idn-email format", true, "supported"});
         r.groups.push_back(GroupRule{"regex format", true, "supported"});
-        r.groups.push_back(GroupRule{"ipv4 format", false, "pjson asserts formats by default; 2020-12 default dialect treats format as annotation-only"});
-        r.groups.push_back(GroupRule{"ipv6 format", false, "pjson asserts formats by default; 2020-12 default dialect treats format as annotation-only"});
+        r.groups.push_back(
+            GroupRule{"ipv4 format", true, "modern subset treats format as annotation-only"});
+        r.groups.push_back(
+            GroupRule{"ipv6 format", true, "modern subset treats format as annotation-only"});
         r.groups.push_back(GroupRule{"idn-hostname format", true, "supported"});
         r.groups.push_back(GroupRule{"hostname format", true, "supported"});
-        r.groups.push_back(GroupRule{"date format", false, "pjson asserts formats by default; 2020-12 default dialect treats format as annotation-only"});
-        r.groups.push_back(GroupRule{"date-time format", false, "pjson asserts formats by default; 2020-12 default dialect treats format as annotation-only"});
-        r.groups.push_back(GroupRule{"time format", false, "pjson asserts formats by default; 2020-12 default dialect treats format as annotation-only"});
+        r.groups.push_back(
+            GroupRule{"date format", true, "modern subset treats format as annotation-only"});
+        r.groups.push_back(
+            GroupRule{"date-time format", true, "modern subset treats format as annotation-only"});
+        r.groups.push_back(
+            GroupRule{"time format", true, "modern subset treats format as annotation-only"});
         r.groups.push_back(GroupRule{"json-pointer format", true, "supported"});
         r.groups.push_back(GroupRule{"relative-json-pointer format", true, "supported"});
         r.groups.push_back(GroupRule{"iri format", true, "supported"});
@@ -446,121 +537,240 @@ namespace {
         r.groups.push_back(GroupRule{"uri format", true, "supported"});
         r.groups.push_back(GroupRule{"uri-reference format", true, "supported"});
         r.groups.push_back(GroupRule{"uri-template format", true, "supported"});
-        r.groups.push_back(GroupRule{"uuid format", false, "pjson asserts formats by default; 2020-12 default dialect treats format as annotation-only"});
+        r.groups.push_back(
+            GroupRule{"uuid format", true, "modern subset treats format as annotation-only"});
         r.groups.push_back(GroupRule{"duration format", true, "supported"});
         rules.push_back(r);
-        r = FileRule(); r.relativePath = "if-then-else.json"; r.mode = RunWholeFile;
-        r.reason = "supported documented-subset keywords"; rules.push_back(r);
-        r = FileRule(); r.relativePath = "infinite-loop-detection.json"; r.mode = RunWholeFile;
-        r.reason = "supported documented-subset keywords"; rules.push_back(r);
-        r = FileRule(); r.relativePath = "items.json"; r.mode = RunWholeFile;
-        r.reason = "supported documented-subset keywords"; rules.push_back(r);
-        r = FileRule(); r.relativePath = "maxContains.json"; r.mode = RunWholeFile;
-        r.reason = "supported documented-subset keywords"; rules.push_back(r);
-        r = FileRule(); r.relativePath = "maxItems.json"; r.mode = RunWholeFile;
-        r.reason = "supported documented-subset keywords"; rules.push_back(r);
-        r = FileRule(); r.relativePath = "maxLength.json"; r.mode = RunWholeFile;
-        r.reason = "supported documented-subset keywords"; rules.push_back(r);
-        r = FileRule(); r.relativePath = "maxProperties.json"; r.mode = RunWholeFile;
-        r.reason = "supported documented-subset keywords"; rules.push_back(r);
-        r = FileRule(); r.relativePath = "maximum.json"; r.mode = RunWholeFile;
-        r.reason = "supported documented-subset keywords"; rules.push_back(r);
-        r = FileRule(); r.relativePath = "minContains.json"; r.mode = RunWholeFile;
-        r.reason = "supported documented-subset keywords"; rules.push_back(r);
-        r = FileRule(); r.relativePath = "minItems.json"; r.mode = RunWholeFile;
-        r.reason = "supported documented-subset keywords"; rules.push_back(r);
-        r = FileRule(); r.relativePath = "minLength.json"; r.mode = RunWholeFile;
-        r.reason = "supported documented-subset keywords"; rules.push_back(r);
-        r = FileRule(); r.relativePath = "minProperties.json"; r.mode = RunWholeFile;
-        r.reason = "supported documented-subset keywords"; rules.push_back(r);
-        r = FileRule(); r.relativePath = "minimum.json"; r.mode = RunWholeFile;
-        r.reason = "supported documented-subset keywords"; rules.push_back(r);
-        r = FileRule(); r.relativePath = "multipleOf.json"; r.mode = RunWholeFile;
-        r.reason = "supported documented-subset keywords"; rules.push_back(r);
-        r = FileRule(); r.relativePath = "not.json"; r.mode = RunSelectedGroups; r.reason = "";
+        r = FileRule();
+        r.relativePath = "if-then-else.json";
+        r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords";
+        rules.push_back(r);
+        r = FileRule();
+        r.relativePath = "infinite-loop-detection.json";
+        r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords";
+        rules.push_back(r);
+        r = FileRule();
+        r.relativePath = "items.json";
+        r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords";
+        rules.push_back(r);
+        r = FileRule();
+        r.relativePath = "maxContains.json";
+        r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords";
+        rules.push_back(r);
+        r = FileRule();
+        r.relativePath = "maxItems.json";
+        r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords";
+        rules.push_back(r);
+        r = FileRule();
+        r.relativePath = "maxLength.json";
+        r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords";
+        rules.push_back(r);
+        r = FileRule();
+        r.relativePath = "maxProperties.json";
+        r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords";
+        rules.push_back(r);
+        r = FileRule();
+        r.relativePath = "maximum.json";
+        r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords";
+        rules.push_back(r);
+        r = FileRule();
+        r.relativePath = "minContains.json";
+        r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords";
+        rules.push_back(r);
+        r = FileRule();
+        r.relativePath = "minItems.json";
+        r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords";
+        rules.push_back(r);
+        r = FileRule();
+        r.relativePath = "minLength.json";
+        r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords";
+        rules.push_back(r);
+        r = FileRule();
+        r.relativePath = "minProperties.json";
+        r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords";
+        rules.push_back(r);
+        r = FileRule();
+        r.relativePath = "minimum.json";
+        r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords";
+        rules.push_back(r);
+        r = FileRule();
+        r.relativePath = "multipleOf.json";
+        r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords";
+        rules.push_back(r);
+        r = FileRule();
+        r.relativePath = "not.json";
+        r.mode = RunSelectedGroups;
+        r.reason = "";
         r.groups.push_back(GroupRule{"not", true, "supported"});
         r.groups.push_back(GroupRule{"not multiple types", true, "supported"});
         r.groups.push_back(GroupRule{"not more complex schema", true, "supported"});
         r.groups.push_back(GroupRule{"forbidden property", true, "supported"});
         r.groups.push_back(GroupRule{"forbid everything with empty schema", true, "supported"});
-        r.groups.push_back(GroupRule{"forbid everything with boolean schema true", true, "supported"});
-        r.groups.push_back(GroupRule{"allow everything with boolean schema false", true, "supported"});
+        r.groups.push_back(
+            GroupRule{"forbid everything with boolean schema true", true, "supported"});
+        r.groups.push_back(
+            GroupRule{"allow everything with boolean schema false", true, "supported"});
         r.groups.push_back(GroupRule{"double negation", true, "supported"});
-        r.groups.push_back(GroupRule{"collect annotations inside a 'not', even if collection is disabled", false, "requires annotation collection semantics"});
+        r.groups.push_back(
+            GroupRule{"collect annotations inside a 'not', even if collection is disabled", true,
+                      "supported internal annotation evaluation"});
         rules.push_back(r);
-        r = FileRule(); r.relativePath = "oneOf.json"; r.mode = RunWholeFile;
-        r.reason = "supported documented-subset keywords"; rules.push_back(r);
-        r = FileRule(); r.relativePath = "pattern.json"; r.mode = RunSelectedGroups; r.reason = "";
+        r = FileRule();
+        r.relativePath = "oneOf.json";
+        r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords";
+        rules.push_back(r);
+        r = FileRule();
+        r.relativePath = "pattern.json";
+        r.mode = RunSelectedGroups;
+        r.reason = "";
         r.groups.push_back(GroupRule{"pattern validation", true, "supported"});
         r.groups.push_back(GroupRule{"pattern is not anchored", true, "supported"});
-        r.groups.push_back(GroupRule{"pattern with Unicode property escape requires unicode mode", false, "std::regex ECMAScript lacks Unicode property escapes (\\\\p{...})"});
+        r.groups.push_back(
+            GroupRule{"pattern with Unicode property escape requires unicode mode", false,
+                      "std::regex ECMAScript lacks Unicode property escapes (\\\\p{...})"});
         rules.push_back(r);
-        r = FileRule(); r.relativePath = "patternProperties.json"; r.mode = RunSelectedGroups; r.reason = "";
-        r.groups.push_back(GroupRule{"patternProperties validates properties matching a regex", true, "supported"});
-        r.groups.push_back(GroupRule{"multiple simultaneous patternProperties are validated", true, "supported"});
-        r.groups.push_back(GroupRule{"regexes are not anchored by default and are case sensitive", true, "supported"});
+        r = FileRule();
+        r.relativePath = "patternProperties.json";
+        r.mode = RunSelectedGroups;
+        r.reason = "";
+        r.groups.push_back(GroupRule{"patternProperties validates properties matching a regex",
+                                     true, "supported"});
+        r.groups.push_back(
+            GroupRule{"multiple simultaneous patternProperties are validated", true, "supported"});
+        r.groups.push_back(GroupRule{"regexes are not anchored by default and are case sensitive",
+                                     true, "supported"});
         r.groups.push_back(GroupRule{"patternProperties with boolean schemas", true, "supported"});
-        r.groups.push_back(GroupRule{"patternProperties with null valued instance properties", true, "supported"});
-        r.groups.push_back(GroupRule{"patternProperties with Unicode property escape", false, "std::regex ECMAScript lacks Unicode property escapes (\\\\p{...})"});
+        r.groups.push_back(
+            GroupRule{"patternProperties with null valued instance properties", true, "supported"});
+        r.groups.push_back(
+            GroupRule{"patternProperties with Unicode property escape", false,
+                      "std::regex ECMAScript lacks Unicode property escapes (\\\\p{...})"});
         rules.push_back(r);
-        r = FileRule(); r.relativePath = "prefixItems.json"; r.mode = RunWholeFile;
-        r.reason = "supported documented-subset keywords"; rules.push_back(r);
-        r = FileRule(); r.relativePath = "properties.json"; r.mode = RunWholeFile;
-        r.reason = "supported documented-subset keywords"; rules.push_back(r);
-        r = FileRule(); r.relativePath = "propertyNames.json"; r.mode = RunWholeFile;
-        r.reason = "supported documented-subset keywords"; rules.push_back(r);
-        r = FileRule(); r.relativePath = "ref.json"; r.mode = RunSelectedGroups; r.reason = "";
+        r = FileRule();
+        r.relativePath = "prefixItems.json";
+        r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords";
+        rules.push_back(r);
+        r = FileRule();
+        r.relativePath = "properties.json";
+        r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords";
+        rules.push_back(r);
+        r = FileRule();
+        r.relativePath = "propertyNames.json";
+        r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords";
+        rules.push_back(r);
+        r = FileRule();
+        r.relativePath = "ref.json";
+        r.mode = RunSelectedGroups;
+        r.reason = "";
         r.groups.push_back(GroupRule{"root pointer ref", true, "supported"});
         r.groups.push_back(GroupRule{"relative pointer ref to object", true, "supported"});
         r.groups.push_back(GroupRule{"relative pointer ref to array", true, "supported"});
         r.groups.push_back(GroupRule{"escaped pointer ref", true, "supported"});
         r.groups.push_back(GroupRule{"nested refs", true, "supported"});
-        r.groups.push_back(GroupRule{"ref applies alongside sibling keywords", true, "supported modern subset semantics"});
-        r.groups.push_back(GroupRule{"remote ref, containing refs itself", false, "requires the official 2020-12 meta-schema, which pjson intentionally does not claim"});
-        r.groups.push_back(GroupRule{"property named $ref that is not a reference", true, "supported"});
-        r.groups.push_back(GroupRule{"property named $ref, containing an actual $ref", true, "supported"});
+        r.groups.push_back(GroupRule{"ref applies alongside sibling keywords", true,
+                                     "supported modern subset semantics"});
+        r.groups.push_back(GroupRule{
+            "remote ref, containing refs itself", false,
+            "requires the official 2020-12 meta-schema, which pjson intentionally does not claim"});
+        r.groups.push_back(
+            GroupRule{"property named $ref that is not a reference", true, "supported"});
+        r.groups.push_back(
+            GroupRule{"property named $ref, containing an actual $ref", true, "supported"});
         r.groups.push_back(GroupRule{"$ref to boolean schema true", true, "supported"});
         r.groups.push_back(GroupRule{"$ref to boolean schema false", true, "supported"});
-        r.groups.push_back(GroupRule{"Recursive references between schemas", true, "supported explicit resolver"});
+        r.groups.push_back(
+            GroupRule{"Recursive references between schemas", true, "supported explicit resolver"});
         r.groups.push_back(GroupRule{"refs with quote", true, "supported"});
-        r.groups.push_back(GroupRule{"ref creates new scope when adjacent to keywords", true, "supported"});
-        r.groups.push_back(GroupRule{"naive replacement of $ref with its destination is not correct", true, "supported"});
+        r.groups.push_back(
+            GroupRule{"ref creates new scope when adjacent to keywords", true, "supported"});
+        r.groups.push_back(GroupRule{
+            "naive replacement of $ref with its destination is not correct", true, "supported"});
         r.groups.push_back(GroupRule{"refs with relative uris and defs", true, "supported"});
-        r.groups.push_back(GroupRule{"relative refs with absolute uris and defs", true, "supported"});
-        r.groups.push_back(GroupRule{"$id must be resolved against nearest parent, not just immediate parent", true, "supported"});
+        r.groups.push_back(
+            GroupRule{"relative refs with absolute uris and defs", true, "supported"});
+        r.groups.push_back(
+            GroupRule{"$id must be resolved against nearest parent, not just immediate parent",
+                      true, "supported"});
         r.groups.push_back(GroupRule{"order of evaluation: $id and $ref", true, "supported"});
-        r.groups.push_back(GroupRule{"order of evaluation: $id and $anchor and $ref", true, "supported"});
-        r.groups.push_back(GroupRule{"order of evaluation: $id and $ref on nested schema", true, "supported"});
-        r.groups.push_back(GroupRule{"simple URN base URI with $ref via the URN", true, "supported"});
+        r.groups.push_back(
+            GroupRule{"order of evaluation: $id and $anchor and $ref", true, "supported"});
+        r.groups.push_back(
+            GroupRule{"order of evaluation: $id and $ref on nested schema", true, "supported"});
+        r.groups.push_back(
+            GroupRule{"simple URN base URI with $ref via the URN", true, "supported"});
         r.groups.push_back(GroupRule{"simple URN base URI with JSON pointer", true, "supported"});
         r.groups.push_back(GroupRule{"URN base URI with NSS", true, "supported"});
         r.groups.push_back(GroupRule{"URN base URI with r-component", true, "supported"});
         r.groups.push_back(GroupRule{"URN base URI with q-component", true, "supported"});
-        r.groups.push_back(GroupRule{"URN base URI with URN and JSON pointer ref", true, "supported"});
+        r.groups.push_back(
+            GroupRule{"URN base URI with URN and JSON pointer ref", true, "supported"});
         r.groups.push_back(GroupRule{"URN base URI with URN and anchor ref", true, "supported"});
         r.groups.push_back(GroupRule{"URN ref with nested pointer ref", true, "supported"});
         r.groups.push_back(GroupRule{"ref to if", true, "supported"});
         r.groups.push_back(GroupRule{"ref to then", true, "supported"});
         r.groups.push_back(GroupRule{"ref to else", true, "supported"});
         r.groups.push_back(GroupRule{"ref with absolute-path-reference", true, "supported"});
-        r.groups.push_back(GroupRule{"$id with file URI still resolves pointers - *nix", true, "supported"});
-        r.groups.push_back(GroupRule{"$id with file URI still resolves pointers - windows", true, "supported"});
+        r.groups.push_back(
+            GroupRule{"$id with file URI still resolves pointers - *nix", true, "supported"});
+        r.groups.push_back(
+            GroupRule{"$id with file URI still resolves pointers - windows", true, "supported"});
         r.groups.push_back(GroupRule{"empty tokens in $ref json-pointer", true, "supported"});
         rules.push_back(r);
-        r = FileRule(); r.relativePath = "refRemote.json"; r.mode = RunWholeFile;
-        r.reason = "requires remote schema resolution"; rules.push_back(r);
-        r = FileRule(); r.relativePath = "required.json"; r.mode = RunWholeFile;
-        r.reason = "supported documented-subset keywords"; rules.push_back(r);
-        r = FileRule(); r.relativePath = "type.json"; r.mode = RunWholeFile;
-        r.reason = "supported documented-subset keywords"; rules.push_back(r);
-        r = FileRule(); r.relativePath = "unevaluatedItems.json"; r.mode = RunWholeFile;
-        r.reason = "supported unevaluated-item annotation propagation"; rules.push_back(r);
-        r = FileRule(); r.relativePath = "unevaluatedProperties.json"; r.mode = RunWholeFile;
-        r.reason = "supported unevaluated-property annotation propagation"; rules.push_back(r);
-        r = FileRule(); r.relativePath = "uniqueItems.json"; r.mode = RunWholeFile;
-        r.reason = "supported documented-subset keywords"; rules.push_back(r);
-        r = FileRule(); r.relativePath = "vocabulary.json"; r.mode = RunSelectedGroups; r.reason = "";
-        r.groups.push_back(GroupRule{"schema that uses custom metaschema with with no validation vocabulary", false, "requires $vocabulary negotiation and custom metaschema resolution"});
+        r = FileRule();
+        r.relativePath = "refRemote.json";
+        r.mode = RunWholeFile;
+        r.reason = "requires remote schema resolution";
+        rules.push_back(r);
+        r = FileRule();
+        r.relativePath = "required.json";
+        r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords";
+        rules.push_back(r);
+        r = FileRule();
+        r.relativePath = "type.json";
+        r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords";
+        rules.push_back(r);
+        r = FileRule();
+        r.relativePath = "unevaluatedItems.json";
+        r.mode = RunWholeFile;
+        r.reason = "supported unevaluated-item annotation propagation";
+        rules.push_back(r);
+        r = FileRule();
+        r.relativePath = "unevaluatedProperties.json";
+        r.mode = RunWholeFile;
+        r.reason = "supported unevaluated-property annotation propagation";
+        rules.push_back(r);
+        r = FileRule();
+        r.relativePath = "uniqueItems.json";
+        r.mode = RunWholeFile;
+        r.reason = "supported documented-subset keywords";
+        rules.push_back(r);
+        r = FileRule();
+        r.relativePath = "vocabulary.json";
+        r.mode = RunSelectedGroups;
+        r.reason = "";
+        r.groups.push_back(
+            GroupRule{"schema that uses custom metaschema with with no validation vocabulary",
+                      false, "requires $vocabulary negotiation and custom metaschema resolution"});
         r.groups.push_back(GroupRule{"ignore unrecognized optional vocabulary", true, "supported"});
         rules.push_back(r);
         return rules;
@@ -656,7 +866,7 @@ namespace {
 
     // Validates a group shape once, then runs all of its cases against the shared schema.
     void runWholeGroup(const std::string& relativePath, const pjson& group, RunSummary& summary,
-                       const pJsonSchemaValidator::Options& options) {
+                       const pJsonSchemaValidator::Options& options, bool adaptDialect) {
         const pjson* schema = group.find("schema");
         const pjson* tests = group.find("tests");
         const std::string groupDesc = groupDescription(group);
@@ -673,7 +883,8 @@ namespace {
         // validation/applicator keyword and instance remains unchanged. Compile
         // once per upstream group, matching the public validator lifecycle.
         pjson subsetSchema(*schema);
-        subsetSchema.erase("$schema");
+        if (adaptDialect)
+            subsetSchema.erase("$schema");
         pJsonSchemaValidator validator(subsetSchema, options);
 
         const size_t count = tests->size();
@@ -694,7 +905,7 @@ namespace {
     // still names an upstream group. This makes suite upgrades fail visibly instead of shrinking
     // coverage silently.
     void runSelectedGroups(const FileRule& fileRule, const pjson& suiteFile, RunSummary& summary,
-                           const pJsonSchemaValidator::Options& options) {
+                           const pJsonSchemaValidator::Options& options, bool adaptDialect) {
         if (!suiteFile.isArray()) {
             recordFailure("official schema suite file shape",
                           std::string(fileRule.relativePath) + " did not parse to an array");
@@ -733,7 +944,7 @@ namespace {
                 continue;
             }
 
-            runWholeGroup(fileRule.relativePath, group, summary, options);
+            runWholeGroup(fileRule.relativePath, group, summary, options, adaptDialect);
         }
 
         for (size_t i = 0; i < fileRule.groups.size(); ++i) {
@@ -749,7 +960,7 @@ namespace {
 
     // Runs every group in a file whose supported vocabulary needs no per-group filtering.
     void runWholeFile(const FileRule& fileRule, const pjson& suiteFile, RunSummary& summary,
-                      const pJsonSchemaValidator::Options& options) {
+                      const pJsonSchemaValidator::Options& options, bool adaptDialect) {
         if (!suiteFile.isArray()) {
             recordFailure("official schema suite file shape",
                           std::string(fileRule.relativePath) + " did not parse to an array");
@@ -764,7 +975,7 @@ namespace {
                                   pjson_test::to_str(static_cast<int>(i)));
                 continue;
             }
-            runWholeGroup(fileRule.relativePath, *group, summary, options);
+            runWholeGroup(fileRule.relativePath, *group, summary, options, adaptDialect);
         }
     }
 
@@ -772,8 +983,8 @@ namespace {
 
 // Shared manifest-driven runner used by both the draft7 and draft2020-12 gates.
 static void runOfficialSuite(const std::string& suiteDir, const std::vector<FileRule>& rules,
-                             const char* dialectLabel,
-                             const pJsonSchemaValidator::Options& options) {
+                             const char* dialectLabel, const pJsonSchemaValidator::Options& options,
+                             bool adaptDialect) {
     RunSummary summary;
     for (size_t i = 0; i < rules.size(); ++i) {
         const std::string path = joinPath(suiteDir, rules[i].relativePath);
@@ -804,16 +1015,15 @@ static void runOfficialSuite(const std::string& suiteDir, const std::vector<File
         }
 
         if (rules[i].mode == RunWholeFile) {
-            runWholeFile(rules[i], *suite, summary, options);
+            runWholeFile(rules[i], *suite, summary, options, adaptDialect);
         } else {
-            runSelectedGroups(rules[i], *suite, summary, options);
+            runSelectedGroups(rules[i], *suite, summary, options, adaptDialect);
         }
     }
 
     std::printf("    INFO official %s suite visited %llu files (%llu whole-file skips), "
                 "ran %llu groups / %llu cases, skipped %llu groups / %llu cases\n",
-                dialectLabel,
-                static_cast<unsigned long long>(summary.filesVisited),
+                dialectLabel, static_cast<unsigned long long>(summary.filesVisited),
                 static_cast<unsigned long long>(summary.filesSkipped),
                 static_cast<unsigned long long>(summary.groupsRun),
                 static_cast<unsigned long long>(summary.casesRun),
@@ -830,7 +1040,7 @@ TEST(schema_official_draft7_optional) {
         CHECK(true);
         return;
     }
-    runOfficialSuite(draft7Dir, manifest(), "draft7", pJsonSchemaValidator::Options());
+    runOfficialSuite(draft7Dir, manifest(), "draft7", pJsonSchemaValidator::Options(), true);
 }
 
 TEST(schema_official_draft2020_optional) {
@@ -847,5 +1057,5 @@ TEST(schema_official_draft2020_optional) {
     pJsonSchemaValidator::Options options = pJsonSchemaValidator::Options::modernSubset();
     options.resolver = resolveOfficialSchema;
     options.resolverContext = &resolverContext;
-    runOfficialSuite(dir, manifest2020(), "draft2020-12", options);
+    runOfficialSuite(dir, manifest2020(), "draft2020-12", options, true);
 }

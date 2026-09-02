@@ -13,7 +13,7 @@ accurate audit; a small number rest on assumptions that did not match the
 Work landed in this pass targets the release now versioned **2.0.0** (the
 unsigned-integer numeric model and the non-finite serialization default are
 breaking changes, so the major version was bumped per SemVer). The unit suite
-grew from 431 to 483 cases; all pass under a normal Debug build and under
+grew from 431 to 510 cases; all pass under a normal Debug build and under
 AddressSanitizer + UndefinedBehaviorSanitizer.
 
 ## Legend
@@ -218,8 +218,8 @@ annotations. Default remains permissive for compatibility. Tests:
 JSON Schema validation was moved out of `pjson` entirely into the standalone
 `ByteDance::pJsonSchemaValidator` class (`<pjson_schema.h>` / `pjson_schema.cpp`).
 It is a **pure consumer of pjson's public API** and touches no library
-internals, so the core DOM no longer carries the schema/regex machinery and
-programs that never validate do not link it. The former nested
+internals, so the core DOM no longer carries schema/regex state and the module
+can later be packaged as a separately linked target. The former nested
 `pjson::SchemaError` / `pjson::SchemaOptions` are now
 `pJsonSchemaValidator::Error` / `pJsonSchemaValidator::Options`, and the
 member `pjson::validate()` overloads are removed. Callers construct a validator
@@ -247,11 +247,16 @@ gate above, by extracting a reusable compiled validator object (SCHEMA-002),
 and by adding the manifest-driven conformance gate (SCHEMA-006). SCHEMA-003/004
 now add `$id` resource bases, anchors, dynamic references, explicit no-I/O
 external resolution with document/byte/work/depth budgets, and annotation
-propagation for both `unevaluated*` keywords. The official gate runs 1,245
-Draft 2020-12 cases across 372 groups. Remaining gaps are standard meta-schema
-loading/vocabulary-driven keyword selection, ECMA-262 Unicode property escapes,
-and annotation-only `format` defaults. Documentation therefore continues to
-describe this as a **documented subset**, not general 2020-12 conformance.
+propagation for both `unevaluated*` keywords. The official gate runs 1,287
+Draft 2020-12 cases across 378 groups. Remaining gaps are standard meta-schema
+loading/vocabulary-driven keyword selection and ECMA-262 Unicode property
+escapes. Documentation therefore continues to describe this as a **documented
+subset**, not general 2020-12 conformance.
+
+PJSON-SCHEMA-005 remains partial: errors distinguish schema compilation from
+instance validation and provide bounded JSON Pointer/message diagnostics, but
+fine-grained stable codes, separate instance/schema locations, keyword names,
+and optional nested combinator causes remain tracked in `Todo.md`.
 
 ## 9. Existing extensions
 
@@ -289,10 +294,10 @@ differential front-end tests, and every compiled case remains individually
 registered with CTest. A manifest-driven `draft2020-12` conformance gate
 (`schema_official_draft2020_optional`) now runs alongside the existing draft-07
 gate: supported-keyword files run whole, and each remaining unsupported group
-(official meta-schema behavior, Unicode `\p{}` regex, annotation-only `format`)
+(official meta-schema behavior and Unicode `\p{}` regex)
 is skipped with a concrete reason so coverage cannot silently shrink. Measured
-baseline: 1,245 Draft 2020-12 cases pass across 372 groups; 52 cases are skipped
-across 10 groups. Full unconditional 2020-12 conformance remains unclaimed.
+baseline: 1,287 Draft 2020-12 cases pass across 378 groups; 10 cases are skipped
+across 4 groups. Full unconditional 2020-12 conformance remains unclaimed.
 
 ## 13. Documentation and governance
 

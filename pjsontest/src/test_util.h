@@ -67,8 +67,7 @@ namespace pjson_test {
         return validator.validate(aInstance);
     }
     inline bool schemaValidate(const pjson& aInstance, const pjson& aSchema,
-                               std::vector<SchemaError>& aErrors,
-                               const SchemaOptions& aOptions) {
+                               std::vector<SchemaError>& aErrors, const SchemaOptions& aOptions) {
         pJsonSchemaValidator validator(aSchema, aOptions);
         return validator.validate(aInstance, aErrors);
     }

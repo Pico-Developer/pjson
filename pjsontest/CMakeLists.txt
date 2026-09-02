@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.21)
 set (TARGET_NAME pjsontest)
 
 project (${TARGET_NAME})
+find_package(Threads REQUIRED)
 
 # ---- Test sources -------------------------------------------------------
 
@@ -67,7 +68,7 @@ endif()
 # Single assertion-based executable returns non-zero on any failing case.
 add_executable(${TARGET_NAME} ${TEST_SRC_FILES})
 target_include_directories(${TARGET_NAME} PUBLIC ${INC_DIRS})
-target_link_libraries(${TARGET_NAME} ${${TARGET_NAME}_libs})
+target_link_libraries(${TARGET_NAME} ${${TARGET_NAME}_libs} Threads::Threads)
 target_compile_options(${TARGET_NAME} PRIVATE ${PJSON_TEST_WARN_FLAGS})
 target_compile_definitions(${TARGET_NAME} PRIVATE
     PJSON_TEST_DEFAULT_JSONTESTSUITE_DIR="${CMAKE_SOURCE_DIR}/.test-corpora/JSONTestSuite"

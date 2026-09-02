@@ -11,6 +11,57 @@ access, SAX streaming, individually registered tests, pinned conformance
 corpora, libFuzzer/OSS-Fuzz targets, benchmarks, packaging, API reference, and
 cross-platform CI.
 
+## Resume notes (2026-09-01)
+
+Current implementation commits on branch `featurerequest`:
+
+- `abed3ba` — external, public-API-only `pJsonSchemaValidator`;
+- `f0d6b5e` — manifest-driven Draft 2020-12 conformance gate;
+- `abcd331` — explicit subset dialect and `$vocabulary` contract;
+- `940c56b` — first `$id`/anchor/dynamic-reference and `unevaluated*` pass.
+
+The pending worktree is the audited follow-up to `940c56b` and should be
+committed as one polish/hardening change after the final checks. Important
+invariants now enforced:
+
+- `pJsonSchemaValidator` is a pure consumer of pjson's public API;
+  `pjson_schema.cpp` must not include `pjson_internal.h` or access pjson storage.
+- The public class uses a private `Impl*`; the root schema and all resolved
+  documents are copied into default-allocator storage during construction.
+- Resolver callbacks run only during construction. The callback and context are
+  cleared from `options()` afterward; `validate()` performs no I/O or cache
+  mutation and supports concurrent read-only use with separate error vectors.
+- `Options::retrievalUri` supplies the base for a root without `$id`; relative
+  external references without either base are compilation errors.
+- `Options::modernSubset()` enables modern `$ref` sibling behavior and the
+  Draft 2020-12 annotation-only default for `format`. Plain `Options` retains
+  legacy Draft 7-compatible `$ref` replacement and format assertion behavior.
+- Resource compilation indexes only schema-bearing keyword positions; objects
+  inside `const`, `default`, `examples`, or extension annotations are data and
+  must not register `$id` or anchors. Duplicate resource IDs/anchors, malformed
+  anchors/references, unresolved references, resolver failures/exceptions, and
+  document/byte/work/depth exhaustion fail schema compilation.
+- `unevaluatedProperties`/`unevaluatedItems` use annotations only from successful
+  branches. `anyOf` merges every successful branch, `oneOf` merges its sole
+  successful branch, `not` discards outward annotations, and `if` annotations
+  are retained only when `if` succeeds.
+
+Authoritative verification commands:
+
+```sh
+PJSON_JSON_SCHEMA_TEST_SUITE_DIR="$PWD/.test-corpora/JSON-Schema-Test-Suite" \
+  ctest --test-dir out/build-debug --output-on-failure
+./build.sh --all --auto
+```
+
+The last complete Debug/ASan/Release runs passed 510/510 tests. The current
+Draft 2020-12 manifest executes 1,287 official cases across 378 groups and skips
+10 cases across four groups. The remaining groups require the official
+meta-schema/custom vocabulary behavior or ECMA-262 Unicode property escapes.
+Also verified: clang-format, clang-tidy, 20,000 schema-fuzzer runs, Doxygen API
+validation, relocatable static/shared CMake and pkg-config consumers, REUSE
+licensing, GCC, and a direct ThreadSanitizer concurrency probe.
+
 ---
 
 ## From the production-readiness review (docs/featurerequest.md)
@@ -39,13 +90,21 @@ required vocabularies, and accepts unknown optional vocabularies. SCHEMA-003 and
 SCHEMA-004 now provide `$id`/URI resources, `$anchor`, `$dynamicAnchor`, `$ref`,
 `$dynamicRef`, an explicit resolver with document/byte/work/depth budgets, and
 annotation propagation for `unevaluatedItems`/`unevaluatedProperties`. The
-official Draft 2020-12 gate now runs 1,245 cases across 372 groups.
+official Draft 2020-12 gate now runs 1,287 cases across 378 groups.
 
-**What remains:** full standard-vocabulary/meta-schema loading, ECMA-262 Unicode
-property escapes, and the dialect's annotation-only default for `format`. The
+**What remains:** full standard-vocabulary/meta-schema loading and ECMA-262
+Unicode property escapes. The
 remaining skipped official groups document these gaps. Until they land, docs
 must keep saying "documented subset" and must not claim general 2020-12
 conformance.
+
+### [ ] SCHEMA-DIAGNOSTICS — Complete structured schema diagnostics (PJSON-SCHEMA-005)
+
+`pJsonSchemaValidator::Error` currently distinguishes schema compilation from
+instance validation and reports an instance-or-schema JSON Pointer plus a
+message. Add stable fine-grained error codes, separate instance and schema
+locations, the triggering keyword, and optional nested causes for combinators.
+Preserve the existing bounded multi-error behavior and add a first-error option.
 
 ### [ ] NUM-3-HARDENING — Prove finite double conversion (PJSON-NUM-003)
 
@@ -83,7 +142,7 @@ budgets, streaming cursor behavior, and DOM/SAX differential regression suite.
 
 ### [ ] MAINT-2 — Split schema validation into keyword-family helpers
 
-**Where:** `_validateCtx` coordinates references, scalar keywords, containers,
+**Where:** `validateCtx` coordinates references, scalar keywords, containers,
 regular expressions, and combinators in one large dispatcher.
 
 **Why:** the shared depth, work, reference, and reported-error budgets make this

@@ -18,8 +18,9 @@
 // pJsonSchemaValidator validates a pjson value against a schema that is itself a
 // pjson value. It is a pure consumer of pjson's public API: it holds a compiled
 // (deep-copied) schema plus options and validates many instances against it.
-// The core pjson DOM has no schema dependency, so applications that do not need
-// validation never link this code.
+// The core pjson type has no schema dependency. The implementation remains a
+// separate translation unit so it can later become an independently linked
+// optional component without changing the DOM API.
 //
 // This is a documented JSON Schema subset, not a complete draft implementation.
 // See the supported-keyword list in the class comment.
@@ -43,7 +44,9 @@ namespace ByteDance {
     /// Construct once from a schema; validate many instances. The schema is
     /// deep-copied on construction, so the caller's schema value may change or
     /// be destroyed afterward. Validation never throws and never mutates its
-    /// inputs.
+    /// inputs. Construction resolves and owns external resources; validate() is
+    /// read-only and may be called concurrently when each caller uses its own
+    /// error vector.
     ///
     /// Dialect contract: the validator implements one explicitly named dialect,
     /// documentedSubsetDialectUri(). A root `$schema` may select it; any other
@@ -73,8 +76,7 @@ namespace ByteDance {
         /// when unavailable. The resolved document is copied into a cache owned
         /// by the validator; pjson performs no implicit network I/O. The callback
         /// and aContext need remain valid only until construction returns.
-        typedef bool (*Resolver)(const std::string& aDocumentUri, pjson& aSchema,
-                                 void* aContext);
+        typedef bool (*Resolver)(const std::string& aDocumentUri, pjson& aSchema, void* aContext);
 
         //== Diagnostics =====================================================
         /// One validation failure: `path` is a JSON Pointer to the offending
@@ -87,9 +89,9 @@ namespace ByteDance {
                 SchemaCompilation   ///< The schema contract is invalid or unsupported.
             };
 
-            std::string path; ///< JSON Pointer into the instance or schema.
+            std::string path;    ///< JSON Pointer into the instance or schema.
             std::string message; ///< Human-readable validation or compilation diagnostic.
-            Category category; ///< Selects which document `path` addresses.
+            Category category;   ///< Selects which document `path` addresses.
             /// Constructs an error with an empty root path and message.
             Error();
             /// Constructs an error for aPath with the supplied diagnostic message.
@@ -115,7 +117,7 @@ namespace ByteDance {
             /// Validation work units (default 1,000,000); zero selects that hard ceiling.
             size_t maxValidationWork; ///< Total validation work-unit budget.
             /// Reported errors (default 100); zero selects the hard ceiling of 100.
-            size_t maxErrors; ///< Collected diagnostic budget.
+            size_t maxErrors;     ///< Collected diagnostic budget.
             bool validateFormats; ///< Validates known string formats (default true).
             // Strict, fail-closed subset mode. When true, a schema that uses a
             // standard validation/applicator keyword this validator does not
@@ -126,28 +128,34 @@ namespace ByteDance {
             /// Applies `$ref` siblings using pjson's modern subset semantics.
             /// The default false preserves legacy Draft 7 replacement semantics.
             bool refSiblings; ///< True when `$ref` siblings must also be evaluated.
+            /// Retrieval URI used as the initial base when the root has no `$id`.
+            /// Leave empty only when all references are absolute or local.
+            std::string retrievalUri; ///< Initial base URI for a root without `$id`.
             /// Dialect used when the root schema has no `$schema`. The only
             /// supported value today is documentedSubsetDialectUri(). An empty
             /// value selects that default; every other URI is rejected when the
             /// validator is constructed.
             std::string defaultDialectUri; ///< Dialect used when `$schema` is absent.
-            Resolver resolver; ///< Optional synchronous external-schema resolver.
-            void* resolverContext; ///< Opaque context passed to resolver.
-            size_t maxResolvedDocuments; ///< External-document budget (default 32).
-            size_t maxResolvedBytes; ///< Compact resolved-DOM byte budget (default 16 MiB).
+            Resolver resolver;             ///< Construction-only external-schema resolver.
+            void* resolverContext;         ///< Construction-only opaque resolver context.
+            size_t maxResolvedDocuments;   ///< External-document budget (default 32).
+            size_t maxResolvedBytes;       ///< Compact resolved-DOM byte budget (default 16 MiB).
             /// Selects bounded safe-regex, traversal, reference, work, error, and format defaults.
             Options();
             /// Disables only regex restrictions; all other defaults remain enabled.
             static Options trustedRegex();
             /// Returns the defaults with strict fail-closed subset mode enabled.
             static Options strict();
-            /// Selects pjson's modern subset semantics (`$ref` siblings apply).
+            /// Selects modern subset semantics: `$ref` siblings apply and
+            /// `format` is annotation-only unless the caller re-enables it.
             static Options modernSubset();
         };
 
         //== Construction ====================================================
-        /// Compiles aSchema (deep-copied with the default allocator) with the supplied options. Inspect
-        /// isSchemaValid()/schemaErrors() before trusting validation results.
+        /// Compiles aSchema (deep-copied with the default allocator) and all
+        /// resolved resources. Resolver failures, malformed references, and
+        /// duplicate IDs/anchors are reported through isSchemaValid() and
+        /// schemaErrors(); allocation failure may still throw std::bad_alloc.
         explicit pJsonSchemaValidator(const pjson& aSchema, const Options& aOptions = Options());
         /// Destroys the compiled schema.
         ~pJsonSchemaValidator();
@@ -175,6 +183,7 @@ namespace ByteDance {
         /// Returns the compiled schema value (read-only).
         const pjson& schema() const noexcept;
         /// Returns the options in effect for this validator.
+        /// Construction-only resolver pointers are cleared in this snapshot.
         const Options& options() const noexcept;
 
     private:

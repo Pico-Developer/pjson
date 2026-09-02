@@ -95,6 +95,13 @@ REQUIRED_SCHEMA_VALIDATOR_MEMBERS = {
     "options": 1,
 }
 
+REQUIRED_SCHEMA_OPTIONS_MEMBERS = {
+    "Options": 1,
+    "trustedRegex": 1,
+    "strict": 1,
+    "modernSubset": 1,
+}
+
 REMOVED_PUBLIC_MEMBERS = {
     "PJSONARRAY",
     "PJSONMAP",
@@ -292,6 +299,7 @@ REQUIRED_PUBLIC_FIELDS = {
         "validateFormats",
         "strictSubset",
         "refSiblings",
+        "retrievalUri",
         "defaultDialectUri",
         "resolver",
         "resolverContext",
@@ -430,6 +438,19 @@ def main() -> int:
             errors.append(
                 f"pJsonSchemaValidator::{name}: expected at least {minimum}, "
                 f"found {schema_validator_members[name]}"
+            )
+
+    schema_options_node = compounds.get("ByteDance::pJsonSchemaValidator::Options")
+    schema_options_members: collections.Counter[str] = collections.Counter()
+    if schema_options_node is not None:
+        schema_options_members.update(
+            node.findtext("name", default="") for node in schema_options_node.findall("member")
+        )
+    for name, minimum in REQUIRED_SCHEMA_OPTIONS_MEMBERS.items():
+        if schema_options_members[name] < minimum:
+            errors.append(
+                f"pJsonSchemaValidator::Options::{name}: expected at least {minimum}, "
+                f"found {schema_options_members[name]}"
             )
 
     def compound_definition(name: str):

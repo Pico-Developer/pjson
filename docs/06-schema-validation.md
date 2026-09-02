@@ -18,7 +18,7 @@ like any other pjson value.
 Validation itself lives in a separate helper class,
 `ByteDance::pJsonSchemaValidator`, declared in `<pjson_schema.h>`. It is a pure
 consumer of pjson's public API: the core `pjson` class carries no schema or
-regex machinery, and programs that never validate do not pull in that code. You
+regex state, and the implementation is isolated in its own translation unit. You
 compile a schema into a validator once and reuse it to check many instances.
 
 ```mermaid
@@ -93,6 +93,9 @@ optional vocabularies (`false`) are accepted as annotations; unknown required
 vocabularies fail schema compilation. Malformed `$schema`/`$vocabulary` shapes
 also fail compilation. `schemaErrors()` reports these failures with
 `Error::SchemaCompilation`; instance failures use `Error::InstanceValidation`.
+All local and external references are indexed and resolved while the validator
+is constructed. The resolver context is not retained, and repeated or concurrent
+`validate()` calls perform no resolver I/O or cache mutation.
 
 To learn *what* failed, pass a vector — the validator normally collects every
 applicable failure instead of stopping at the first (a resource-budget failure
@@ -166,11 +169,35 @@ A few notes:
 - `unevaluatedProperties` and `unevaluatedItems` consume successful evaluation
   annotations propagated through references, conditionals, combinators,
   `contains`, and the regular object/array applicators.
+
+An application that allows references to other schema documents supplies them
+explicitly. The callback receives an absolute document URI (without a fragment),
+fills the output value, and returns success; it must not fetch anything the
+application's policy does not authorize:
+
+```cpp
+bool resolveSchema(const std::string& uri, pjson& output, void* context) {
+    const SchemaStore& store = *static_cast<const SchemaStore*>(context);
+    return store.find(uri, output); // copy the matching schema into output
+}
+
+pJsonSchemaValidator::Options options =
+    pJsonSchemaValidator::Options::modernSubset();
+options.retrievalUri = "https://example.test/schemas/root.json";
+options.resolver = resolveSchema;
+options.resolverContext = &store;
+pJsonSchemaValidator validator(schema, options);
+```
+
+The callback runs only during construction. Returned documents are copied into
+validator-owned storage, and the callback/context pointers are then cleared.
 - `patternProperties` applies schemas to matching keys, `propertyNames` checks
   each key, and `dependentRequired`/`dependencies` express rules triggered by
   the presence of another property.
 - Known string formats are `date`, `time`, `date-time`, `ipv4`, `ipv6`, and
-  `uuid`. They are checked by default; unknown format names are ignored.
+  `uuid`. They are checked by the normal/default options;
+  `Options::modernSubset()` follows Draft 2020-12 and treats them as annotations
+  unless `validateFormats` is explicitly re-enabled. Unknown names are ignored.
 - A **boolean schema** is allowed: `true` accepts everything, `false` rejects
   everything (handy as a sub-schema, e.g. `"additionalProperties": false`).
 - `pattern` uses `std::regex` ECMAScript syntax with search semantics. Default
@@ -202,7 +229,8 @@ options.maxValidationWork = 1000000;
 options.maxErrors = 100;
 options.validateFormats = true;
 options.strictSubset = false; // set true to fail closed on unsupported keywords
-options.refSiblings = false;  // modernSubset() sets this true
+options.refSiblings = false;  // modernSubset() sets true and validateFormats false
+options.retrievalUri.clear(); // set when a root schema with relative refs was retrieved by URI
 options.defaultDialectUri = pJsonSchemaValidator::documentedSubsetDialectUri();
 options.resolver = nullptr;   // no implicit external I/O
 options.resolverContext = nullptr;
@@ -271,9 +299,10 @@ schema["properties"]["age"]["minimum"] = int64_t(0);
   once, then reuse the validator for many instances.
 - `validator.validate(data)` returns yes/no; `validator.validate(data, errors)`
   collects **all** failures, each with a JSON-Pointer `path` and a `message`.
-- The subset includes local `$ref`, object constraints, known string formats,
-  and logical combinators. Unknown keywords are ignored and therefore enforce
-  no constraint.
+- The subset includes URI/anchor/dynamic references, `unevaluated*`, object and
+  array constraints, known string formats, and logical combinators. External
+  resources are available only through an explicit resolver callback. Unknown
+  keywords are ignored and therefore enforce no constraint.
 - `pJsonSchemaValidator::Options` bounds regex, validation depth, reference
   resolution, total validation work, and collected errors, and can disable
   known-format checks.

@@ -29,17 +29,18 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases follow
   exposes `isSchemaValid()`, `schemaErrors()`, and `dialect()`. Schema errors are
   categorized as `SchemaCompilation` versus `InstanceValidation`.
 - Added a pinned, manifest-driven Draft 2020-12 conformance gate. After the
-  reference and unevaluated-keyword work below, 1,245 supported cases run and
-  52 cases are explicitly skipped with reasons so coverage cannot silently shrink.
+  reference and unevaluated-keyword work below, 1,287 supported cases run and
+  10 cases are explicitly skipped with reasons so coverage cannot silently shrink.
 - Added `$id` resource bases, `$anchor`, `$dynamicAnchor`, `$ref`, `$dynamicRef`,
   and an explicit function-pointer resolver. pjson performs no implicit I/O;
   resolution is bounded by reference, document, byte, work, and depth limits.
-  `Options::modernSubset()` enables modern `$ref` sibling semantics while the
-  default retains the prior Draft 7 behavior.
+  `Options::modernSubset()` enables modern `$ref` sibling semantics and the
+  Draft 2020-12 annotation-only `format` default; the normal defaults retain
+  prior Draft 7-compatible behavior.
 - Added Draft 2020-12 evaluation-annotation propagation and enforcement for
   `unevaluatedItems` and `unevaluatedProperties` across references, dynamic
   references, combinators, conditionals, `contains`, and container applicators.
-  The official gate now executes 1,245 cases across 372 groups.
+  The official gate now executes 1,287 cases across 378 groups.
 - Moved pJsonSchemaValidator storage behind a private implementation pointer;
   schemas are copied to the default allocator, removing dependence on the
   caller's schema allocator lifetime.
@@ -75,7 +76,7 @@ numeric-model change, and new APIs, so it is a major version bump.
 - Added JSON Schema Draft 2020-12 applicator keywords to the validator:
   `if`/`then`/`else`, `prefixItems`, `contains`/`minContains`/`maxContains`, and
   `dependentSchemas`, plus a strict fail-closed subset mode
-  (`SchemaOptions::strict()` / `strictSubset`) that rejects unsupported standard
+  (`pJsonSchemaValidator::Options::strict()` / `strictSubset`) that rejects unsupported standard
   keywords instead of ignoring them.
 
 ### Changed

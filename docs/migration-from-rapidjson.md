@@ -292,12 +292,12 @@ complete JSON Schema draft implementation:
 | Area | Supported keywords/forms |
 |---|---|
 | Any value | `type`, `enum`, `const` |
-| References | local-fragment `$ref` into the root schema |
-| Objects | `properties`, `patternProperties`, `propertyNames`, `required`, `dependentRequired`, `dependencies`, `additionalProperties`, `minProperties`, `maxProperties` |
-| Arrays | schema or tuple-array `items`, `minItems`, `maxItems`, `uniqueItems` |
+| References | `$id`, `$anchor`, `$dynamicAnchor`, `$ref`, `$dynamicRef`; explicit resolver for external documents |
+| Objects | `properties`, `patternProperties`, `propertyNames`, `required`, `dependentRequired`, `dependencies`, `dependentSchemas`, `additionalProperties`, `unevaluatedProperties`, `minProperties`, `maxProperties` |
+| Arrays | `items`, `prefixItems`, `contains`, `minContains`, `maxContains`, `unevaluatedItems`, `minItems`, `maxItems`, `uniqueItems` |
 | Numbers | `minimum`, `maximum`, numeric `exclusiveMinimum`, numeric `exclusiveMaximum`, `multipleOf` |
 | Strings | `minLength`, `maxLength`, `pattern`, supported `format` names |
-| Composition | `allOf`, `anyOf`, `oneOf`, `not` |
+| Composition | `allOf`, `anyOf`, `oneOf`, `not`, `if`, `then`, `else` |
 | Schema values | Boolean schemas |
 
 Unknown or unsupported schema keywords are ignored and therefore are not

@@ -112,7 +112,7 @@ cmake --install build --config Release
 Consumers use the same target after pointing CMake at that prefix:
 
 ```cmake
-find_package(pjson 1.0 CONFIG REQUIRED)
+find_package(pjson 2.0 CONFIG REQUIRED)
 target_link_libraries(myapp PRIVATE pjson::pjson)
 ```
 
@@ -875,6 +875,10 @@ concurrently with any other access to it (or its subtree). A custom `Allocator`
 must provide its own synchronization if shared across threads. The default
 allocator and `getVersion()` are initialization-safe.
 
+`pJsonSchemaValidator` owns immutable schema/resource copies and may be read
+concurrently when callers use separate error vectors. Resolver callbacks run
+only during construction and are not retained.
+
 ---
 
 ## Schema validation
@@ -942,6 +946,11 @@ as annotations, while unknown required vocabularies fail compilation. This is
 why pjson does not accept the official 2020-12 meta-schema URI: doing so would
 incorrectly claim the complete dialect.
 
+References are compiled during construction; resolver callbacks and their
+context are not retained, and validation performs no resolver I/O or cache
+mutation. A compiled validator may therefore be read concurrently when callers
+use separate error vectors.
+
 Example failure output for `{ "age": "old" }` against the schema above:
 ```text
 (root): missing required property "name"
@@ -988,9 +997,11 @@ Notes:
 - `$ref` resolves URI resources, JSON Pointer fragments, and anchors using `$id`
   bases. `$dynamicRef` and `$dynamicAnchor` follow dynamic scope. External
   documents require an explicit function-pointer resolver; pjson never performs
-  network I/O. `Options::modernSubset()` enables modern `$ref` sibling semantics.
+  network I/O. `Options::modernSubset()` enables modern `$ref` sibling semantics
+  and makes `format` annotation-only unless explicitly re-enabled.
 - Known formats are `date`, `time`, `date-time`, `ipv4`, `ipv6`, and `uuid`;
-  unknown format names are ignored.
+  normal options assert them, while `modernSubset()` follows the Draft 2020-12
+  annotation-only default. Unknown format names are ignored.
 - `minLength` and `maxLength` count Unicode code points, not UTF-8 bytes.
 - `pattern` uses ECMAScript syntax and search semantics. The default policy
   limits pattern and subject sizes and rejects unsafe expressions.

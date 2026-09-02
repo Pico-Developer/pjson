@@ -78,7 +78,8 @@
  * pJsonSchemaValidator is a standalone helper declared in <pjson_schema.h> and
  * built from pjson_schema.cpp. It is a pure consumer of pjson's public API and
  * never touches the DOM's internal storage, so the core pjson class carries no
- * schema or regex machinery and applications that do not validate never link it.
+ * schema or regex state. The implementation is isolated in its own translation
+ * unit for future optional-library packaging.
  * Construct one validator from a schema (deep-copied on construction) and reuse
  * it to validate many instances; validation never throws and never mutates its
  * inputs. The class implements one explicitly named subset dialect. A root
@@ -100,10 +101,12 @@
  * conservative native-stack bound. Other zero-valued validation budgets retain their
  * documented hard ceilings; only regex byte limits use zero as unlimited.
  * defaultDialectUri defaults to documentedSubsetDialectUri(); an empty value
- * selects the same default. resolver is the only way to load an external
+ * selects the same default. retrievalUri supplies the root's base when `$id` is
+ * absent. resolver is the only way to load an external
  * schema resource; pjson never performs I/O. maxResolvedDocuments and
  * maxResolvedBytes bound resolver amplification. modernSubset() enables modern
- * `$ref` sibling semantics while the default preserves legacy Draft 7 behavior.
+ * `$ref` sibling semantics and the Draft 2020-12 annotation-only `format`
+ * default, while normal options preserve legacy Draft 7-compatible behavior.
  */
 
 /**

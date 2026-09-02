@@ -7,7 +7,8 @@ fits.
 ## Option 1 — Compile the canonical sources directly
 
 pjson has **no dependencies** beyond the C++ standard library. For a vendored
-copy, use the canonical header and implementation from the repository:
+copy that needs only the DOM/parser/serializer, use the canonical core header
+and implementation from the repository:
 
 - `pjsonlib/include/pjson.h`
 - `pjsonlib/src/pjson.cpp`
@@ -28,6 +29,9 @@ using namespace ByteDance;
 ```
 
 This is the recommended path for small projects and for trying pjson out.
+Applications that use `pJsonSchemaValidator` should compile all
+`pjsonlib/src/pjson_schema*.cpp` files as well, or consume the CMake target,
+which already includes them.
 
 ```mermaid
 flowchart LR

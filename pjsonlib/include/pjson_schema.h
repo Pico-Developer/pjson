@@ -18,9 +18,9 @@
 // pJsonSchemaValidator validates a pjson value against a schema that is itself a
 // pjson value. It is a pure consumer of pjson's public API: it holds a compiled
 // (deep-copied) schema plus options and validates many instances against it.
-// The core pjson type has no schema dependency. The implementation remains a
-// separate translation unit so it can later become an independently linked
-// optional component without changing the DOM API.
+// The core pjson type has no schema dependency. The implementation remains in
+// focused private translation units so it can later become an independently
+// linked optional component without changing the DOM API.
 //
 // This is a documented JSON Schema subset, not a complete draft implementation.
 // See the supported-keyword list in the class comment.

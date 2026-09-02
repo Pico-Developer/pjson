@@ -11,7 +11,7 @@ access, SAX streaming, individually registered tests, pinned conformance
 corpora, libFuzzer/OSS-Fuzz targets, benchmarks, packaging, API reference, and
 cross-platform CI.
 
-## Resume notes (2026-09-01)
+## Resume notes (2026-09-02)
 
 Current implementation commits on branch `featurerequest`:
 
@@ -19,10 +19,18 @@ Current implementation commits on branch `featurerequest`:
 - `f0d6b5e` — manifest-driven Draft 2020-12 conformance gate;
 - `abcd331` — explicit subset dialect and `$vocabulary` contract;
 - `940c56b` — first `$id`/anchor/dynamic-reference and `unevaluated*` pass.
+- `84b3eea` — audited compiled-schema ownership, budgets, and concurrency;
+- `61e6995` — corrected negative mutable-index bounds;
+- `6f1e6c9` — structured non-throwing serialization diagnostics;
+- `921f09c` — actionable schema diagnostics and bounded nested causes;
+- `772353e` — strict validation of supported keyword shapes;
+- `5c8a68f` — seven-target fuzz coverage and inputs above 4 KiB;
+- `2787433` — finite floating-point conversion hardening;
+- `478bc97` — private schema utility module split;
+- `ea16a8c` — shared DOM/SAX numeric conversion;
+- `6203aff` — CTest discovery from the compiled registry.
 
-The pending worktree is the audited follow-up to `940c56b` and should be
-committed as one polish/hardening change after the final checks. Important
-invariants now enforced:
+Important invariants now enforced:
 
 - `pJsonSchemaValidator` is a pure consumer of pjson's public API;
   `pjson_schema.cpp` must not include `pjson_internal.h` or access pjson storage.
@@ -54,7 +62,7 @@ PJSON_JSON_SCHEMA_TEST_SUITE_DIR="$PWD/.test-corpora/JSON-Schema-Test-Suite" \
 ./build.sh --all --auto
 ```
 
-The last complete Debug/ASan/Release runs passed 510/510 tests. The current
+The last complete Debug/ASan/Release runs passed 522/522 tests. The current
 Draft 2020-12 manifest executes 1,287 official cases across 378 groups and skips
 10 cases across four groups. The remaining groups require the official
 meta-schema/custom vocabulary behavior or ECMA-262 Unicode property escapes.
@@ -79,7 +87,7 @@ remaining, larger items are tracked here.
 `contains`/`minContains`/`maxContains`, `dependentSchemas`, a strict
 fail-closed subset mode (`pJsonSchemaValidator::Options::strict()`), a
 compiled/immutable validator object: schema validation now lives in the external
-`ByteDance::pJsonSchemaValidator` class (`<pjson_schema.h>` / `pjson_schema.cpp`)
+`ByteDance::pJsonSchemaValidator` class (`<pjson_schema.h>` / `pjson_schema*.cpp`)
 that consumes only pjson's public API and is constructed once per schema, and a
 manifest-driven `draft2020-12` conformance gate
 (`schema_official_draft2020_optional`, SCHEMA-006) that runs the pinned

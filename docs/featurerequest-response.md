@@ -13,8 +13,8 @@ accurate audit; a small number rest on assumptions that did not match the
 Work landed in this pass targets the release now versioned **2.0.0** (the
 unsigned-integer numeric model and the non-finite serialization default are
 breaking changes, so the major version was bumped per SemVer). The unit suite
-grew from 431 to 510 cases; all pass under a normal Debug build and under
-AddressSanitizer + UndefinedBehaviorSanitizer.
+grew from 431 to 522 cases; all pass under normal Debug and Release builds and
+under AddressSanitizer + UndefinedBehaviorSanitizer.
 
 ## Legend
 
@@ -136,14 +136,13 @@ Mutable indexing now also has a `size_t` overload; valid negative `int` indexes
 count from the end and an index before the beginning throws without mutation.
 Tests: `tests_dom_api.cpp`, `tests_build.cpp`, and `tests_mutation.cpp`.
 
-### PJSON-API-004 — Type conversion and equality — Implemented (semantics) / Partially (docs)
+### PJSON-API-004 — Type conversion and equality — Implemented
 `tryGet` conversions are exact: signed↔unsigned reads succeed only when
 representable, integers widen to double, and no narrowing/precision-losing read
 reports success. Cross-representation equality (`1 == 1u == 1.0`) is exact above
 2^53 via the rewritten `_compareNumbers`. Object equality is order-independent.
-The consolidated prose table enumerating every conversion is folded into the
-README numeric/equality sections; a single exhaustive matrix doc is a
-documentation follow-up.
+The consolidated prose table enumerating every conversion is in the README
+numeric/equality sections.
 
 ### PJSON-API-005 — Structured error model — Implemented
 `ParseError` gained a stable `Code` enum (syntax, invalid encoding, duplicate
@@ -154,7 +153,7 @@ overloads with stable categories while retaining the existing convenience
 exception/stream-state APIs. Tests: `tests_error_model.cpp`,
 `tests_serialize_limits.cpp`.
 
-### PJSON-API-006 — Ownership and allocator completeness — Already satisfied (documented scope)
+### PJSON-API-006 — Ownership and allocator completeness — Implemented for the documented scope
 The baseline already documents that the custom `Allocator` covers persistent
 nodes and string/array/object wrapper objects, while standard-container backing
 buffers and transient scratch use the standard allocator, and it is described as
@@ -302,8 +301,8 @@ CMake, Conan, and vcpkg manifests (a configure-time mismatch is a hard error).
 JSONTestSuite and the JSON-Schema-Test-Suite are pinned and wired; sanitizer,
 differential, and fuzz jobs exist. This pass added the two mandatory regressions
 (embedded-NUL access; ancestor/descendant move under sanitizers), dedicated
-serialization, Pointer, and Merge Patch fuzz targets with 64 KiB input support, and new
-differential front-end tests, and every compiled case remains individually
+serialization, Pointer, and Merge Patch fuzz targets with 64 KiB input support,
+and new differential front-end tests. Every compiled case remains individually
 registered with CTest through post-link discovery from the executable's actual
 test registry rather than source-text scraping. A manifest-driven
 `draft2020-12` conformance gate

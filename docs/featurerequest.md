@@ -1016,16 +1016,17 @@ Status legend: [x] done, [~] partial (see `docs/featurerequest-response.md`),
 - [x] PJSON-COR-002 — Make aliasing mutations memory-safe
 - [x] PJSON-NUM-001 — Never silently corrupt an accepted number
 - [x] PJSON-NUM-002 — Handle non-finite floating-point values explicitly
-- [~] PJSON-NUM-003 — Define finite floating-point conversion precisely
+- [x] PJSON-NUM-003 — Define finite floating-point conversion precisely
 - [x] PJSON-SEC-001 — Make nesting limits stack-safe
 - [x] PJSON-PARSE-001 — Keep all parser front ends behaviorally equivalent
 - [x] PJSON-PARSE-002 — Apply duplicate-key policy early and consistently
 - [x] PJSON-API-001 — Provide non-allocating traversal
 - [x] PJSON-API-002 — Complete construction and mutation primitives
 - [x] PJSON-API-003 — Separate safe reads from vivifying writes
-- [~] PJSON-API-004 — Define type conversion and equality precisely
+- [x] PJSON-API-004 — Define type conversion and equality precisely
 - [x] PJSON-API-005 — Provide a structured error model
-- [~] PJSON-API-006 — Make ownership and allocator behavior complete
+- [x] PJSON-API-006 — Make ownership and allocator behavior complete for the
+  documented allocator scope
 - [x] PJSON-API-007 — Document thread safety
 - [x] PJSON-SER-001 — Guarantee valid and stable JSON output
 - [x] PJSON-SER-002 — Preserve deterministic output when requested
@@ -1033,12 +1034,12 @@ Status legend: [x] done, [~] partial (see `docs/featurerequest-response.md`),
 - [x] PJSON-SEC-003 — Preserve transactional mutation guarantees
 - [x] PJSON-SEC-004 — Treat regexes and external resources as hostile
 - [x] PJSON-SCHEMA-000 — Make subset validation fail closed when requested
-- [ ] PJSON-SCHEMA-001 — Implement an explicit dialect contract
-- [ ] PJSON-SCHEMA-002 — Compile and validate schemas separately
+- [x] PJSON-SCHEMA-001 — Implement an explicit dialect contract
+- [~] PJSON-SCHEMA-002 — Compile and validate schemas separately
 - [~] PJSON-SCHEMA-003 — Cover the Draft 2020-12 vocabulary
-- [ ] PJSON-SCHEMA-004 — Make reference resolution secure and embeddable
-- [~] PJSON-SCHEMA-005 — Provide actionable diagnostics
-- [ ] PJSON-SCHEMA-006 — Prove conformance
+- [x] PJSON-SCHEMA-004 — Make reference resolution secure and embeddable
+- [x] PJSON-SCHEMA-005 — Provide actionable diagnostics
+- [~] PJSON-SCHEMA-006 — Prove conformance
 - [x] PJSON-EXT-001 — JSON Pointer conformance
 - [x] PJSON-EXT-002 — JSON Patch conformance
 - [x] PJSON-EXT-003 — JSON Merge Patch conformance
@@ -1059,5 +1060,5 @@ Status legend: [x] done, [~] partial (see `docs/featurerequest-response.md`),
 - [x] PJSON-DOC-002 — Maintain compatibility and migration guidance
 - [x] PJSON-DOC-003 — Keep security and maintenance expectations explicit
 - [x] PJSON-DOC-004 — Classify compatibility impact before implementation
-- [ ] PJSON-MAINT-001 — Share parser machinery
-- [ ] PJSON-MAINT-002 — Isolate standards extensions and complex subsystems
+- [~] PJSON-MAINT-001 — Share parser machinery
+- [~] PJSON-MAINT-002 — Isolate standards extensions and complex subsystems

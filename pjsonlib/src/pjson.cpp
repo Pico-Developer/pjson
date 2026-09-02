@@ -2574,6 +2574,7 @@ bool pjson::write(std::ostream& aOut, SerializeError& aError,
             } catch (...) {
                 // Keep the more precise logical SerializeError category even
                 // when the caller enabled stream exceptions for failbit.
+                (void)0;
             }
             return false;
         }
@@ -2597,6 +2598,7 @@ bool pjson::write(std::ostream& aOut, SerializeError& aError,
         aOut.setstate(std::ios::failbit);
     } catch (...) {
         // The structured result remains authoritative for this noexcept API.
+        (void)0;
     }
     return false;
 }

@@ -580,7 +580,7 @@ namespace {
             return false;
         std::set<std::string> seen;
         for (size_t i = 0; i < value.size(); ++i) {
-            const pjson* item = value.find(i);
+            const pjson* item = value.find(static_cast<int>(i));
             if (item == nullptr || !item->isString() || !seen.insert(strOf(*item)).second)
                 return false;
         }
@@ -593,7 +593,7 @@ namespace {
         if (!isUniqueStringArray(value, false))
             return false;
         for (size_t i = 0; i < value.size(); ++i) {
-            const pjson* item = value.find(i);
+            const pjson* item = value.find(static_cast<int>(i));
             if (item == nullptr || !validTypeName(strOf(*item)))
                 return false;
         }
@@ -604,9 +604,9 @@ namespace {
         if (!value.isArray())
             return false;
         for (size_t i = 0; i < value.size(); ++i) {
-            const pjson* left = value.find(i);
+            const pjson* left = value.find(static_cast<int>(i));
             for (size_t j = i + 1; left != nullptr && j < value.size(); ++j) {
-                const pjson* right = value.find(j);
+                const pjson* right = value.find(static_cast<int>(j));
                 if (right != nullptr && *left == *right)
                     return true;
             }
@@ -644,7 +644,7 @@ namespace {
         };
         const auto rejectSchemaArrayValues = [&](const char* keyword, const pjson& value) {
             for (size_t i = 0; i < value.size() && errors.size() < limit; ++i) {
-                const pjson* child = value.find(i);
+                const pjson* child = value.find(static_cast<int>(i));
                 if (child == nullptr || !isSchemaNode(*child))
                     addCompilationError(errors, SchemaError::InvalidSchema,
                                         absoluteSchemaLocation(

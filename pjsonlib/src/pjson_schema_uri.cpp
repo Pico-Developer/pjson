@@ -117,7 +117,7 @@ namespace ByteDance {
         }
 
         std::string resolveUri(const std::string& baseWithFragment, const std::string& reference) {
-            const std::string base = stripFragment(baseWithFragment);
+            std::string base = stripFragment(baseWithFragment);
             if (reference.empty())
                 return base;
             if (uriHasScheme(reference))

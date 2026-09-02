@@ -265,6 +265,11 @@ and schema locations, keyword names, and optional nested causes for failing
 first-error reporting; bounded multi-error collection remains the default, and
 nested causes share the configured diagnostic bound.
 
+Schema implementation utilities are now grouped into private value/numeric,
+format, and URI translation units. The public surface remains the single
+`pjson_schema.h` header and the implementation remains in the existing library
+target; no redundant schema target was added.
+
 ## 9. Existing extensions
 
 ### PJSON-EXT-001/002/003 — Pointer / Patch / Merge Patch — Already satisfied

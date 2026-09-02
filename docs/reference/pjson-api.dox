@@ -76,7 +76,7 @@
  * @brief Validates pjson values against a JSON-Schema-subset schema.
  *
  * pJsonSchemaValidator is a standalone helper declared in <pjson_schema.h> and
- * built from pjson_schema.cpp. It is a pure consumer of pjson's public API and
+ * built from focused private schema translation units. It is a pure consumer of pjson's public API and
  * never touches the DOM's internal storage, so the core pjson class carries no
  * schema or regex state. The implementation is isolated in its own translation
  * unit for future optional-library packaging.

@@ -912,9 +912,9 @@ so schemas load and round-trip through `parse()`/`toString()` like any other
 JSON. Validation is performed by a standalone helper class,
 `ByteDance::pJsonSchemaValidator` (declared in `<pjson_schema.h>`), that is a
 pure consumer of pjson's public API — the core `pjson` class carries no schema
-or regex machinery, while the schema implementation remains isolated in its
-own translation unit within the current library target. Compile a schema into
-a validator once, then reuse it for many instances. The documented
+or regex machinery, while the schema implementation remains isolated in focused
+private translation units within the current library target. Compile a schema
+into a validator once, then reuse it for many instances. The documented
 vocabulary is a deliberately limited subset of
 [JSON Schema](https://json-schema.org), not a complete draft implementation.
 `validate()` is `noexcept` and normally collects every applicable failure (a

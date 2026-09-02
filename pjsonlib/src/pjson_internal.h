@@ -18,7 +18,7 @@
 // This header is NOT installed and is not part of the public API. It defines
 // the pjsonImpl friend struct and shared internal aliases so the library
 // implementation can span multiple translation units (pjson.cpp for the DOM,
-// parser, and serializer; pjson_schema.cpp for JSON Schema validation) while
+// parser, and serializer; pjson_schema*.cpp for JSON Schema validation) while
 // keeping the public pjson.h declaration-focused.
 //===----------------------------------------------------------------------===//
 #ifndef PRAVEENJSON_INTERNAL_H

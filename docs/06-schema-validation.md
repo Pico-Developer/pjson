@@ -18,7 +18,7 @@ like any other pjson value.
 Validation itself lives in a separate helper class,
 `ByteDance::pJsonSchemaValidator`, declared in `<pjson_schema.h>`. It is a pure
 consumer of pjson's public API: the core `pjson` class carries no schema or
-regex state, and the implementation is isolated in its own translation unit. You
+regex state, and the implementation is isolated in focused private translation units. You
 compile a schema into a validator once and reuse it to check many instances.
 
 ```mermaid

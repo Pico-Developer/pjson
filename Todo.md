@@ -131,18 +131,14 @@ well tested, so this is architectural debt rather than a release blocker.
 event sink. Preserve the current error offsets, duplicate-key policies, resource
 budgets, streaming cursor behavior, and DOM/SAX differential regression suite.
 
-### [ ] MAINT-2 — Split schema validation into keyword-family helpers
+### [ ] MAINT-2 — Further split the stateful schema dispatcher
 
-**Where:** `validateCtx` coordinates references, scalar keywords, containers,
-regular expressions, and combinators in one large dispatcher.
-
-**Why:** the shared depth, work, reference, and reported-error budgets make this
-logic security-sensitive; smaller helpers would make future keyword changes
-easier to review without changing the public validation contract.
-
-**How:** extract focused reference, numeric, string, array, object, and
-combinator helpers that all receive the same validation context and error sink.
-Keep the official schema manifest and resource-budget tests green throughout.
+Stateless value/numeric/regex, format, and URI helpers now live in focused
+private translation units. `validateCtx` still coordinates references, scalar
+keywords, containers, combinators, annotations, and shared budgets. Extracting
+those stateful families requires a shared private context interface and should
+be done only with the official schema and resource-budget suites green after
+each step.
 
 ### [ ] MAINT-3 — Discover CTest cases from the compiled test registry
 

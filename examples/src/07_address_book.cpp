@@ -42,8 +42,8 @@ namespace {
         if (!validator.validate(contact, errors)) {
             std::cout << "  rejected contact:\n";
             for (const pJsonSchemaValidator::Error& e : errors) {
-                std::cout << "    " << (e.path.empty() ? "(root)" : e.path) << ": " << e.message
-                          << "\n";
+                std::cout << "    " << (e.instanceLocation.empty() ? "(root)" : e.instanceLocation)
+                          << ": " << e.message << "\n";
             }
             return false;
         }

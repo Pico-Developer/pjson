@@ -320,13 +320,16 @@ namespace {
         const pjson* schema;
         const pjson* resourceRoot;
         std::string baseUri;
+        std::string location;
         SchemaTarget()
                 : schema(nullptr)
                 , resourceRoot(nullptr) {}
-        SchemaTarget(const pjson* aSchema, const pjson* aResourceRoot, const std::string& aBase)
+        SchemaTarget(const pjson* aSchema, const pjson* aResourceRoot, const std::string& aBase,
+                     const std::string& aLocation = std::string())
                 : schema(aSchema)
                 , resourceRoot(aResourceRoot)
-                , baseUri(aBase) {}
+                , baseUri(aBase)
+                , location(aLocation) {}
     };
 
     struct ResolvedDocument {
@@ -372,6 +375,7 @@ namespace {
         size_t refResolutions;
         size_t workUsed;
         size_t errorsUsed;
+        size_t diagnosticsUsed;
         size_t publicErrorStart;
         bool aborted;
         std::vector<std::pair<const pjson*, const pjson*>> activeRefs;
@@ -391,45 +395,63 @@ namespace {
                 , refResolutions(0)
                 , workUsed(0)
                 , errorsUsed(0)
+                , diagnosticsUsed(0)
                 , publicErrorStart(aPublicErrors == nullptr ? 0 : aPublicErrors->size())
                 , aborted(false) {}
     };
 
     struct SchemaBudgetExceeded {};
 
+    size_t diagnosticLimit(const Options& options) {
+        if (options.stopAfterFirstError)
+            return size_t(1);
+        return options.maxErrors == 0 ? size_t(100) : options.maxErrors;
+    }
+
     // Facade over a caller or speculative error vector enforcing one shared
     // per-validation diagnostic budget.
     struct ErrorSink {
+        enum Mode { Public, Causes, Discard };
+
         std::vector<SchemaError>& values;
         ValidationCtx& ctx;
-        bool reported;
-        size_t discardedFailures;
+        Mode mode;
+        size_t failures;
 
-        ErrorSink(std::vector<SchemaError>& aValues, ValidationCtx& aCtx, bool aReported = true)
+        ErrorSink(std::vector<SchemaError>& aValues, ValidationCtx& aCtx, Mode aMode = Public)
                 : values(aValues)
                 , ctx(aCtx)
-                , reported(aReported)
-                , discardedFailures(0) {}
+                , mode(aMode)
+                , failures(0) {}
 
-        size_t size() const { return reported ? values.size() : discardedFailures; }
+        size_t size() const { return failures; }
 
         void push_back(const SchemaError& error) {
             if (ctx.aborted)
                 return;
-            if (!reported) {
+            if (failures != std::numeric_limits<size_t>::max())
+                ++failures;
+            if (mode == Discard) {
                 (void)error;
-                if (discardedFailures != std::numeric_limits<size_t>::max())
-                    ++discardedFailures;
                 return;
             }
-            const size_t limit = ctx.options.maxErrors == 0 ? size_t(100) : ctx.options.maxErrors;
-            if (ctx.errorsUsed >= limit) {
+            const size_t limit = diagnosticLimit(ctx.options);
+            // Nested causes share the run-wide diagnostic budget and leave one
+            // slot for their enclosing public combinator error.
+            if (mode == Causes && ctx.diagnosticsUsed + size_t(1) >= limit) {
+                return;
+            }
+            if (mode == Public && (ctx.errorsUsed >= limit || ctx.diagnosticsUsed >= limit)) {
                 ctx.aborted = true;
                 if (ctx.publicErrors != nullptr &&
-                    ctx.publicErrors->size() - ctx.publicErrorStart < limit) {
+                    ctx.publicErrors->size() - ctx.publicErrorStart < limit &&
+                    ctx.diagnosticsUsed < limit) {
                     try {
                         ctx.publicErrors->push_back(
-                            SchemaError(error.path, "schema validation error budget exceeded"));
+                            SchemaError(SchemaError::ResourceLimit, SchemaError::InstanceValidation,
+                                        error.instanceLocation, error.schemaLocation, std::string(),
+                                        "schema validation error budget exceeded"));
+                        ++ctx.diagnosticsUsed;
                     } catch (...) {
                         ctx.publicErrors = nullptr;
                     }
@@ -437,9 +459,32 @@ namespace {
                 throw SchemaBudgetExceeded();
             }
             values.push_back(error);
-            ++ctx.errorsUsed;
+            ++ctx.diagnosticsUsed;
+            if (mode == Public) {
+                ++ctx.errorsUsed;
+                if (ctx.options.stopAfterFirstError) {
+                    ctx.aborted = true;
+                    throw SchemaBudgetExceeded();
+                }
+            }
         }
     };
+
+    std::string schemaLocationFor(const ValidationCtx& ctx, const pjson& schema,
+                                  const std::string& keyword = std::string()) {
+        std::map<const pjson*, SchemaTarget>::const_iterator found =
+            ctx.compiled.nodeTargets.find(&schema);
+        const std::string base =
+            found == ctx.compiled.nodeTargets.end() ? std::string() : found->second.location;
+        return keyword.empty() ? base : pointerAppend(base, keyword);
+    }
+
+    SchemaError validationError(const ValidationCtx& ctx, const pjson& schema,
+                                SchemaError::Code code, const std::string& instanceLocation,
+                                const std::string& keyword, const std::string& message) {
+        return SchemaError(code, SchemaError::InstanceValidation, instanceLocation,
+                           schemaLocationFor(ctx, schema, keyword), keyword, message);
+    }
 
     //===------------------------------------------------------------------===//
     // Exact numeric constraints and format validators
@@ -957,10 +1002,11 @@ namespace {
         return scheme + authority + normalizePath(directory + referencePath) + referenceSuffix;
     }
 
-    void bestEffortSchemaError(std::vector<SchemaError>& errors, const std::string& path,
-                               const std::string& message) noexcept {
+    void bestEffortSchemaError(std::vector<SchemaError>& errors, SchemaError::Code code,
+                               const std::string& path, const std::string& message) noexcept {
         try {
-            errors.push_back(SchemaError(path, message));
+            errors.push_back(SchemaError(code, SchemaError::InstanceValidation, path, std::string(),
+                                         std::string(), message));
         } catch (...) {
             return;
         }
@@ -1015,15 +1061,17 @@ namespace {
         if (ctx.aborted)
             return;
         ctx.aborted = true;
-        const size_t errorLimit = ctx.options.maxErrors == 0 ? size_t(100) : ctx.options.maxErrors;
+        const size_t errorLimit = diagnosticLimit(ctx.options);
         if (ctx.errorsUsed >= errorLimit)
             return;
         std::vector<SchemaError>& destination =
             ctx.publicErrors != nullptr ? *ctx.publicErrors : errors.values;
         const size_t before = destination.size();
-        bestEffortSchemaError(destination, path, message);
-        if (destination.size() != before)
+        bestEffortSchemaError(destination, SchemaError::ResourceLimit, path, message);
+        if (destination.size() != before) {
             ++ctx.errorsUsed;
+            ++ctx.diagnosticsUsed;
+        }
     }
 
     size_t validationDepthLimit(const Options& options) {
@@ -1077,22 +1125,23 @@ namespace {
         return true;
     }
 
-    bool addSchemaError(ValidationCtx&, ErrorSink& errors, const std::string& path,
+    bool addSchemaError(ValidationCtx& ctx, ErrorSink& errors, const pjson& schema,
+                        SchemaError::Code code, const std::string& path, const std::string& keyword,
                         const std::string& message) {
-        errors.push_back(SchemaError(path, message));
+        errors.push_back(validationError(ctx, schema, code, path, keyword, message));
         return !errors.ctx.aborted;
     }
 
     bool evaluateRegex(const std::string& subject, const std::string& pattern,
-                       const std::string& path, ErrorSink& errors, ValidationCtx& ctx,
-                       bool& matches) {
+                       const std::string& path, const pjson& schema, const std::string& keyword,
+                       ErrorSink& errors, ValidationCtx& ctx, bool& matches) {
         matches = false;
         if (ctx.options.maxRegexSubjectBytes != 0 &&
             subject.size() > ctx.options.maxRegexSubjectBytes) {
-            errors.push_back(
-                SchemaError(path, "string exceeds regex safety limit (" +
-                                      std::to_string(subject.size()) + " bytes, limit " +
-                                      std::to_string(ctx.options.maxRegexSubjectBytes) + ")"));
+            errors.push_back(validationError(
+                ctx, schema, SchemaError::ResourceLimit, path, keyword,
+                "string exceeds regex safety limit (" + std::to_string(subject.size()) +
+                    " bytes, limit " + std::to_string(ctx.options.maxRegexSubjectBytes) + ")"));
             return false;
         }
 
@@ -1116,15 +1165,18 @@ namespace {
         }
 
         if (cached.state == RegexCacheEntry::PatternTooLarge) {
-            errors.push_back(SchemaError(path, "schema regex pattern exceeds safety limit"));
+            errors.push_back(validationError(ctx, schema, SchemaError::RegexFailure, path, keyword,
+                                             "schema regex pattern exceeds safety limit"));
             return false;
         }
         if (cached.state == RegexCacheEntry::UnsafePattern) {
-            errors.push_back(SchemaError(path, "schema regex pattern rejected by safety policy"));
+            errors.push_back(validationError(ctx, schema, SchemaError::RegexFailure, path, keyword,
+                                             "schema regex pattern rejected by safety policy"));
             return false;
         }
         if (cached.state == RegexCacheEntry::InvalidPattern) {
-            errors.push_back(SchemaError(path, "schema has an invalid regex pattern"));
+            errors.push_back(validationError(ctx, schema, SchemaError::RegexFailure, path, keyword,
+                                             "schema has an invalid regex pattern"));
             return false;
         }
         if (!chargeLoopWork(ctx, errors, path, subject.size() + size_t(1)))
@@ -1212,13 +1264,15 @@ namespace {
         return false;
     }
 
-    std::string schemaPointer(const std::string& keyword) {
-        return "/" + pjson::escapePointerToken(keyword);
+    std::string absoluteSchemaLocation(const std::string& documentUri, const std::string& pointer) {
+        return documentUri.empty() ? pointer : stripFragment(documentUri) + "#" + pointer;
     }
 
-    void addCompilationError(std::vector<SchemaError>& errors, const std::string& path,
+    void addCompilationError(std::vector<SchemaError>& errors, SchemaError::Code code,
+                             const std::string& path, const std::string& keyword,
                              const std::string& message) {
-        errors.push_back(SchemaError(path, message, SchemaError::SchemaCompilation));
+        errors.push_back(SchemaError(code, SchemaError::SchemaCompilation, std::string(), path,
+                                     keyword, message));
     }
 
     // Establishes the root schema's dialect and required-vocabulary contract.
@@ -1227,8 +1281,9 @@ namespace {
     // conformance. Unknown optional vocabularies are annotations; unknown
     // required vocabularies fail compilation.
     void compileDialectContract(const pjson& schema, const Options& options, std::string& dialect,
-                                std::vector<SchemaError>& errors) {
-        const size_t errorLimit = options.maxErrors == 0 ? size_t(100) : options.maxErrors;
+                                std::vector<SchemaError>& errors,
+                                const std::string& location = std::string()) {
+        const size_t errorLimit = diagnosticLimit(options);
         dialect = options.defaultDialectUri.empty() ? kDocumentedSubsetDialect
                                                     : options.defaultDialectUri;
 
@@ -1236,8 +1291,10 @@ namespace {
             const pjson* declared = schema.find("$schema");
             if (declared != nullptr) {
                 if (!declared->isString()) {
-                    addCompilationError(errors, schemaPointer("$schema"),
+                    addCompilationError(errors, SchemaError::InvalidSchema,
+                                        pointerAppend(location, "$schema"), "$schema",
                                         "$schema must be a string URI");
+                    return;
                 } else {
                     dialect = strOf(*declared);
                 }
@@ -1245,7 +1302,8 @@ namespace {
         }
 
         if (dialect != kDocumentedSubsetDialect) {
-            addCompilationError(errors, schemaPointer("$schema"),
+            addCompilationError(errors, SchemaError::UnsupportedDialect,
+                                pointerAppend(location, "$schema"), "$schema",
                                 "unsupported schema dialect: " + dialect);
             return;
         }
@@ -1256,7 +1314,8 @@ namespace {
         if (vocabularies == nullptr)
             return;
         if (!vocabularies->isObject()) {
-            addCompilationError(errors, schemaPointer("$vocabulary"),
+            addCompilationError(errors, SchemaError::InvalidSchema,
+                                pointerAppend(location, "$vocabulary"), "$vocabulary",
                                 "$vocabulary must be an object mapping URI strings to booleans");
             return;
         }
@@ -1265,15 +1324,16 @@ namespace {
         for (size_t i = 0; i < uris.size() && errors.size() < errorLimit; ++i) {
             const pjson* requirement = vocabularies->find(uris[i]);
             const std::string path =
-                schemaPointer("$vocabulary") + "/" + pjson::escapePointerToken(uris[i]);
+                pointerAppend(location, "$vocabulary") + "/" + pjson::escapePointerToken(uris[i]);
             if (requirement == nullptr || !requirement->isBool()) {
-                addCompilationError(errors, path, "$vocabulary entries must be boolean");
+                addCompilationError(errors, SchemaError::InvalidSchema, path, "$vocabulary",
+                                    "$vocabulary entries must be boolean");
                 continue;
             }
             bool required = false;
             requirement->tryGet(required);
             if (required && uris[i] != kDocumentedSubsetVocabulary) {
-                addCompilationError(errors, path,
+                addCompilationError(errors, SchemaError::UnsupportedVocabulary, path, "$vocabulary",
                                     "unsupported required schema vocabulary: " + uris[i]);
             }
         }
@@ -1282,32 +1342,43 @@ namespace {
     void compileSchemaResource(const pjson& node, const pjson* resourceRoot,
                                const std::string& inheritedBase, CompiledSchemaIndex& index,
                                std::vector<SchemaError>& errors, const Options& options,
-                               const std::string& path, size_t depth = 0) {
-        const size_t errorLimit = options.maxErrors == 0 ? size_t(100) : options.maxErrors;
+                               const std::string& path, size_t depth = 0,
+                               const std::string& documentUri = std::string()) {
+        const size_t errorLimit = diagnosticLimit(options);
         if (errors.size() >= errorLimit)
             return;
         if (depth >= validationDepthLimit(options)) {
-            addCompilationError(errors, path, "schema compilation depth budget exceeded");
+            addCompilationError(errors, SchemaError::ResourceLimit,
+                                absoluteSchemaLocation(documentUri, path), std::string(),
+                                "schema compilation depth budget exceeded");
             return;
         }
         const size_t workLimit = validationWorkLimit(options);
         if (index.workUsed >= workLimit) {
-            addCompilationError(errors, path, "schema compilation work budget exceeded");
+            addCompilationError(errors, SchemaError::ResourceLimit,
+                                absoluteSchemaLocation(documentUri, path), std::string(),
+                                "schema compilation work budget exceeded");
             return;
         }
         ++index.workUsed;
         if (!node.isObject() && !node.isBool()) {
             if (options.strictSubset)
-                addCompilationError(errors, path, "schema must be an object or boolean");
+                addCompilationError(errors, SchemaError::InvalidSchema,
+                                    absoluteSchemaLocation(documentUri, path), std::string(),
+                                    "schema must be an object or boolean");
             return;
         }
         const pjson* currentResource = resourceRoot;
         std::string currentBase = inheritedBase;
+        if (node.isBool())
+            index.nodeTargets[&node] = SchemaTarget(&node, currentResource, currentBase,
+                                                    absoluteSchemaLocation(documentUri, path));
         if (node.isObject()) {
             const pjson* id = node.find("$id");
             if (id != nullptr && !id->isString()) {
-                addCompilationError(errors, pointerAppend(path, "$id"),
-                                    "$id must be a string URI-reference");
+                addCompilationError(errors, SchemaError::InvalidSchema,
+                                    absoluteSchemaLocation(documentUri, pointerAppend(path, "$id")),
+                                    "$id", "$id must be a string URI-reference");
                 return;
             }
             if (id != nullptr) {
@@ -1315,34 +1386,42 @@ namespace {
                 currentResource = &node;
                 if (resourceRoot != &node) {
                     std::string nestedDialect;
-                    compileDialectContract(node, options, nestedDialect, errors);
+                    compileDialectContract(node, options, nestedDialect, errors,
+                                           absoluteSchemaLocation(documentUri, path));
                 }
             }
             if (!currentBase.empty()) {
                 std::map<std::string, SchemaResource>::const_iterator existing =
                     index.resources.find(currentBase);
                 if (existing != index.resources.end() && existing->second.root != currentResource) {
-                    addCompilationError(errors, pointerAppend(path, "$id"),
-                                        "duplicate schema resource identifier: " + currentBase);
+                    addCompilationError(
+                        errors, SchemaError::InvalidSchema,
+                        absoluteSchemaLocation(documentUri, pointerAppend(path, "$id")), "$id",
+                        "duplicate schema resource identifier: " + currentBase);
                     return;
                 }
                 index.resources[currentBase] = SchemaResource(currentResource, currentBase);
             }
-            const SchemaTarget nodeTarget(&node, currentResource, currentBase);
+            const SchemaTarget nodeTarget(&node, currentResource, currentBase,
+                                          absoluteSchemaLocation(documentUri, path));
             index.nodeTargets[&node] = nodeTarget;
 
             const pjson* anchor = node.find("$anchor");
             if (anchor != nullptr && (!anchor->isString() || !validAnchorName(strOf(*anchor)))) {
-                addCompilationError(errors, pointerAppend(path, "$anchor"),
-                                    "$anchor must be a valid anchor name");
+                addCompilationError(
+                    errors, SchemaError::InvalidSchema,
+                    absoluteSchemaLocation(documentUri, pointerAppend(path, "$anchor")), "$anchor",
+                    "$anchor must be a valid anchor name");
                 return;
             }
             if (anchor != nullptr) {
                 const std::string name = strOf(*anchor);
                 const std::string key = currentBase + "#" + name;
                 if (index.anchors.find(key) != index.anchors.end()) {
-                    addCompilationError(errors, pointerAppend(path, "$anchor"),
-                                        "duplicate schema anchor: " + key);
+                    addCompilationError(
+                        errors, SchemaError::InvalidSchema,
+                        absoluteSchemaLocation(documentUri, pointerAppend(path, "$anchor")),
+                        "$anchor", "duplicate schema anchor: " + key);
                     return;
                 }
                 index.anchors[key] = nodeTarget;
@@ -1350,8 +1429,10 @@ namespace {
             const pjson* dynamicAnchor = node.find("$dynamicAnchor");
             if (dynamicAnchor != nullptr &&
                 (!dynamicAnchor->isString() || !validAnchorName(strOf(*dynamicAnchor)))) {
-                addCompilationError(errors, pointerAppend(path, "$dynamicAnchor"),
-                                    "$dynamicAnchor must be a valid anchor name");
+                addCompilationError(
+                    errors, SchemaError::InvalidSchema,
+                    absoluteSchemaLocation(documentUri, pointerAppend(path, "$dynamicAnchor")),
+                    "$dynamicAnchor", "$dynamicAnchor must be a valid anchor name");
                 return;
             }
             if (dynamicAnchor != nullptr) {
@@ -1359,8 +1440,10 @@ namespace {
                 const std::string key = currentBase + "#" + name;
                 if (index.dynamicAnchors.find(key) != index.dynamicAnchors.end() ||
                     index.anchors.find(key) != index.anchors.end()) {
-                    addCompilationError(errors, pointerAppend(path, "$dynamicAnchor"),
-                                        "duplicate schema anchor: " + key);
+                    addCompilationError(
+                        errors, SchemaError::InvalidSchema,
+                        absoluteSchemaLocation(documentUri, pointerAppend(path, "$dynamicAnchor")),
+                        "$dynamicAnchor", "duplicate schema anchor: " + key);
                     return;
                 }
                 index.dynamicAnchors[key] = nodeTarget;
@@ -1372,8 +1455,10 @@ namespace {
                 if (reference == nullptr)
                     continue;
                 if (!reference->isString()) {
-                    addCompilationError(errors, pointerAppend(path, keyword),
-                                        std::string(keyword) + " must be a string URI-reference");
+                    addCompilationError(
+                        errors, SchemaError::InvalidSchema,
+                        absoluteSchemaLocation(documentUri, pointerAppend(path, keyword)), keyword,
+                        std::string(keyword) + " must be a string URI-reference");
                     continue;
                 }
                 std::string document;
@@ -1392,7 +1477,8 @@ namespace {
                 const pjson* child = node.find(keyword);
                 if (child != nullptr && (child->isObject() || child->isBool()))
                     compileSchemaResource(*child, currentResource, currentBase, index, errors,
-                                          options, pointerAppend(path, keyword), depth + 1);
+                                          options, pointerAppend(path, keyword), depth + 1,
+                                          documentUri);
             }
             for (const char* keyword :
                  {"$defs", "definitions", "properties", "patternProperties", "dependentSchemas"}) {
@@ -1403,9 +1489,10 @@ namespace {
                 for (size_t i = 0; i < names.size(); ++i) {
                     const pjson* child = container->find(names[i]);
                     if (child != nullptr)
-                        compileSchemaResource(
-                            *child, currentResource, currentBase, index, errors, options,
-                            pointerAppend(pointerAppend(path, keyword), names[i]), depth + 1);
+                        compileSchemaResource(*child, currentResource, currentBase, index, errors,
+                                              options,
+                                              pointerAppend(pointerAppend(path, keyword), names[i]),
+                                              depth + 1, documentUri);
                 }
             }
             // Legacy dependencies may contain either property-name arrays or schemas.
@@ -1418,7 +1505,7 @@ namespace {
                             compileSchemaResource(
                                 *child, currentResource, currentBase, index, errors, options,
                                 pointerAppend(pointerAppend(path, "dependencies"), names[i]),
-                                depth + 1);
+                                depth + 1, documentUri);
                     }
                 }
             }
@@ -1432,7 +1519,7 @@ namespace {
                         compileSchemaResource(
                             *child, currentResource, currentBase, index, errors, options,
                             pointerAppend(pointerAppend(path, keyword), std::to_string(i)),
-                            depth + 1);
+                            depth + 1, documentUri);
                 }
             }
             // Draft 7 tuple-form items is an array of schemas.
@@ -1444,7 +1531,7 @@ namespace {
                             compileSchemaResource(
                                 *child, currentResource, currentBase, index, errors, options,
                                 pointerAppend(pointerAppend(path, "items"), std::to_string(i)),
-                                depth + 1);
+                                depth + 1, documentUri);
                     }
                 }
             }
@@ -1454,7 +1541,7 @@ namespace {
 
     void compileExternalResources(CompiledSchemaIndex& index, const Options& options,
                                   std::vector<SchemaError>& errors) {
-        const size_t errorLimit = options.maxErrors == 0 ? size_t(100) : options.maxErrors;
+        const size_t errorLimit = diagnosticLimit(options);
         while (!index.pendingDocuments.empty() && errors.size() < errorLimit) {
             const std::string documentUri = *index.pendingDocuments.begin();
             index.pendingDocuments.erase(index.pendingDocuments.begin());
@@ -1462,19 +1549,21 @@ namespace {
                 continue;
             if (!uriHasScheme(documentUri)) {
                 addCompilationError(
-                    errors, "",
+                    errors, SchemaError::ReferenceFailure, "", "$ref",
                     "relative external schema reference requires a retrieval URI or root $id: " +
                         documentUri);
                 index.failedDocuments.insert(documentUri);
                 continue;
             }
             if (options.resolver == nullptr) {
-                addCompilationError(errors, "", "no resolver for external schema: " + documentUri);
+                addCompilationError(errors, SchemaError::ResolverFailure, "", "$ref",
+                                    "no resolver for external schema: " + documentUri);
                 index.failedDocuments.insert(documentUri);
                 continue;
             }
             if (index.documents.size() >= resolvedDocumentLimit(options)) {
-                addCompilationError(errors, "", "schema resolved-document budget exceeded");
+                addCompilationError(errors, SchemaError::ResourceLimit, "", "$ref",
+                                    "schema resolved-document budget exceeded");
                 index.failedDocuments.insert(documentUri);
                 return;
             }
@@ -1487,21 +1576,21 @@ namespace {
                 resolved = options.resolver(documentUri, temporary, options.resolverContext);
             } catch (const std::exception& exception) {
                 index.documents.pop_back();
-                addCompilationError(errors, "",
+                addCompilationError(errors, SchemaError::ResolverFailure, documentUri, "$ref",
                                     "external schema resolver threw for " + documentUri + ": " +
                                         exception.what());
                 index.failedDocuments.insert(documentUri);
                 continue;
             } catch (...) {
                 index.documents.pop_back();
-                addCompilationError(errors, "",
+                addCompilationError(errors, SchemaError::ResolverFailure, documentUri, "$ref",
                                     "external schema resolver threw for " + documentUri);
                 index.failedDocuments.insert(documentUri);
                 continue;
             }
             if (!resolved) {
                 index.documents.pop_back();
-                addCompilationError(errors, "",
+                addCompilationError(errors, SchemaError::ResolverFailure, documentUri, "$ref",
                                     "external schema resolution failed: " + documentUri);
                 index.failedDocuments.insert(documentUri);
                 continue;
@@ -1509,7 +1598,8 @@ namespace {
             loaded.schema.copyFrom(temporary);
             std::string resolvedDialect;
             const size_t beforeContract = errors.size();
-            compileDialectContract(loaded.schema, options, resolvedDialect, errors);
+            compileDialectContract(loaded.schema, options, resolvedDialect, errors,
+                                   documentUri + "#");
             if (errors.size() != beforeContract) {
                 index.documents.pop_back();
                 index.failedDocuments.insert(documentUri);
@@ -1518,7 +1608,8 @@ namespace {
             const size_t limit = resolvedByteLimit(options);
             if (index.resolvedBytes >= limit) {
                 index.documents.pop_back();
-                addCompilationError(errors, "", "schema resolved-byte budget exceeded");
+                addCompilationError(errors, SchemaError::ResourceLimit, documentUri, "$ref",
+                                    "schema resolved-byte budget exceeded");
                 index.failedDocuments.insert(documentUri);
                 return;
             }
@@ -1529,12 +1620,13 @@ namespace {
                 compact = loaded.schema.toString(compactOptions);
             } catch (const std::length_error&) {
                 index.documents.pop_back();
-                addCompilationError(errors, "", "schema resolved-byte budget exceeded");
+                addCompilationError(errors, SchemaError::ResourceLimit, documentUri, "$ref",
+                                    "schema resolved-byte budget exceeded");
                 index.failedDocuments.insert(documentUri);
                 return;
             } catch (const std::exception& exception) {
                 index.documents.pop_back();
-                addCompilationError(errors, "",
+                addCompilationError(errors, SchemaError::InvalidSchema, documentUri, std::string(),
                                     "resolved schema is not serializable: " +
                                         std::string(exception.what()));
                 index.failedDocuments.insert(documentUri);
@@ -1542,7 +1634,8 @@ namespace {
             }
             if (compact.size() > limit - std::min(index.resolvedBytes, limit)) {
                 index.documents.pop_back();
-                addCompilationError(errors, "", "schema resolved-byte budget exceeded");
+                addCompilationError(errors, SchemaError::ResourceLimit, documentUri, "$ref",
+                                    "schema resolved-byte budget exceeded");
                 index.failedDocuments.insert(documentUri);
                 return;
             }
@@ -1552,7 +1645,8 @@ namespace {
             // Keep the retrieval URI as an alias, then let compilation apply the
             // root `$id` exactly once relative to that retrieval URI.
             index.resources[documentUri] = SchemaResource(root, documentUri);
-            compileSchemaResource(*root, root, documentUri, index, errors, options, "");
+            compileSchemaResource(*root, root, documentUri, index, errors, options, "", 0,
+                                  documentUri);
         }
     }
 
@@ -1571,7 +1665,8 @@ namespace {
 
         const pjson* root = resource->second.root;
         if (fragment.empty()) {
-            target = SchemaTarget(root, root, resource->second.baseUri);
+            target = SchemaTarget(root, root, resource->second.baseUri,
+                                  absoluteSchemaLocation(document, ""));
             return true;
         }
 
@@ -1594,14 +1689,15 @@ namespace {
         std::map<const pjson*, SchemaTarget>::const_iterator indexed =
             index.nodeTargets.find(selected);
         target = indexed == index.nodeTargets.end()
-                     ? SchemaTarget(selected, root, resource->second.baseUri)
+                     ? SchemaTarget(selected, root, resource->second.baseUri,
+                                    absoluteSchemaLocation(document, decoded))
                      : indexed->second;
         return true;
     }
 
     void validateCompiledReferences(const CompiledSchemaIndex& index, const Options& options,
                                     std::vector<SchemaError>& errors) {
-        const size_t errorLimit = options.maxErrors == 0 ? size_t(100) : options.maxErrors;
+        const size_t errorLimit = diagnosticLimit(options);
         for (std::map<const pjson*, SchemaTarget>::const_iterator it = index.nodeTargets.begin();
              it != index.nodeTargets.end() && errors.size() < errorLimit; ++it) {
             const pjson* schema = it->first;
@@ -1619,12 +1715,14 @@ namespace {
                                    fragment);
                     if (index.failedDocuments.find(document) != index.failedDocuments.end())
                         continue;
-                    addCompilationError(errors, "",
+                    addCompilationError(errors, SchemaError::ReferenceFailure,
+                                        pointerAppend(it->second.location, keyword), keyword,
                                         std::string("unresolved ") + keyword + ": " +
                                             strOf(*reference));
                 } else if (options.strictSubset && target.schema != nullptr &&
                            !target.schema->isObject() && !target.schema->isBool()) {
-                    addCompilationError(errors, "",
+                    addCompilationError(errors, SchemaError::InvalidSchema,
+                                        pointerAppend(it->second.location, keyword), keyword,
                                         std::string(keyword) +
                                             " target must be an object or boolean schema");
                 }
@@ -1634,14 +1732,16 @@ namespace {
 
     bool resolveSchemaReference(const std::string& reference, const pjson* resourceRoot,
                                 const std::string& baseUri, ValidationCtx& ctx, ErrorSink& errors,
-                                const std::string& path, SchemaTarget& target) {
+                                const std::string& path, const pjson& schema,
+                                const std::string& keyword, SchemaTarget& target) {
         const std::string absolute = resolveUri(baseUri, reference);
         std::string document;
         std::string fragment;
         splitReference(absolute, document, fragment);
         std::string decodedFragment;
         if (!percentDecodeFragment(fragment, decodedFragment)) {
-            errors.push_back(SchemaError(path, "malformed schema reference: " + reference));
+            errors.push_back(validationError(ctx, schema, SchemaError::ReferenceFailure, path,
+                                             keyword, "malformed schema reference: " + reference));
             return false;
         }
 
@@ -1650,13 +1750,16 @@ namespace {
         std::map<std::string, SchemaResource>::const_iterator resource =
             ctx.compiled.resources.find(document);
         if (resource == ctx.compiled.resources.end()) {
-            errors.push_back(SchemaError(path, "unresolved compiled schema resource: " + document));
+            errors.push_back(validationError(ctx, schema, SchemaError::ReferenceFailure, path,
+                                             keyword,
+                                             "unresolved compiled schema resource: " + document));
             return false;
         }
 
         const pjson* root = resource->second.root != nullptr ? resource->second.root : resourceRoot;
         if (fragment.empty()) {
-            target = SchemaTarget(root, root, resource->second.baseUri);
+            target = SchemaTarget(root, root, resource->second.baseUri,
+                                  absoluteSchemaLocation(document, ""));
             return true;
         }
         if (decodedFragment.empty() || decodedFragment[0] != '/') {
@@ -1664,7 +1767,8 @@ namespace {
             std::map<std::string, SchemaTarget>::const_iterator found =
                 ctx.compiled.anchors.find(anchorKey);
             if (found == ctx.compiled.anchors.end()) {
-                errors.push_back(SchemaError(path, "unresolved schema anchor: " + absolute));
+                errors.push_back(validationError(ctx, schema, SchemaError::ReferenceFailure, path,
+                                                 keyword, "unresolved schema anchor: " + absolute));
                 return false;
             }
             target = found->second;
@@ -1674,13 +1778,15 @@ namespace {
         pjson::PointerError pointerError;
         const pjson* selected = root->findPointer(decodedFragment, pointerError);
         if (selected == nullptr) {
-            errors.push_back(SchemaError(path, "unresolved schema reference: " + reference));
+            errors.push_back(validationError(ctx, schema, SchemaError::ReferenceFailure, path,
+                                             keyword, "unresolved schema reference: " + reference));
             return false;
         }
         std::map<const pjson*, SchemaTarget>::const_iterator indexed =
             ctx.compiled.nodeTargets.find(selected);
         target = indexed == ctx.compiled.nodeTargets.end()
-                     ? SchemaTarget(selected, root, resource->second.baseUri)
+                     ? SchemaTarget(selected, root, resource->second.baseUri,
+                                    absoluteSchemaLocation(document, decodedFragment))
                      : indexed->second;
         return true;
     }
@@ -1809,7 +1915,9 @@ namespace {
         for (;;) {
             if (currentSchema->isBool()) {
                 if (!boolOf(*currentSchema)) {
-                    errors.push_back(SchemaError(path, "schema is false; no value is valid here"));
+                    errors.push_back(validationError(ctx, *currentSchema, SchemaError::FalseSchema,
+                                                     path, std::string(),
+                                                     "schema is false; no value is valid here"));
                     return false;
                 }
                 return true;
@@ -1832,13 +1940,15 @@ namespace {
 
             SchemaTarget resolved;
             if (!resolveSchemaReference(refText, currentResourceRoot, currentBaseUri, ctx, errors,
-                                        path, resolved))
+                                        path, *currentSchema, "$ref", resolved))
                 return false;
 
             const std::pair<const pjson*, const pjson*> active(&node, resolved.schema);
             if (std::find(ctx.activeRefs.begin(), ctx.activeRefs.end(), active) !=
                 ctx.activeRefs.end()) {
-                errors.push_back(SchemaError(path, "schema reference cycle detected: " + refText));
+                errors.push_back(validationError(ctx, *currentSchema, SchemaError::ReferenceCycle,
+                                                 path, "$ref",
+                                                 "schema reference cycle detected: " + refText));
                 return false;
             }
             activeRefGuard.push(&node, resolved.schema);
@@ -1878,13 +1988,14 @@ namespace {
                 SchemaTarget resolved;
                 const std::string refText = strOf(*ref);
                 if (!resolveSchemaReference(refText, currentResourceRoot, currentBaseUri, ctx,
-                                            errors, path, resolved))
+                                            errors, path, schema, "$ref", resolved))
                     return false;
                 const std::pair<const pjson*, const pjson*> active(&node, resolved.schema);
                 if (std::find(ctx.activeRefs.begin(), ctx.activeRefs.end(), active) !=
                     ctx.activeRefs.end()) {
                     errors.push_back(
-                        SchemaError(path, "schema reference cycle detected: " + refText));
+                        validationError(ctx, schema, SchemaError::ReferenceCycle, path, "$ref",
+                                        "schema reference cycle detected: " + refText));
                     return false;
                 }
                 activeRefGuard.push(&node, resolved.schema);
@@ -1913,7 +2024,7 @@ namespace {
                 ++ctx.refResolutions;
                 SchemaTarget resolved;
                 if (!resolveSchemaReference(refText, currentResourceRoot, currentBaseUri, ctx,
-                                            errors, path, resolved))
+                                            errors, path, schema, "$dynamicRef", resolved))
                     return false;
 
                 std::string document;
@@ -1938,8 +2049,9 @@ namespace {
                 const std::pair<const pjson*, const pjson*> active(&node, resolved.schema);
                 if (std::find(ctx.activeRefs.begin(), ctx.activeRefs.end(), active) !=
                     ctx.activeRefs.end()) {
-                    errors.push_back(
-                        SchemaError(path, "schema dynamic-reference cycle detected: " + refText));
+                    errors.push_back(validationError(
+                        ctx, schema, SchemaError::ReferenceCycle, path, "$dynamicRef",
+                        "schema dynamic-reference cycle detected: " + refText));
                     return false;
                 }
                 activeRefGuard.push(&node, resolved.schema);
@@ -1961,9 +2073,9 @@ namespace {
                 if (!chargeLoopWork(ctx, errors, path))
                     return false;
                 if (!isSupportedSchemaKeyword(keys[i]) && isStandardSchemaKeyword(keys[i])) {
-                    addSchemaError(ctx, errors, path,
-                                   "strict schema mode: unsupported standard keyword \"" + keys[i] +
-                                       "\"");
+                    addSchemaError(
+                        ctx, errors, schema, SchemaError::UnsupportedKeyword, path, keys[i],
+                        "strict schema mode: unsupported standard keyword \"" + keys[i] + "\"");
                 }
             }
             if (ctx.aborted)
@@ -1974,8 +2086,9 @@ namespace {
         if (const pjson* t = schema.find("type")) {
             if (t->isString()) {
                 if (!typeMatches(node, strOf(*t)))
-                    errors.push_back(SchemaError(path, "expected type " + strOf(*t) + ", got " +
-                                                           typeName(node)));
+                    errors.push_back(
+                        validationError(ctx, schema, SchemaError::TypeMismatch, path, "type",
+                                        "expected type " + strOf(*t) + ", got " + typeName(node)));
             } else if (t->isArray()) {
                 bool matched = false;
                 std::string names;
@@ -1994,8 +2107,9 @@ namespace {
                     }
                 }
                 if (!matched)
-                    errors.push_back(SchemaError(path, "expected one of type [" + names +
-                                                           "], got " + typeName(node)));
+                    errors.push_back(validationError(
+                        ctx, schema, SchemaError::TypeMismatch, path, "type",
+                        "expected one of type [" + names + "], got " + typeName(node)));
             }
         }
 
@@ -2005,7 +2119,9 @@ namespace {
             if (!equalWithBudget(node, *cst, ctx, errors, path, equal))
                 return false;
             if (!equal)
-                errors.push_back(SchemaError(path, "value does not equal the required const"));
+                errors.push_back(validationError(ctx, schema, SchemaError::ConstMismatch, path,
+                                                 "const",
+                                                 "value does not equal the required const"));
         }
 
         // ---- enum ----
@@ -2025,7 +2141,8 @@ namespace {
                     }
                 }
                 if (!found)
-                    errors.push_back(SchemaError(path, "value is not in the allowed enum"));
+                    errors.push_back(validationError(ctx, schema, SchemaError::EnumMismatch, path,
+                                                     "enum", "value is not in the allowed enum"));
             }
         }
 
@@ -2034,31 +2151,34 @@ namespace {
             int order = 0;
             if (const pjson* m = schema.find("minimum")) {
                 if (m->isNumber() && node.tryCompareNumber(*m, order) && order < 0)
-                    addSchemaError(ctx, errors, path,
-                                   "value " + formatNumber(node) + " is below minimum " +
-                                       formatNumber(*m));
+                    addSchemaError(
+                        ctx, errors, schema, SchemaError::NumericConstraint, path, "minimum",
+                        "value " + formatNumber(node) + " is below minimum " + formatNumber(*m));
             }
             if (const pjson* m = schema.find("maximum")) {
                 if (m->isNumber() && node.tryCompareNumber(*m, order) && order > 0)
-                    addSchemaError(ctx, errors, path,
-                                   "value " + formatNumber(node) + " is above maximum " +
-                                       formatNumber(*m));
+                    addSchemaError(
+                        ctx, errors, schema, SchemaError::NumericConstraint, path, "maximum",
+                        "value " + formatNumber(node) + " is above maximum " + formatNumber(*m));
             }
             if (const pjson* m = schema.find("exclusiveMinimum")) {
                 if (m->isNumber() && node.tryCompareNumber(*m, order) && order <= 0)
-                    addSchemaError(ctx, errors, path,
+                    addSchemaError(ctx, errors, schema, SchemaError::NumericConstraint, path,
+                                   "exclusiveMinimum",
                                    "value " + formatNumber(node) +
                                        " is not greater than exclusiveMinimum " + formatNumber(*m));
             }
             if (const pjson* m = schema.find("exclusiveMaximum")) {
                 if (m->isNumber() && node.tryCompareNumber(*m, order) && order >= 0)
-                    addSchemaError(ctx, errors, path,
+                    addSchemaError(ctx, errors, schema, SchemaError::NumericConstraint, path,
+                                   "exclusiveMaximum",
                                    "value " + formatNumber(node) +
                                        " is not less than exclusiveMaximum " + formatNumber(*m));
             }
             if (const pjson* m = schema.find("multipleOf")) {
                 if (m->isNumber() && !isExactMultiple(node, *m))
-                    addSchemaError(ctx, errors, path,
+                    addSchemaError(ctx, errors, schema, SchemaError::NumericConstraint, path,
+                                   "multipleOf",
                                    "value " + formatNumber(node) + " is not a multiple of " +
                                        formatNumber(*m));
             }
@@ -2074,7 +2194,8 @@ namespace {
                 size_t bound = 0;
                 bool aboveRange = false;
                 if (schemaSize(*m, bound, aboveRange) && (aboveRange || length < bound))
-                    addSchemaError(ctx, errors, path,
+                    addSchemaError(ctx, errors, schema, SchemaError::StringConstraint, path,
+                                   "minLength",
                                    "string length " + std::to_string(length) +
                                        " is below minLength " + formatNumber(*m));
             }
@@ -2082,7 +2203,8 @@ namespace {
                 size_t bound = 0;
                 bool aboveRange = false;
                 if (schemaSize(*m, bound, aboveRange) && !aboveRange && length > bound)
-                    addSchemaError(ctx, errors, path,
+                    addSchemaError(ctx, errors, schema, SchemaError::StringConstraint, path,
+                                   "maxLength",
                                    "string length " + std::to_string(length) +
                                        " is above maxLength " + formatNumber(*m));
             }
@@ -2090,9 +2212,11 @@ namespace {
                 if (p->isString()) {
                     const std::string pattern = strOf(*p);
                     bool matches = false;
-                    if (evaluateRegex(s, pattern, path, errors, ctx, matches) && !matches)
-                        errors.push_back(
-                            SchemaError(path, "string does not match pattern /" + pattern + "/"));
+                    if (evaluateRegex(s, pattern, path, schema, "pattern", errors, ctx, matches) &&
+                        !matches)
+                        errors.push_back(validationError(
+                            ctx, schema, SchemaError::StringConstraint, path, "pattern",
+                            "string does not match pattern /" + pattern + "/"));
                 }
             }
             if (ctx.options.validateFormats) {
@@ -2100,8 +2224,9 @@ namespace {
                     if (format->isString()) {
                         bool known = false;
                         if (!knownFormatValid(strOf(*format), s, known) && known)
-                            errors.push_back(SchemaError(path, "string is not a valid " +
-                                                                   strOf(*format) + " format"));
+                            errors.push_back(validationError(
+                                ctx, schema, SchemaError::FormatMismatch, path, "format",
+                                "string is not a valid " + strOf(*format) + " format"));
                     }
                 }
             }
@@ -2114,7 +2239,8 @@ namespace {
                 size_t bound = 0;
                 bool aboveRange = false;
                 if (schemaSize(*m, bound, aboveRange) && (aboveRange || arrSize < bound))
-                    addSchemaError(ctx, errors, path,
+                    addSchemaError(ctx, errors, schema, SchemaError::ArrayConstraint, path,
+                                   "minItems",
                                    "array has " + std::to_string(arrSize) +
                                        " items, below minItems " + formatNumber(*m));
             }
@@ -2122,7 +2248,8 @@ namespace {
                 size_t bound = 0;
                 bool aboveRange = false;
                 if (schemaSize(*m, bound, aboveRange) && !aboveRange && arrSize > bound)
-                    addSchemaError(ctx, errors, path,
+                    addSchemaError(ctx, errors, schema, SchemaError::ArrayConstraint, path,
+                                   "maxItems",
                                    "array has " + std::to_string(arrSize) +
                                        " items, above maxItems " + formatNumber(*m));
             }
@@ -2143,7 +2270,9 @@ namespace {
                         }
                     }
                     if (dup)
-                        errors.push_back(SchemaError(path, "array items are not unique"));
+                        errors.push_back(validationError(ctx, schema, SchemaError::ArrayConstraint,
+                                                         path, "uniqueItems",
+                                                         "array items are not unique"));
                 }
             }
             const pjson* items = schema.find("items");
@@ -2202,7 +2331,7 @@ namespace {
                     if (elem == nullptr)
                         continue;
                     std::vector<SchemaError> scratch;
-                    ErrorSink scratchSink(scratch, ctx, false);
+                    ErrorSink scratchSink(scratch, ctx, ErrorSink::Discard);
                     if (validateCtx(*elem, *contains, pointerAppend(path, std::to_string(i)),
                                     scratchSink, ctx)) {
                         ++matched;
@@ -2219,7 +2348,8 @@ namespace {
                         minContains = aboveRange ? std::numeric_limits<size_t>::max() : bound;
                 }
                 if (matched < minContains)
-                    addSchemaError(ctx, errors, path,
+                    addSchemaError(ctx, errors, schema, SchemaError::ArrayConstraint, path,
+                                   "contains",
                                    "array has " + std::to_string(matched) +
                                        " items matching \"contains\", below minContains " +
                                        std::to_string(minContains));
@@ -2227,7 +2357,8 @@ namespace {
                     size_t bound = 0;
                     bool xcAbove = false;
                     if (schemaSize(*xc, bound, xcAbove) && !xcAbove && matched > bound)
-                        addSchemaError(ctx, errors, path,
+                        addSchemaError(ctx, errors, schema, SchemaError::ArrayConstraint, path,
+                                       "contains",
                                        "array has " + std::to_string(matched) +
                                            " items matching \"contains\", above maxContains " +
                                            std::to_string(bound));
@@ -2246,8 +2377,9 @@ namespace {
                             return false;
                         const pjson* k = req->find(static_cast<int>(i));
                         if (k && k->isString() && !node.hasKey(strOf(*k)))
-                            errors.push_back(SchemaError(path, "missing required property \"" +
-                                                                   strOf(*k) + "\""));
+                            errors.push_back(validationError(
+                                ctx, schema, SchemaError::ObjectConstraint, path, "required",
+                                "missing required property \"" + strOf(*k) + "\""));
                     }
                 }
             }
@@ -2255,7 +2387,8 @@ namespace {
                 size_t bound = 0;
                 bool aboveRange = false;
                 if (schemaSize(*m, bound, aboveRange) && (aboveRange || memberKeys.size() < bound))
-                    addSchemaError(ctx, errors, path,
+                    addSchemaError(ctx, errors, schema, SchemaError::ObjectConstraint, path,
+                                   "minProperties",
                                    "object has " + std::to_string(memberKeys.size()) +
                                        " properties, below minProperties " + formatNumber(*m));
             }
@@ -2263,7 +2396,8 @@ namespace {
                 size_t bound = 0;
                 bool aboveRange = false;
                 if (schemaSize(*m, bound, aboveRange) && !aboveRange && memberKeys.size() > bound)
-                    addSchemaError(ctx, errors, path,
+                    addSchemaError(ctx, errors, schema, SchemaError::ObjectConstraint, path,
+                                   "maxProperties",
                                    "object has " + std::to_string(memberKeys.size()) +
                                        " properties, above maxProperties " + formatNumber(*m));
             }
@@ -2296,8 +2430,8 @@ namespace {
                             return false;
                         bool matches = false;
                         if (evaluateRegex(memberKeys[i], patKeys[p],
-                                          pointerAppend(path, memberKeys[i]), errors, ctx,
-                                          matches) &&
+                                          pointerAppend(path, memberKeys[i]), schema,
+                                          "patternProperties", errors, ctx, matches) &&
                             matches) {
                             patternMatched.insert(memberKeys[i]);
                             evaluated.properties.insert(memberKeys[i]);
@@ -2339,9 +2473,11 @@ namespace {
                             return false;
                         const pjson* required = list->find(static_cast<int>(i));
                         if (required && required->isString() && !node.hasKey(strOf(*required)))
-                            errors.push_back(SchemaError(path, "property \"" + depKeys[d] +
-                                                                   "\" requires property \"" +
-                                                                   strOf(*required) + "\""));
+                            errors.push_back(validationError(
+                                ctx, schema, SchemaError::ObjectConstraint, path,
+                                "dependentRequired",
+                                "property \"" + depKeys[d] + "\" requires property \"" +
+                                    strOf(*required) + "\""));
                     }
                 }
             }
@@ -2363,9 +2499,11 @@ namespace {
                                 return false;
                             const pjson* required = dep->find(static_cast<int>(i));
                             if (required && required->isString() && !node.hasKey(strOf(*required)))
-                                errors.push_back(SchemaError(path, "property \"" + depKeys[d] +
-                                                                       "\" requires property \"" +
-                                                                       strOf(*required) + "\""));
+                                errors.push_back(validationError(
+                                    ctx, schema, SchemaError::ObjectConstraint, path,
+                                    "dependencies",
+                                    "property \"" + depKeys[d] + "\" requires property \"" +
+                                        strOf(*required) + "\""));
                         }
                     } else {
                         SchemaAnnotations dependencyAnnotations;
@@ -2392,9 +2530,10 @@ namespace {
                     evaluated.properties.insert(memberKeys[i]);
                     if (addl->isBool()) {
                         if (!boolOf(*addl))
-                            errors.push_back(SchemaError(pointerAppend(path, memberKeys[i]),
-                                                         "additional property \"" + memberKeys[i] +
-                                                             "\" is not allowed"));
+                            errors.push_back(validationError(
+                                ctx, schema, SchemaError::ObjectConstraint,
+                                pointerAppend(path, memberKeys[i]), "additionalProperties",
+                                "additional property \"" + memberKeys[i] + "\" is not allowed"));
                     } else {
                         const pjson* member = node.find(memberKeys[i]);
                         if (member)
@@ -2433,7 +2572,7 @@ namespace {
         // ---- if / then / else ----
         if (const pjson* ifSchema = schema.find("if")) {
             std::vector<SchemaError> scratch;
-            ErrorSink scratchSink(scratch, ctx, false);
+            ErrorSink scratchSink(scratch, ctx, ErrorSink::Discard);
             SchemaAnnotations conditionalAnnotations;
             const bool matched = validateCtx(node, *ifSchema, path, scratchSink, ctx, nullptr,
                                              std::string(), &conditionalAnnotations);
@@ -2488,14 +2627,20 @@ namespace {
         if (const pjson* anyOf = schema.find("anyOf")) {
             if (anyOf->isArray()) {
                 bool any = false;
+                std::vector<SchemaError> causes;
+                const size_t causeBudgetStart = ctx.diagnosticsUsed;
                 for (size_t i = 0; i < anyOf->size(); ++i) {
                     if (!chargeLoopWork(ctx, errors, path))
                         return false;
                     const pjson* sub = anyOf->find(static_cast<int>(i));
                     if (sub == nullptr)
                         continue;
-                    std::vector<SchemaError> scratch;
-                    ErrorSink scratchSink(scratch, ctx, false);
+                    std::vector<SchemaError> discarded;
+                    std::vector<SchemaError>& branchErrors =
+                        ctx.options.collectNestedCauses ? causes : discarded;
+                    ErrorSink scratchSink(branchErrors, ctx,
+                                          ctx.options.collectNestedCauses ? ErrorSink::Causes
+                                                                          : ErrorSink::Discard);
                     SchemaAnnotations branchAnnotations;
                     if (validateCtx(node, *sub, path, scratchSink, ctx, nullptr, std::string(),
                                     &branchAnnotations)) {
@@ -2505,22 +2650,35 @@ namespace {
                     if (ctx.aborted)
                         return false;
                 }
-                if (!any)
-                    errors.push_back(SchemaError(path, "value does not match any schema in anyOf"));
+                if (!any) {
+                    SchemaError error =
+                        validationError(ctx, schema, SchemaError::CombinatorMismatch, path, "anyOf",
+                                        "value does not match any schema in anyOf");
+                    if (ctx.options.collectNestedCauses)
+                        error.causes.swap(causes);
+                    errors.push_back(error);
+                } else
+                    ctx.diagnosticsUsed = causeBudgetStart;
             }
         }
         if (const pjson* oneOf = schema.find("oneOf")) {
             if (oneOf->isArray()) {
                 int matches = 0;
                 SchemaAnnotations matchingAnnotations;
+                std::vector<SchemaError> causes;
+                const size_t causeBudgetStart = ctx.diagnosticsUsed;
                 for (size_t i = 0; i < oneOf->size(); ++i) {
                     if (!chargeLoopWork(ctx, errors, path))
                         return false;
                     const pjson* sub = oneOf->find(static_cast<int>(i));
                     if (sub == nullptr)
                         continue;
-                    std::vector<SchemaError> scratch;
-                    ErrorSink scratchSink(scratch, ctx, false);
+                    std::vector<SchemaError> discarded;
+                    std::vector<SchemaError>& branchErrors =
+                        ctx.options.collectNestedCauses ? causes : discarded;
+                    ErrorSink scratchSink(branchErrors, ctx,
+                                          ctx.options.collectNestedCauses ? ErrorSink::Causes
+                                                                          : ErrorSink::Discard);
                     SchemaAnnotations branchAnnotations;
                     if (validateCtx(node, *sub, path, scratchSink, ctx, nullptr, std::string(),
                                     &branchAnnotations)) {
@@ -2530,20 +2688,29 @@ namespace {
                     if (ctx.aborted)
                         return false;
                 }
-                if (matches != 1)
-                    errors.push_back(
-                        SchemaError(path, "value matched " + std::to_string(matches) +
-                                              " schemas in oneOf (exactly 1 required)"));
-                else
+                if (matches != 1) {
+                    SchemaError error =
+                        validationError(ctx, schema, SchemaError::CombinatorMismatch, path, "oneOf",
+                                        "value matched " + std::to_string(matches) +
+                                            " schemas in oneOf (exactly 1 required)");
+                    if (ctx.options.collectNestedCauses && matches == 0)
+                        error.causes.swap(causes);
+                    else
+                        ctx.diagnosticsUsed = causeBudgetStart;
+                    errors.push_back(error);
+                } else {
+                    ctx.diagnosticsUsed = causeBudgetStart;
                     evaluated.merge(matchingAnnotations);
+                }
             }
         }
         const pjson* nots = schema.find("not");
         if (nots != nullptr && (nots->isBool() || nots->isObject())) {
             std::vector<SchemaError> scratch;
-            ErrorSink scratchSink(scratch, ctx, false);
+            ErrorSink scratchSink(scratch, ctx, ErrorSink::Discard);
             if (validateCtx(node, *nots, path, scratchSink, ctx))
-                errors.push_back(SchemaError(path, "value must not match the \"not\" schema"));
+                errors.push_back(validationError(ctx, schema, SchemaError::CombinatorMismatch, path,
+                                                 "not", "value must not match the \"not\" schema"));
             if (ctx.aborted)
                 return false;
         }
@@ -2559,8 +2726,9 @@ namespace {
                     const pjson* member = node.find(keys[i]);
                     const std::string memberPath = pointerAppend(path, keys[i]);
                     if (unevaluated->isBool() && !boolOf(*unevaluated)) {
-                        errors.push_back(
-                            SchemaError(memberPath, "unevaluated property is not allowed"));
+                        errors.push_back(validationError(ctx, schema, SchemaError::ObjectConstraint,
+                                                         memberPath, "unevaluatedProperties",
+                                                         "unevaluated property is not allowed"));
                     } else if (member != nullptr) {
                         validateCtx(*member, *unevaluated, memberPath, errors, ctx);
                     }
@@ -2581,7 +2749,9 @@ namespace {
                     const pjson* item = node.find(static_cast<int>(i));
                     const std::string itemPath = pointerAppend(path, std::to_string(i));
                     if (unevaluated->isBool() && !boolOf(*unevaluated)) {
-                        errors.push_back(SchemaError(itemPath, "unevaluated item is not allowed"));
+                        errors.push_back(validationError(ctx, schema, SchemaError::ArrayConstraint,
+                                                         itemPath, "unevaluatedItems",
+                                                         "unevaluated item is not allowed"));
                     } else if (item != nullptr) {
                         validateCtx(*item, *unevaluated, itemPath, errors, ctx);
                     }
@@ -2605,12 +2775,14 @@ namespace {
         } catch (const SchemaBudgetExceeded&) {
             return false;
         } catch (const std::bad_alloc&) {
-            bestEffortSchemaError(errors, "", "schema validation ran out of memory");
+            bestEffortSchemaError(errors, SchemaError::AllocationFailure, "",
+                                  "schema validation ran out of memory");
         } catch (const std::exception&) {
-            bestEffortSchemaError(errors, "",
+            bestEffortSchemaError(errors, SchemaError::InternalError, "",
                                   "schema validation failed with an internal exception");
         } catch (...) {
-            bestEffortSchemaError(errors, "", "schema validation failed with an unknown exception");
+            bestEffortSchemaError(errors, SchemaError::InternalError, "",
+                                  "schema validation failed with an unknown exception");
         }
         return false;
     }
@@ -2632,17 +2804,34 @@ struct pJsonSchemaValidator::Impl {
         // copyFrom() preserves this default-constructed destination allocator,
         // so the validator never borrows the caller's allocator lifetime.
         schema.copyFrom(aSchema);
-        compileDialectContract(schema, options, dialect, schemaErrors);
+        const std::string retrievalBase = stripFragment(options.retrievalUri);
+        compileDialectContract(schema, options, dialect, schemaErrors,
+                               retrievalBase.empty() ? std::string() : retrievalBase + "#");
         if (!schemaErrors.empty()) {
             options.resolver = nullptr;
             options.resolverContext = nullptr;
             return;
         }
-        const std::string retrievalBase = stripFragment(options.retrievalUri);
         compiled.resources[retrievalBase] = SchemaResource(&schema, retrievalBase);
-        compileSchemaResource(schema, &schema, retrievalBase, compiled, schemaErrors, options, "");
+        compileSchemaResource(schema, &schema, retrievalBase, compiled, schemaErrors, options, "",
+                              0, retrievalBase);
+        if (options.stopAfterFirstError && !schemaErrors.empty()) {
+            schemaErrors.resize(1);
+            options.resolver = nullptr;
+            options.resolverContext = nullptr;
+            return;
+        }
         compileExternalResources(compiled, options, schemaErrors);
+        if (options.stopAfterFirstError && schemaErrors.size() > size_t(1))
+            schemaErrors.resize(1);
+        if (options.stopAfterFirstError && !schemaErrors.empty()) {
+            options.resolver = nullptr;
+            options.resolverContext = nullptr;
+            return;
+        }
         validateCompiledReferences(compiled, options, schemaErrors);
+        if (options.stopAfterFirstError && schemaErrors.size() > size_t(1))
+            schemaErrors.resize(1);
         // Resolver state is construction-only. Do not retain an application
         // context pointer that may become dangling after compilation finishes.
         options.resolver = nullptr;
@@ -2651,12 +2840,18 @@ struct pJsonSchemaValidator::Impl {
 };
 
 pJsonSchemaValidator::Error::Error()
-        : category(InstanceValidation) {}
-pJsonSchemaValidator::Error::Error(const std::string& aPath, const std::string& aMsg,
-                                   Category aCategory)
-        : path(aPath)
-        , message(aMsg)
-        , category(aCategory) {}
+        : code(None)
+        , category(InstanceValidation) {}
+pJsonSchemaValidator::Error::Error(Code aCode, Category aCategory,
+                                   const std::string& aInstanceLocation,
+                                   const std::string& aSchemaLocation, const std::string& aKeyword,
+                                   const std::string& aMessage)
+        : code(aCode)
+        , category(aCategory)
+        , instanceLocation(aInstanceLocation)
+        , schemaLocation(aSchemaLocation)
+        , keyword(aKeyword)
+        , message(aMessage) {}
 
 pJsonSchemaValidator::Options::Options()
         : maxRegexPatternBytes(256)
@@ -2666,6 +2861,8 @@ pJsonSchemaValidator::Options::Options()
         , maxRefResolutions(1024)
         , maxValidationWork(1000000)
         , maxErrors(100)
+        , stopAfterFirstError(false)
+        , collectNestedCauses(false)
         , validateFormats(true)
         , strictSubset(false)
         , refSiblings(false)

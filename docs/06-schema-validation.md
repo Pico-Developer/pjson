@@ -58,7 +58,7 @@ Build a validator from the schema, then validate instances against it:
 pJsonSchemaValidator validator(schema);
 if (!validator.isSchemaValid()) {
     for (const pJsonSchemaValidator::Error& e : validator.schemaErrors())
-        std::cerr << "invalid schema at " << e.path << ": " << e.message << "\n";
+        std::cerr << "invalid schema at " << e.schemaLocation << ": " << e.message << "\n";
 }
 
 pjson data = pjson::parse(R"({ "name": "Ada", "age": 36 })", err);
@@ -105,7 +105,7 @@ stops the traversal):
 std::vector<pJsonSchemaValidator::Error> errors;
 if (!validator.validate(data, errors)) {
     for (const pJsonSchemaValidator::Error& e : errors) {
-        std::cout << (e.path.empty() ? "(root)" : e.path)
+        std::cout << (e.instanceLocation.empty() ? "(root)" : e.instanceLocation)
                   << ": " << e.message << "\n";
     }
 }
@@ -116,10 +116,14 @@ when old results are not wanted. Normally all applicable failures are
 collected; reaching a validation-depth or reference-resolution budget stops
 that traversal safely.
 
-Each `pJsonSchemaValidator::Error` has a `path` (a **JSON Pointer** like `/age`
-or `/friends/2/name`, empty for the document root), a `message`, and a `category`
-distinguishing instance failures from schema-compilation failures. From the
-example, an all-bad document reports:
+Each `pJsonSchemaValidator::Error` has a stable `code`, an `instanceLocation`
+(a **JSON Pointer** like `/age` or `/friends/2/name`, empty for the document
+root), a `schemaLocation`, a triggering `keyword`, a `message`, and optional
+nested `causes`. `category` distinguishes instance failures from
+schema-compilation failures. Set `Options::stopAfterFirstError` to stop after
+one public failure or `Options::collectNestedCauses` to retain bounded branch
+failures under `anyOf` and zero-match `oneOf` errors. From the example, an
+all-bad document reports:
 
 ```
 /age: value 200.0 is above maximum 150.0

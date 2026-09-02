@@ -44,7 +44,8 @@ bool addContact(pjson& book, const pJsonSchemaValidator& validator,
     std::vector<pJsonSchemaValidator::Error> errors;
     if (!validator.validate(contact, errors)) {
         for (const pJsonSchemaValidator::Error& e : errors) {
-            std::cout << "    " << (e.path.empty() ? "(root)" : e.path)
+            std::cout << "    "
+                      << (e.instanceLocation.empty() ? "(root)" : e.instanceLocation)
                       << ": " << e.message << "\n";
         }
         return false;                   // rejected

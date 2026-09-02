@@ -113,9 +113,9 @@
  * @struct ByteDance::pJsonSchemaValidator::Error
  * @brief One schema or instance-validation failure.
  *
- * category distinguishes SchemaCompilation diagnostics (whose JSON Pointer path
- * addresses the schema) from InstanceValidation diagnostics (whose path
- * addresses the validated instance).
+ * Provides a stable code, separate instance and schema locations, the
+ * triggering keyword, human-readable text, and optional nested combinator
+ * causes. category distinguishes compilation from instance validation.
  */
 
 /**

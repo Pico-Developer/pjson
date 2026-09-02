@@ -99,14 +99,6 @@ remaining skipped official groups document these gaps. Until they land, docs
 must keep saying "documented subset" and must not claim general 2020-12
 conformance.
 
-### [ ] SCHEMA-DIAGNOSTICS — Complete structured schema diagnostics (PJSON-SCHEMA-005)
-
-`pJsonSchemaValidator::Error` currently distinguishes schema compilation from
-instance validation and reports an instance-or-schema JSON Pointer plus a
-message. Add stable fine-grained error codes, separate instance and schema
-locations, the triggering keyword, and optional nested causes for combinators.
-Preserve the existing bounded multi-error behavior and add a first-error option.
-
 ### [ ] NUM-3-HARDENING — Prove finite double conversion (PJSON-NUM-003)
 
 Add randomized binary64 round-trip corpora, halfway/subnormal/exponent-extreme

@@ -891,14 +891,16 @@ so schemas load and round-trip through `parse()`/`toString()` like any other
 JSON. Validation is performed by a standalone helper class,
 `ByteDance::pJsonSchemaValidator` (declared in `<pjson_schema.h>`), that is a
 pure consumer of pjson's public API — the core `pjson` class carries no schema
-or regex machinery, so programs that never validate do not link it. Compile a
-schema into a validator once, then reuse it for many instances. The documented
+or regex machinery, while the schema implementation remains isolated in its
+own translation unit within the current library target. Compile a schema into
+a validator once, then reuse it for many instances. The documented
 vocabulary is a deliberately limited subset of
 [JSON Schema](https://json-schema.org), not a complete draft implementation.
 `validate()` is `noexcept` and normally collects every applicable failure (a
 resource-budget failure stops traversal), each reported as a
-`pJsonSchemaValidator::Error { path, message, category }` where `path` is a JSON
-Pointer to the offending instance or schema node. `category` distinguishes
+`pJsonSchemaValidator::Error` with a stable `code`, separate
+`instanceLocation` and `schemaLocation`, the triggering `keyword`, a
+human-readable `message`, and optional nested `causes`. `category` distinguishes
 `InstanceValidation` from `SchemaCompilation`.
 
 ```cpp
@@ -921,7 +923,7 @@ pjson data = pjson::parse(R"({ "name": "Ada", "age": 36, "tags": ["x","y"] })");
 pJsonSchemaValidator validator(schema);
 if (!validator.isSchemaValid()) {
     for (const auto& e : validator.schemaErrors())
-        std::cerr << "invalid schema at " << e.path << ": " << e.message << "\n";
+        std::cerr << "invalid schema at " << e.schemaLocation << ": " << e.message << "\n";
 }
 
 // Simple pass/fail:
@@ -933,7 +935,7 @@ if (validator.validate(data)) {
 std::vector<pJsonSchemaValidator::Error> errors;
 if (!validator.validate(data, errors)) {
     for (const auto& e : errors) {
-        std::cerr << (e.path.empty() ? "(root)" : e.path)
+        std::cerr << (e.instanceLocation.empty() ? "(root)" : e.instanceLocation)
                   << ": " << e.message << "\n";
     }
 }

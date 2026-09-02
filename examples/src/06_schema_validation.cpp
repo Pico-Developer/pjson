@@ -68,7 +68,7 @@ int main() {
     pJsonSchemaValidator validator(schema, options);
     if (!validator.isSchemaValid()) {
         for (const pJsonSchemaValidator::Error& e : validator.schemaErrors()) {
-            std::cerr << "invalid schema at " << e.path << ": " << e.message << "\n";
+            std::cerr << "invalid schema at " << e.schemaLocation << ": " << e.message << "\n";
         }
         return 1;
     }
@@ -92,7 +92,8 @@ int main() {
     std::cout << "bad is valid: " << (ok ? "yes" : "no") << "\n";
     std::cout << "failures:\n";
     for (const pJsonSchemaValidator::Error& e : errors) {
-        std::cout << "  " << (e.path.empty() ? "(root)" : e.path) << ": " << e.message << "\n";
+        std::cout << "  " << (e.instanceLocation.empty() ? "(root)" : e.instanceLocation) << ": "
+                  << e.message << "\n";
     }
     return 0;
 }

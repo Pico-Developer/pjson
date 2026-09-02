@@ -35,7 +35,7 @@ namespace {
     // Returns true if some collected error has exactly this path.
     bool hasErrorAt(const std::vector<pjson_test::SchemaError>& errs, const std::string& path) {
         for (const auto& e : errs) {
-            if (e.path == path)
+            if (e.instanceLocation == path)
                 return true;
         }
         return false;
@@ -139,7 +139,7 @@ TEST(complex_schema_deep_pointer_path) {
     std::vector<pjson_test::SchemaError> errors;
     CHECK(!pjson_test::schemaValidate(*d, *s, errors));
     CHECK_EQ(errors.size(), size_t(1));
-    CHECK_EQ(errors[0].path, std::string("/matrix/1/1"));
+    CHECK_EQ(errors[0].instanceLocation, std::string("/matrix/1/1"));
 }
 
 //===----------------------------------------------------------------------===//
@@ -212,7 +212,7 @@ TEST(complex_schema_items_false_rejects_nonempty) {
     CHECK(pjson_test::schemaValidate(*parseJson("[]"), *schemaValue));
     std::vector<pjson_test::SchemaError> errors;
     CHECK(!pjson_test::schemaValidate(*parseJson("[1]"), *schemaValue, errors));
-    CHECK_EQ(errors[0].path, std::string("/0"));
+    CHECK_EQ(errors[0].instanceLocation, std::string("/0"));
 }
 
 TEST(complex_schema_property_true_false) {

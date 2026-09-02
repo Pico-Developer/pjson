@@ -194,7 +194,9 @@ TEST(schema_unsupported_declared_dialect_fails_compilation) {
     CHECK(!validator.isSchemaValid());
     CHECK_EQ(validator.schemaErrors().size(), size_t(1));
     CHECK_EQ(validator.schemaErrors()[0].category, pJsonSchemaValidator::Error::SchemaCompilation);
-    CHECK_EQ(validator.schemaErrors()[0].path, std::string("/$schema"));
+    CHECK_EQ(validator.schemaErrors()[0].code, pJsonSchemaValidator::Error::UnsupportedDialect);
+    CHECK_EQ(validator.schemaErrors()[0].schemaLocation, std::string("/$schema"));
+    CHECK_EQ(validator.schemaErrors()[0].keyword, std::string("$schema"));
 
     pjson value;
     value = int64_t(7);
@@ -388,7 +390,14 @@ TEST(schema_external_resolver_and_fragment) {
     pjson invalid;
     invalid = "five";
     CHECK(validator.validate(valid));
-    CHECK(!validator.validate(invalid));
+    std::vector<pJsonSchemaValidator::Error> errors;
+    CHECK(!validator.validate(invalid, errors));
+    CHECK_EQ(errors.size(), size_t(1));
+    CHECK_EQ(errors[0].code, pJsonSchemaValidator::Error::TypeMismatch);
+    CHECK_EQ(errors[0].instanceLocation, std::string());
+    CHECK_EQ(errors[0].schemaLocation,
+             std::string("https://example.test/remote.json#/$defs/value/type"));
+    CHECK_EQ(errors[0].keyword, std::string("type"));
     CHECK_EQ(fixture.calls, size_t(1)); // resolved once during construction
 }
 
@@ -489,6 +498,9 @@ TEST(schema_external_resource_with_unsupported_dialect_fails_compilation) {
     options.resolverContext = &fixture;
     pJsonSchemaValidator validator(schema, options);
     CHECK(!validator.isSchemaValid());
+    CHECK(!validator.schemaErrors().empty());
+    CHECK_EQ(validator.schemaErrors()[0].schemaLocation,
+             std::string("https://example.test/remote.json#/$schema"));
 
     fixture.documents["https://example.test/remote.json"] =
         pjson::parse(R"({"$vocabulary":{"urn:example:required":true}})");

@@ -76,9 +76,72 @@ TEST(schema_type_mismatch_reports_path_and_message) {
     std::vector<pjson_test::SchemaError> errors;
     CHECK(!validates(R"({"type":"integer"})", R"("nope")", errors));
     CHECK_EQ(errors.size(), size_t(1));
-    CHECK_EQ(errors[0].path, std::string("")); // root
+    CHECK_EQ(errors[0].code, pJsonSchemaValidator::Error::TypeMismatch);
+    CHECK_EQ(errors[0].instanceLocation, std::string("")); // root
+    CHECK_EQ(errors[0].schemaLocation, std::string("/type"));
+    CHECK_EQ(errors[0].keyword, std::string("type"));
     CHECK(errors[0].message.find("integer") != std::string::npos);
     CHECK(errors[0].message.find("string") != std::string::npos);
+}
+
+TEST(schema_diagnostics_support_first_error_and_nested_combinator_causes) {
+    pjson schema =
+        pjson::parse(R"({"anyOf":[{"type":"string"},{"type":"integer"},{"type":"array"}]})");
+    pjson instance = pjson::parse(R"({})");
+
+    pJsonSchemaValidator::Options first;
+    first.stopAfterFirstError = true;
+    pJsonSchemaValidator firstValidator(schema, first);
+    std::vector<pJsonSchemaValidator::Error> firstErrors;
+    CHECK(!firstValidator.validate(instance, firstErrors));
+    CHECK_EQ(firstErrors.size(), size_t(1));
+    CHECK_EQ(firstErrors[0].code, pJsonSchemaValidator::Error::CombinatorMismatch);
+    CHECK_EQ(firstErrors[0].keyword, std::string("anyOf"));
+
+    pJsonSchemaValidator::Options nested;
+    nested.collectNestedCauses = true;
+    pJsonSchemaValidator nestedValidator(schema, nested);
+    std::vector<pJsonSchemaValidator::Error> errors;
+    CHECK(!nestedValidator.validate(instance, errors));
+    const pJsonSchemaValidator::Error* combinator = nullptr;
+    for (size_t i = 0; i < errors.size(); ++i) {
+        if (errors[i].keyword == "anyOf")
+            combinator = &errors[i];
+    }
+    CHECK(combinator != nullptr);
+    if (combinator != nullptr) {
+        CHECK_EQ(combinator->code, pJsonSchemaValidator::Error::CombinatorMismatch);
+        CHECK_EQ(combinator->schemaLocation, std::string("/anyOf"));
+        CHECK_EQ(combinator->causes.size(), size_t(3));
+        if (combinator->causes.size() == size_t(3)) {
+            CHECK_EQ(combinator->causes[0].schemaLocation, std::string("/anyOf/0/type"));
+            CHECK_EQ(combinator->causes[1].schemaLocation, std::string("/anyOf/1/type"));
+            CHECK_EQ(combinator->causes[2].schemaLocation, std::string("/anyOf/2/type"));
+        }
+    }
+}
+
+TEST(schema_diagnostic_options_share_one_bounded_contract) {
+    pjson malformed = pjson::parse(R"({"$schema":7,"$vocabulary":false})");
+    pJsonSchemaValidator::Options first;
+    first.stopAfterFirstError = true;
+    pJsonSchemaValidator compileValidator(malformed, first);
+    CHECK(!compileValidator.isSchemaValid());
+    CHECK_EQ(compileValidator.schemaErrors().size(), size_t(1));
+
+    pjson schema =
+        pjson::parse(R"({"anyOf":[{"type":"string"},{"type":"integer"},{"type":"array"}]})");
+    pjson instance;
+    instance = true;
+    pJsonSchemaValidator::Options bounded;
+    bounded.maxErrors = 3;
+    bounded.collectNestedCauses = true;
+    pJsonSchemaValidator validator(schema, bounded);
+    std::vector<pJsonSchemaValidator::Error> errors;
+    CHECK(!validator.validate(instance, errors));
+    CHECK_EQ(errors.size(), size_t(1));
+    CHECK_EQ(errors[0].causes.size(), size_t(2));
+    CHECK(errors.size() + errors[0].causes.size() <= bounded.maxErrors);
 }
 
 TEST(schema_type_integer_vs_number) {
@@ -105,7 +168,7 @@ TEST(schema_required_missing) {
     CHECK(
         !validates(R"({"type":"object","required":["name","age"]})", R"({"name":"Ada"})", errors));
     CHECK_EQ(errors.size(), size_t(1));
-    CHECK_EQ(errors[0].path, std::string(""));
+    CHECK_EQ(errors[0].instanceLocation, std::string(""));
     CHECK(errors[0].message.find("age") != std::string::npos);
 }
 
@@ -117,7 +180,7 @@ TEST(schema_properties_recurse_with_path) {
     std::vector<pjson_test::SchemaError> errors;
     CHECK(!validates(schema, R"({"age":"old","name":"Ada"})", errors));
     CHECK_EQ(errors.size(), size_t(1));
-    CHECK_EQ(errors[0].path, std::string("/age")); // JSON-Pointer to the child
+    CHECK_EQ(errors[0].instanceLocation, std::string("/age")); // JSON-Pointer to the child
 }
 
 TEST(schema_additional_properties_false) {
@@ -128,7 +191,7 @@ TEST(schema_additional_properties_false) {
     std::vector<pjson_test::SchemaError> errors;
     CHECK(!validates(schema, R"({"a":1,"b":2})", errors));
     CHECK_EQ(errors.size(), size_t(1));
-    CHECK_EQ(errors[0].path, std::string("/b"));
+    CHECK_EQ(errors[0].instanceLocation, std::string("/b"));
 }
 
 TEST(schema_min_max_properties) {
@@ -145,7 +208,7 @@ TEST(schema_items_applies_to_each_element) {
     std::vector<pjson_test::SchemaError> errors;
     CHECK(!validates(R"({"type":"array","items":{"type":"integer"}})", R"([1,"two",3])", errors));
     CHECK_EQ(errors.size(), size_t(1));
-    CHECK_EQ(errors[0].path, std::string("/1")); // index of the bad element
+    CHECK_EQ(errors[0].instanceLocation, std::string("/1")); // index of the bad element
 }
 
 TEST(schema_min_max_items) {
@@ -344,7 +407,7 @@ TEST(schema_built_programmatically) {
     std::vector<pjson_test::SchemaError> errors;
     CHECK(!pjson_test::schemaValidate(*bad, schema, errors));
     CHECK_EQ(errors.size(), size_t(1));
-    CHECK_EQ(errors[0].path, std::string("/age"));
+    CHECK_EQ(errors[0].instanceLocation, std::string("/age"));
 }
 
 //===----------------------------------------------------------------------===//
@@ -355,7 +418,7 @@ TEST(schema_pointer_escaping) {
     std::vector<pjson_test::SchemaError> errors;
     CHECK(!validates(schema, R"({"a/b":"x"})", errors));
     CHECK_EQ(errors.size(), size_t(1));
-    CHECK_EQ(errors[0].path, std::string("/a~1b")); // '/' escaped as ~1
+    CHECK_EQ(errors[0].instanceLocation, std::string("/a~1b")); // '/' escaped as ~1
 }
 
 TEST(schema_const_exact_mixed_numeric_equality_beyond_2pow53) {
@@ -455,19 +518,30 @@ TEST(schema_malformed_not_shape_is_ignored) {
 
 TEST(schema_error_constructors_and_collector_append) {
     pjson_test::SchemaError empty;
-    CHECK_EQ(empty.path, std::string());
+    CHECK_EQ(empty.code, pJsonSchemaValidator::Error::None);
+    CHECK_EQ(empty.instanceLocation, std::string());
+    CHECK_EQ(empty.schemaLocation, std::string());
+    CHECK_EQ(empty.keyword, std::string());
     CHECK_EQ(empty.message, std::string());
     CHECK_EQ(empty.category, pJsonSchemaValidator::Error::InstanceValidation);
+    CHECK(empty.causes.empty());
 
-    pjson_test::SchemaError concrete("/age", "expected integer");
-    CHECK_EQ(concrete.path, std::string("/age"));
+    pjson_test::SchemaError concrete(pJsonSchemaValidator::Error::TypeMismatch,
+                                     pJsonSchemaValidator::Error::InstanceValidation, "/age",
+                                     "/properties/age/type", "type", "expected integer");
+    CHECK_EQ(concrete.code, pJsonSchemaValidator::Error::TypeMismatch);
+    CHECK_EQ(concrete.instanceLocation, std::string("/age"));
+    CHECK_EQ(concrete.schemaLocation, std::string("/properties/age/type"));
+    CHECK_EQ(concrete.keyword, std::string("type"));
     CHECK_EQ(concrete.message, std::string("expected integer"));
     CHECK_EQ(concrete.category, pJsonSchemaValidator::Error::InstanceValidation);
 
     std::vector<pjson_test::SchemaError> errors;
-    errors.push_back(pjson_test::SchemaError("/seed", "existing"));
+    errors.push_back(pjson_test::SchemaError(pJsonSchemaValidator::Error::InternalError,
+                                             pJsonSchemaValidator::Error::InstanceValidation,
+                                             "/seed", "", "", "existing"));
     CHECK(!validates(R"({"type":"object","required":["name"]})", R"({})", errors));
-    CHECK_EQ(errors[0].path, std::string("/seed"));
+    CHECK_EQ(errors[0].instanceLocation, std::string("/seed"));
     CHECK_EQ(errors[0].message, std::string("existing"));
     CHECK(errors.size() >= size_t(2));
     CHECK(hasMessageContaining(errors, "missing required property"));

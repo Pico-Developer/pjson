@@ -811,8 +811,8 @@ namespace {
 
         std::ostringstream os;
         os << "first error";
-        if (!errors[0].path.empty()) {
-            os << " at " << errors[0].path;
+        if (!errors[0].instanceLocation.empty()) {
+            os << " at " << errors[0].instanceLocation;
         }
         if (!errors[0].message.empty()) {
             os << ": " << errors[0].message;

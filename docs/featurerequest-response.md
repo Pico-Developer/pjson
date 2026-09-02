@@ -254,10 +254,12 @@ loading/vocabulary-driven keyword selection and ECMA-262 Unicode property
 escapes. Documentation therefore continues to describe this as a **documented
 subset**, not general 2020-12 conformance.
 
-PJSON-SCHEMA-005 remains partial: errors distinguish schema compilation from
-instance validation and provide bounded JSON Pointer/message diagnostics, but
-fine-grained stable codes, separate instance/schema locations, keyword names,
-and optional nested combinator causes remain tracked in `Todo.md`.
+PJSON-SCHEMA-005 is implemented: errors distinguish schema compilation from
+instance validation and provide stable fine-grained codes, separate instance
+and schema locations, keyword names, and optional nested causes for failing
+`anyOf` and zero-match `oneOf` branches. `Options::stopAfterFirstError` selects
+first-error reporting; bounded multi-error collection remains the default, and
+nested causes share the configured diagnostic bound.
 
 ## 9. Existing extensions
 

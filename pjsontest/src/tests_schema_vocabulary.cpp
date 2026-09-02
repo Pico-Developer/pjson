@@ -50,7 +50,7 @@ namespace {
     // Error predicates assert semantic diagnostics without coupling tests to error ordering.
     bool hasErrorAt(const std::vector<pjson_test::SchemaError>& errors, const std::string& path) {
         for (const auto& err : errors) {
-            if (err.path == path)
+            if (err.instanceLocation == path)
                 return true;
         }
         return false;
@@ -68,7 +68,7 @@ namespace {
     bool hasErrorAtWithMessage(const std::vector<pjson_test::SchemaError>& errors,
                                const std::string& path, const std::string& needle) {
         for (const auto& err : errors) {
-            if (err.path == path && err.message.find(needle) != std::string::npos)
+            if (err.instanceLocation == path && err.message.find(needle) != std::string::npos)
                 return true;
         }
         return false;

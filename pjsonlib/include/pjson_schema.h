@@ -79,8 +79,7 @@ namespace ByteDance {
         typedef bool (*Resolver)(const std::string& aDocumentUri, pjson& aSchema, void* aContext);
 
         //== Diagnostics =====================================================
-        /// One validation failure: `path` is a JSON Pointer to the offending
-        /// node ("" for the document root) and `message` explains the failure.
+        /// One schema-compilation or instance-validation failure.
         struct Error {
             /// Distinguishes an instance-validation failure from an invalid or
             /// unsupported schema contract discovered while compiling the validator.
@@ -89,14 +88,46 @@ namespace ByteDance {
                 SchemaCompilation   ///< The schema contract is invalid or unsupported.
             };
 
-            std::string path;    ///< JSON Pointer into the instance or schema.
-            std::string message; ///< Human-readable validation or compilation diagnostic.
-            Category category;   ///< Selects which document `path` addresses.
-            /// Constructs an error with an empty root path and message.
+            /// Stable machine-readable failure category. `keyword` identifies
+            /// the precise keyword when several keywords share a category.
+            enum Code {
+                None,                  ///< No failure.
+                FalseSchema,           ///< A false boolean schema rejected the instance.
+                TypeMismatch,          ///< The instance does not satisfy `type`.
+                ConstMismatch,         ///< The instance does not satisfy `const`.
+                EnumMismatch,          ///< The instance does not satisfy `enum`.
+                NumericConstraint,     ///< A numeric assertion failed.
+                StringConstraint,      ///< A string assertion failed.
+                ArrayConstraint,       ///< An array assertion failed.
+                ObjectConstraint,      ///< An object assertion failed.
+                FormatMismatch,        ///< A known asserted format failed.
+                CombinatorMismatch,    ///< A logical applicator did not satisfy its contract.
+                ReferenceFailure,      ///< A schema reference could not be resolved.
+                ReferenceCycle,        ///< Reference evaluation encountered a cycle.
+                RegexFailure,          ///< A pattern was invalid or rejected by safety policy.
+                UnsupportedKeyword,    ///< Strict mode found an unsupported standard keyword.
+                InvalidSchema,         ///< A schema or keyword has an invalid shape or value.
+                UnsupportedDialect,    ///< The selected schema dialect is unsupported.
+                UnsupportedVocabulary, ///< A required vocabulary is unsupported.
+                ResolverFailure,       ///< The caller's external resolver could not load a schema.
+                ResourceLimit,         ///< A compilation, validation, or diagnostic limit was hit.
+                AllocationFailure,     ///< Validation could not allocate required temporary state.
+                InternalError          ///< An unexpected exception was contained.
+            };
+
+            Code code;                    ///< Stable machine-readable failure category.
+            Category category;            ///< Compilation or instance-validation phase.
+            std::string instanceLocation; ///< JSON Pointer into the instance; empty is root.
+            std::string schemaLocation; ///< Pointer or retrieval URI plus fragment for the schema.
+            std::string keyword;        ///< Triggering keyword; empty for whole-schema failures.
+            std::string message;        ///< Human-readable diagnostic, not a stable API token.
+            std::vector<Error> causes;  ///< Optional bounded combinator branch failures.
+            /// Constructs an empty diagnostic.
             Error();
-            /// Constructs an error for aPath with the supplied diagnostic message.
-            Error(const std::string& aPath, const std::string& aMsg,
-                  Category aCategory = InstanceValidation);
+            /// Constructs a fully located diagnostic.
+            Error(Code aCode, Category aCategory, const std::string& aInstanceLocation,
+                  const std::string& aSchemaLocation, const std::string& aKeyword,
+                  const std::string& aMessage);
         };
 
         //== Options =========================================================
@@ -117,8 +148,10 @@ namespace ByteDance {
             /// Validation work units (default 1,000,000); zero selects that hard ceiling.
             size_t maxValidationWork; ///< Total validation work-unit budget.
             /// Reported errors (default 100); zero selects the hard ceiling of 100.
-            size_t maxErrors;     ///< Collected diagnostic budget.
-            bool validateFormats; ///< Validates known string formats (default true).
+            size_t maxErrors;         ///< Collected top-level and nested diagnostic budget.
+            bool stopAfterFirstError; ///< Stops compilation or validation after the first error.
+            bool collectNestedCauses; ///< Retains bounded anyOf/oneOf branch failures.
+            bool validateFormats;     ///< Validates known string formats (default true).
             // Strict, fail-closed subset mode. When true, a schema that uses a
             // standard validation/applicator keyword this validator does not
             // implement makes validation fail rather than silently ignoring the

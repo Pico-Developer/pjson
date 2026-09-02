@@ -1,13 +1,16 @@
+#include "benchmark_build_config.h"
 #include "pjson.h"
 
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <locale>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -61,6 +64,10 @@ namespace {
         std::string operation;
         RunStats stats;
     };
+
+    static const double kTargetSeconds = 0.075;
+    static const std::size_t kMaxIterations = 1U << 22U;
+    static const int kSamples = 6;
 
     // -------------------------------------------------------------------------
     // Stable result hashing and DOM traversal
@@ -292,6 +299,67 @@ namespace {
         return root;
     }
 
+    // Isolates lookup and iteration costs for objects with many siblings.
+    pjson buildWideObjectDocument() {
+        pjson root;
+        for (int i = 0; i < 2048; ++i) {
+            root[std::string("field-") + makePaddedNumber(i, 5)] = static_cast<int64_t>(i * 17);
+        }
+        return root;
+    }
+
+    // Isolates contiguous array parsing, traversal, serialization, and copying.
+    pjson buildLargeArrayDocument() {
+        pjson root;
+        for (int i = 0; i < 8192; ++i) {
+            root += static_cast<int64_t>((i * 7919) % 1000003);
+        }
+        return root;
+    }
+
+    // Uses long, unescaped UTF-8 values so string storage dominates node overhead.
+    pjson buildStringHeavyDocument() {
+        pjson root;
+        const std::string base =
+            "The quick brown fox jumps over the lazy dog; pjson benchmark payload ";
+        for (int i = 0; i < 1024; ++i) {
+            root += base + makePaddedNumber(i, 5) + " \xE2\x98\x83";
+        }
+        return root;
+    }
+
+    // Forces the wire representation through quote, slash, control-character,
+    // and Unicode escaping paths instead of measuring only raw string copying.
+    pjson buildEscapeHeavyDocument() {
+        pjson root;
+        const std::string escaped =
+            "quote=\" backslash=\\ newline=\n tab=\t control=\x01 snowman=\xE2\x98\x83";
+        for (int i = 0; i < 1024; ++i) {
+            root += escaped + makePaddedNumber(i, 5);
+        }
+        return root;
+    }
+
+    // Keeps the payload numeric while spanning signed and unsigned-looking values.
+    pjson buildIntegerHeavyDocument() {
+        pjson root;
+        for (int i = 0; i < 8192; ++i) {
+            const int64_t magnitude = static_cast<int64_t>(i) * 1000003LL + 17LL;
+            root += (i % 3 == 0) ? -magnitude : magnitude;
+        }
+        return root;
+    }
+
+    // Exercises decimal conversion with fractional values and varied magnitudes.
+    pjson buildFloatingHeavyDocument() {
+        pjson root;
+        for (int i = 0; i < 8192; ++i) {
+            const double scale = (i % 2 == 0) ? 0.000001 : 1000000.0;
+            root += (static_cast<double>((i * 104729) % 10000019) + 0.125) * scale;
+        }
+        return root;
+    }
+
     // -------------------------------------------------------------------------
     // Workload preparation
     // -------------------------------------------------------------------------
@@ -336,13 +404,25 @@ namespace {
         return path.substr(slash + 1);
     }
 
-    // Creates the three built-in workloads and appends each valid user-supplied
+    // Creates the built-in mixed and shape-specific workloads and appends valid
     // corpus document. Invalid inputs are warned about rather than aborting a run.
     std::vector<Workload> buildWorkloads(const std::vector<std::string>& inputFiles) {
         std::vector<Workload> workloads;
         workloads.push_back(makeWorkload("small", "generated", buildSmallDocument().toString()));
         workloads.push_back(makeWorkload("medium", "generated", buildMediumDocument().toString()));
         workloads.push_back(makeWorkload("large", "generated", buildLargeDocument().toString()));
+        workloads.push_back(
+            makeWorkload("wide-object", "generated", buildWideObjectDocument().toString()));
+        workloads.push_back(
+            makeWorkload("large-array", "generated", buildLargeArrayDocument().toString()));
+        workloads.push_back(
+            makeWorkload("string-heavy", "generated", buildStringHeavyDocument().toString()));
+        workloads.push_back(
+            makeWorkload("escape-heavy", "generated", buildEscapeHeavyDocument().toString()));
+        workloads.push_back(
+            makeWorkload("integer-heavy", "generated", buildIntegerHeavyDocument().toString()));
+        workloads.push_back(
+            makeWorkload("floating-heavy", "generated", buildFloatingHeavyDocument().toString()));
 
         for (std::size_t i = 0; i < inputFiles.size(); ++i) {
             const std::string jsonText = readFile(inputFiles[i]);
@@ -390,10 +470,6 @@ namespace {
     // noise for fast cases while the fixed cap bounds unexpectedly expensive runs.
     template <typename Operation>
     RunStats measure(const std::string& payload, Operation operation) {
-        static const double kTargetSeconds = 0.075;
-        static const std::size_t kMaxIterations = 1U << 22U;
-        static const int kSamples = 6;
-
         // Perform one untimed call to trigger lazy initialization before calibration.
         operation();
 
@@ -455,10 +531,13 @@ namespace {
 
     // Prints accepted arguments and the high-level benchmark scope.
     void printUsage(const char* argv0) {
-        std::cout << "Usage: " << argv0 << " [--input <json-file>]... [--compare]\n"
+        std::cout << "Usage: " << argv0 << " [--input <json-file>]... [--compare] [--json <path>]\n"
                   << "Benchmarks parse, compact serialize, traversal, and deep copy\n"
-                  << "across generated small/medium/large documents, plus any extra\n"
-                  << "JSON files supplied with --input. When built with optional\n"
+                  << "across mixed and shape-specific generated documents, plus any\n"
+                  << "JSON files supplied with --input. --json writes a versioned,\n"
+                  << "machine-readable result document; use '-' for JSON-only stdout.\n"
+                  << "PJSON_BENCH_ENVIRONMENT may name a controlled runner. When built\n"
+                  << "with optional\n"
                   << "third-party dependencies, --compare groups every benchmark case\n"
                   << "with adjacent cross-library rows. Timing is lower-is-better;\n"
                   << "throughput is higher-is-better.\n";
@@ -537,6 +616,129 @@ namespace {
                 }
             }
         }
+    }
+
+    std::string currentUtcTime() {
+        const std::time_t now = std::time(NULL);
+        const std::tm* utc = std::gmtime(&now);
+        if (utc == NULL) {
+            return "unknown";
+        }
+        char text[32] = {};
+        if (std::strftime(text, sizeof(text), "%Y-%m-%dT%H:%M:%SZ", utc) == 0U) {
+            return "unknown";
+        }
+        return text;
+    }
+
+    // Builds a stable JSON artifact for storage and comparison by external tools.
+    // It deliberately records raw measurements without applying a regression
+    // threshold: only callers with a controlled machine can set a meaningful one.
+    pjson buildMachineReport(const std::vector<Workload>& workloads,
+                             const std::vector<BenchmarkResult>& results, bool compared) {
+        pjson report;
+        report["format"] = "pjson-benchmark";
+        report["format_version"] = static_cast<int64_t>(1);
+        report["captured_at_utc"] = currentUtcTime();
+        report["library_version"] = PJSON_VERSION;
+
+        report["source"]["commit"] = PJSON_BENCH_GIT_COMMIT;
+        report["source"]["dirty_known"] = std::string(PJSON_BENCH_GIT_DIRTY) != "unknown";
+        report["source"]["dirty"] = std::string(PJSON_BENCH_GIT_DIRTY) == "true";
+
+        const char* environment = std::getenv("PJSON_BENCH_ENVIRONMENT");
+        const char* cpu = std::getenv("PJSON_BENCH_CPU");
+        const char* allocator = std::getenv("PJSON_BENCH_ALLOCATOR");
+        report["environment"]["label"] =
+            environment != NULL && environment[0] != '\0' ? environment : "unspecified";
+        report["environment"]["operating_system"] = PJSON_BENCH_SYSTEM_NAME;
+        report["environment"]["operating_system_version"] = PJSON_BENCH_SYSTEM_VERSION;
+        report["environment"]["architecture"] = PJSON_BENCH_SYSTEM_PROCESSOR;
+        report["environment"]["cpu"] = cpu != NULL && cpu[0] != '\0' ? cpu : "unspecified";
+        report["environment"]["allocator"] =
+            allocator != NULL && allocator[0] != '\0'
+                ? allocator
+                : "default C++ runtime allocator (implementation unspecified)";
+
+        report["build"]["type"] = PJSON_BENCH_BUILD_TYPE;
+        report["build"]["compiler_path"] = PJSON_BENCH_COMPILER_PATH;
+        report["build"]["compiler_id"] = PJSON_BENCH_COMPILER_ID;
+        report["build"]["compiler_version"] = PJSON_BENCH_COMPILER_VERSION;
+        report["build"]["cxx_standard"] = compared ? "C++17" : "C++11";
+        report["build"]["flags"] = std::string(PJSON_BENCH_BUILD_FLAGS) +
+                                   (PJSON_BENCH_BUILD_FLAGS[0] == '\0' ? "" : " ") +
+                                   PJSON_BENCH_TARGET_FLAGS;
+
+        report["methodology"]["clock"] = "std::chrono::steady_clock";
+        report["methodology"]["warmup_calls"] = static_cast<int64_t>(1);
+        report["methodology"]["timed_samples"] = static_cast<int64_t>(kSamples);
+        report["methodology"]["target_sample_seconds"] = kTargetSeconds;
+        report["methodology"]["maximum_iterations_per_sample"] =
+            static_cast<uint64_t>(kMaxIterations);
+        report["methodology"]["primary_statistic"] = "median_ns";
+        report["methodology"]["throughput_basis"] =
+            "original input bytes divided by median latency";
+        report["methodology"]["threshold_policy"] = "none; compare controlled runs externally";
+
+        report["implementations"][0]["name"] = "pjson";
+        report["implementations"][0]["version"] = PJSON_VERSION;
+#ifdef PJSON_BENCH_COMPARE
+        if (compared) {
+            report["implementations"][1]["name"] = "nlohmann/json";
+            report["implementations"][1]["version"] = "3.11.3";
+            report["implementations"][2]["name"] = "RapidJSON";
+            report["implementations"][2]["version"] = "1.1.0";
+            report["implementations"][3]["name"] = "simdjson";
+            report["implementations"][3]["version"] = "3.12.2";
+        }
+#else
+        (void)compared;
+#endif
+
+        for (std::size_t i = 0; i < workloads.size(); ++i) {
+            report["workloads"][static_cast<int>(i)]["name"] = workloads[i].name;
+            report["workloads"][static_cast<int>(i)]["origin"] = workloads[i].origin;
+            report["workloads"][static_cast<int>(i)]["input_bytes"] =
+                static_cast<uint64_t>(workloads[i].jsonText.size());
+        }
+        for (std::size_t i = 0; i < results.size(); ++i) {
+            const BenchmarkResult& result = results[i];
+            const Workload& workload = workloads[result.workloadIndex];
+            pjson& row = report["results"][static_cast<int>(i)];
+            row["library"] = result.library;
+            row["workload"] = workload.name;
+            row["operation"] = result.operation;
+            row["input_bytes"] = static_cast<uint64_t>(workload.jsonText.size());
+            row["iterations_per_sample"] = static_cast<uint64_t>(result.stats.iterations);
+            row["best_ns"] = result.stats.bestNs;
+            row["median_ns"] = result.stats.medianNs;
+            row["average_ns"] = result.stats.averageNs;
+            row["mib_per_second"] = result.stats.mibPerSecond;
+        }
+        return report;
+    }
+
+    bool writeMachineReport(const std::string& path, const pjson& report) {
+        pjson::SerializeOptions options;
+        options.pretty = true;
+        options.indentWidth = 2;
+        if (path == "-") {
+            report.write(std::cout, options);
+            std::cout << "\n";
+            return static_cast<bool>(std::cout);
+        }
+        std::ofstream output(path.c_str(), std::ios::out | std::ios::binary | std::ios::trunc);
+        if (!output) {
+            std::cerr << "unable to open benchmark JSON output '" << path << "'\n";
+            return false;
+        }
+        report.write(output, options);
+        output << "\n";
+        if (!output) {
+            std::cerr << "failed to write benchmark JSON output '" << path << "'\n";
+            return false;
+        }
+        return true;
     }
 
     // -------------------------------------------------------------------------
@@ -879,6 +1081,7 @@ int main(int argc, char** argv) {
     // --- Parse command-line inputs --------------------------------------------
     std::vector<std::string> inputFiles;
     bool requestCompare = false;
+    std::string jsonOutput;
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
         if (arg == "--help" || arg == "-h") {
@@ -887,6 +1090,22 @@ int main(int argc, char** argv) {
         }
         if (arg == "--compare") {
             requestCompare = true;
+            continue;
+        }
+        if (arg == "--json") {
+            if (i + 1 >= argc) {
+                std::cerr << "--json requires a file path or '-'\n";
+                return 2;
+            }
+            jsonOutput = argv[++i];
+            continue;
+        }
+        if (arg.compare(0, 7, "--json=") == 0) {
+            jsonOutput = arg.substr(7);
+            if (jsonOutput.empty()) {
+                std::cerr << "--json requires a file path or '-'\n";
+                return 2;
+            }
             continue;
         }
         if (arg == "--input") {
@@ -912,15 +1131,18 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    std::cout << "pjson benchmark suite\n";
-    std::cout << "generated workloads: small, medium, large";
+    const bool jsonOnly = jsonOutput == "-";
+    std::ostream& progress = jsonOnly ? std::cerr : std::cout;
+    progress << "pjson benchmark suite\n";
+    progress << "generated workloads: small, medium, large, wide-object, large-array, "
+                "string-heavy, escape-heavy, integer-heavy, floating-heavy";
     if (!inputFiles.empty()) {
-        std::cout << " | requested extra inputs: " << inputFiles.size();
+        progress << " | requested extra inputs: " << inputFiles.size();
     }
     if (requestCompare) {
-        std::cout << " | compare requested";
+        progress << " | compare requested";
     }
-    std::cout << "\n";
+    progress << "\n";
 
     std::vector<BenchmarkResult> results;
     runPjsonBenchmarks(workloads, results);
@@ -938,9 +1160,15 @@ int main(int argc, char** argv) {
 #endif
 
     // --- Render grouped results and the anti-optimization checksum -------------
-    printResultsByCase(workloads, results);
-    std::cout << std::string(126, '-') << "\n";
-    std::cout << "sink=" << g_sink_size << "/" << g_sink_hash
-              << " (anti-optimization checksum; not a performance measurement)\n";
+    if (!jsonOnly) {
+        printResultsByCase(workloads, results);
+        std::cout << std::string(126, '-') << "\n";
+        std::cout << "sink=" << g_sink_size << "/" << g_sink_hash
+                  << " (anti-optimization checksum; not a performance measurement)\n";
+    }
+    if (!jsonOutput.empty() &&
+        !writeMachineReport(jsonOutput, buildMachineReport(workloads, results, requestCompare))) {
+        return 1;
+    }
     return 0;
 }

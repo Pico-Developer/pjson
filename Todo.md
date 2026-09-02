@@ -111,11 +111,16 @@ remaining skipped official groups document these gaps. Until they land, docs
 must keep saying "documented subset" and must not claim general 2020-12
 conformance.
 
-### [ ] PERF-BASELINE — Representative benchmarks and regression tracking
+### [~] PERF-BASELINE — Controlled regression policy and auxiliary metrics
 
-PJSON-PERF-001/002/003: expand the benchmark matrix (wide objects, large
-arrays, string/escape/int/float-heavy), record environment metadata, and add
-regression reporting on controlled runners before enforcing budgets.
+The representative matrix and versioned machine-readable results are complete:
+wide objects, large arrays, string/escape/integer/floating-heavy inputs, optional
+corpora, source/build/environment/methodology metadata, and 30-day CI artifacts.
+Hosted-runner numbers remain advisory. Before enforcing budgets, establish a
+controlled runner, stable release baseline, and agreed per-case reporting
+thresholds. Allocation counts, peak RSS, binary/object size, and build-time
+measurements need separate platform/tooling protocols. Do not add them to the
+latency table or treat a near-zero move operation as a useful microbenchmark.
 
 ### [ ] DOC-CONTRACT — Single consolidated behavioral contract (PJSON-DOC-001)
 

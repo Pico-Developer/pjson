@@ -10,18 +10,85 @@ set(BENCH_SRC_FILES
     ${SRC_DIR}/benchmark_main.cpp
 )
 
+if(MSVC)
+    set(PJSON_BENCH_WARN_FLAGS /W4)
+    set(PJSON_BENCH_TARGET_FLAGS "/W4")
+else()
+    set(PJSON_BENCH_WARN_FLAGS -Wall -Wextra)
+    set(PJSON_BENCH_TARGET_FLAGS "-Wall -Wextra")
+endif()
+
+# Capture configure-time provenance in the machine-readable benchmark report.
+# A dirty marker is kept separate from the revision so consumers can reject
+# locally modified builds without losing the useful commit identity.
+find_package(Git QUIET)
+get_filename_component(PJSON_BENCH_SOURCE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
+set(PJSON_BENCH_GIT_COMMIT "unknown")
+set(PJSON_BENCH_GIT_DIRTY "unknown")
+if(GIT_FOUND)
+    execute_process(
+        COMMAND "${GIT_EXECUTABLE}" rev-parse HEAD
+        WORKING_DIRECTORY "${PJSON_BENCH_SOURCE_ROOT}"
+        RESULT_VARIABLE PJSON_BENCH_GIT_RESULT
+        OUTPUT_VARIABLE PJSON_BENCH_GIT_COMMIT
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET)
+    if(NOT PJSON_BENCH_GIT_RESULT EQUAL 0)
+        set(PJSON_BENCH_GIT_COMMIT "unknown")
+    endif()
+    execute_process(
+        COMMAND "${GIT_EXECUTABLE}" status --porcelain
+        WORKING_DIRECTORY "${PJSON_BENCH_SOURCE_ROOT}"
+        RESULT_VARIABLE PJSON_BENCH_DIRTY_RESULT
+        OUTPUT_VARIABLE PJSON_BENCH_DIRTY_OUTPUT
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET)
+    if(PJSON_BENCH_DIRTY_RESULT EQUAL 0)
+        if(PJSON_BENCH_DIRTY_OUTPUT STREQUAL "")
+            set(PJSON_BENCH_GIT_DIRTY "false")
+        else()
+            set(PJSON_BENCH_GIT_DIRTY "true")
+        endif()
+    endif()
+endif()
+
+if(CMAKE_BUILD_TYPE)
+    set(PJSON_BENCH_BUILD_TYPE "${CMAKE_BUILD_TYPE}")
+else()
+    set(PJSON_BENCH_BUILD_TYPE "multi-config/unspecified")
+endif()
+string(TOUPPER "${CMAKE_BUILD_TYPE}" PJSON_BENCH_BUILD_TYPE_UPPER)
+set(PJSON_BENCH_BUILD_FLAGS "${CMAKE_CXX_FLAGS}")
+if(PJSON_BENCH_BUILD_TYPE_UPPER AND
+   DEFINED CMAKE_CXX_FLAGS_${PJSON_BENCH_BUILD_TYPE_UPPER})
+    string(APPEND PJSON_BENCH_BUILD_FLAGS
+        " ${CMAKE_CXX_FLAGS_${PJSON_BENCH_BUILD_TYPE_UPPER}}")
+endif()
+string(STRIP "${PJSON_BENCH_BUILD_FLAGS}" PJSON_BENCH_BUILD_FLAGS)
+
+# Escape values before placing them in ordinary C++ string literals.
+foreach(PJSON_BENCH_CONFIG_VALUE
+        PJSON_BENCH_GIT_COMMIT PJSON_BENCH_GIT_DIRTY PJSON_BENCH_BUILD_TYPE
+        PJSON_BENCH_BUILD_FLAGS PJSON_BENCH_TARGET_FLAGS
+        CMAKE_CXX_COMPILER CMAKE_CXX_COMPILER_ID CMAKE_CXX_COMPILER_VERSION
+        CMAKE_SYSTEM_NAME CMAKE_SYSTEM_VERSION CMAKE_SYSTEM_PROCESSOR)
+    string(REPLACE "\\" "\\\\" ${PJSON_BENCH_CONFIG_VALUE}
+        "${${PJSON_BENCH_CONFIG_VALUE}}")
+    string(REPLACE "\"" "\\\"" ${PJSON_BENCH_CONFIG_VALUE}
+        "${${PJSON_BENCH_CONFIG_VALUE}}")
+endforeach()
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/benchmark_build_config.h.in
+    ${CMAKE_CURRENT_BINARY_DIR}/generated/benchmark_build_config.h
+    @ONLY)
+
 option(PJSON_BENCH_COMPARE "Enable optional third-party JSON benchmark comparisons" OFF)
 set(PJSON_BENCH_DEPS_DIR "${CMAKE_SOURCE_DIR}/.benchmark-deps"
     CACHE PATH "Directory containing pinned benchmark comparison dependencies")
 
-if(MSVC)
-    set(PJSON_BENCH_WARN_FLAGS /W4)
-else()
-    set(PJSON_BENCH_WARN_FLAGS -Wall -Wextra)
-endif()
-
 add_executable(${TARGET_NAME} ${BENCH_SRC_FILES})
 target_link_libraries(${TARGET_NAME} PRIVATE pjson::pjson)
+target_include_directories(${TARGET_NAME} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
 target_compile_features(${TARGET_NAME} PRIVATE cxx_std_11)
 target_compile_options(${TARGET_NAME} PRIVATE ${PJSON_BENCH_WARN_FLAGS})
 

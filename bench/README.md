@@ -34,6 +34,12 @@ Each operation runs against representative generated workloads:
 - `small`: compact session-style object with nested user/event data
 - `medium`: user/session dataset with arrays, nested objects, booleans, and numbers
 - `large`: inventory-style dataset with hundreds of nested records and repeated arrays
+- `wide-object`: 2,048 sibling members, isolating object lookup/iteration overhead
+- `large-array`: 8,192 integer elements in one flat array
+- `string-heavy`: 1,024 long, mostly unescaped UTF-8 strings
+- `escape-heavy`: 1,024 strings containing quotes, backslashes, controls, and UTF-8
+- `integer-heavy`: 8,192 varied signed integers
+- `floating-heavy`: 8,192 fractional values across small and large magnitudes
 
 The harness adapts iteration counts so each measurement runs long enough to
 produce stable timings, then records six timed samples. Comparison output is
@@ -104,6 +110,39 @@ The benchmark binary also accepts direct inputs:
 Unreadable or invalid JSON inputs are skipped with a warning so the suite still
 runs on the remaining workloads.
 
+### Machine-readable results
+
+Write the same run as a versioned JSON artifact with either interface:
+
+```bash
+./build.sh --bench --release-only --bench-json out/benchmark.json
+./out/release/bin/pjsonbench --json out/benchmark.json
+```
+
+`--json -` emits only JSON on stdout; progress goes to stderr. The report records:
+
+- the pjson version, configure-time Git commit, and dirty status;
+- compiler identity/version, build type, effective CMake and target flags, and
+  C++ language level;
+- operating system, version, architecture, allocator disclosure, and an optional
+  environment label;
+- the timing methodology, workload origins/sizes, implementation versions, and
+  raw nanosecond/throughput results.
+
+For controlled runners, supply labels that CMake cannot discover portably:
+
+```bash
+PJSON_BENCH_ENVIRONMENT=linux-perf-runner-01 \
+PJSON_BENCH_CPU='AMD EPYC 7B13' \
+PJSON_BENCH_ALLOCATOR='glibc malloc 2.39' \
+./build.sh --bench --release-only --bench-json out/benchmark.json
+```
+
+GitHub Actions retains baseline and comparison JSON reports for 30 days. Those
+jobs use shared hosted runners, so their values are diagnostic artifacts rather
+than pass/fail gates. A downstream controlled-runner job can compare
+`median_ns` against a release artifact and report an agreed per-case threshold.
+
 ### Output
 
 The report is plain text and intended for direct, case-by-case comparison. For
@@ -156,3 +195,10 @@ The suite does not impose pass/fail thresholds because benchmark numbers are
 sensitive to machine load, CPU scaling, allocator behavior, and backend-specific
 parser strategies. Record results from comparable Release builds on the same
 machine when tracking regressions.
+
+The requirements also mention move latency, allocation counts, peak resident
+memory, object/binary size, and build time. They are intentionally not folded
+into this timing table: moving a `pjson` mostly transfers its small implementation
+handle and is timer-overhead-sensitive, while the other metrics require allocator,
+OS, or build-system instrumentation. Report them separately when a controlled
+runner and measurement protocol are available.

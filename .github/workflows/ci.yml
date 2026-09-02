@@ -228,7 +228,17 @@ jobs:
 
       - name: Build and run baseline benchmarks
         shell: bash
-        run: ./build.sh --clean --bench --release-only --auto
+        env:
+          PJSON_BENCH_ENVIRONMENT: github-hosted-ubuntu-latest
+        run: ./build.sh --clean --bench --release-only --auto --bench-json out/benchmark-baseline.json
+
+      - name: Retain baseline benchmark report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: benchmark-baseline-${{ github.sha }}
+          path: out/benchmark-baseline.json
+          if-no-files-found: error
+          retention-days: 30
 
   benchmark-compare:
     name: Benchmark comparison smoke test
@@ -244,7 +254,17 @@ jobs:
 
       - name: Build and run comparison benchmarks
         shell: bash
-        run: ./build.sh --clean --bench-compare --release-only --auto
+        env:
+          PJSON_BENCH_ENVIRONMENT: github-hosted-ubuntu-latest
+        run: ./build.sh --clean --bench-compare --release-only --auto --bench-json out/benchmark-compare.json
+
+      - name: Retain comparison benchmark report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: benchmark-compare-${{ github.sha }}
+          path: out/benchmark-compare.json
+          if-no-files-found: error
+          retention-days: 30
 
   conformance:
     name: Conformance corpus

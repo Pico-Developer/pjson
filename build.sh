@@ -39,6 +39,8 @@
 #   ./build.sh --tidy         Run clang-tidy static analysis (fails on findings)
 #   ./build.sh --bench-input PATH
 #                             Add an extra JSON file for benchmark coverage
+#   ./build.sh --bench-json PATH
+#                             Write machine-readable benchmark results
 #   ./build.sh --auto         Never prompt; auto-install/download dependencies
 #
 # Flags combine freely. Missing tools and optional JSON/JSON-Schema conformance
@@ -77,6 +79,7 @@ Usage: ./build.sh [flags]
   --bench         Build, then run the Release benchmark suite
   --bench-compare Build, then run the Release benchmark comparison suite
   --bench-input   Add an extra JSON file to the benchmark corpus (repeatable)
+  --bench-json    Write a versioned JSON benchmark report to PATH
   --fuzz          Build libFuzzer targets and run bounded corpus smoke tests
   --docs          Build and validate the generated API reference
   --package       Run static/shared install and pkg-config consumer smoke tests
@@ -125,6 +128,7 @@ AUTO=0
 RELEASE_ONLY=0
 DEBUG_ONLY=0
 BENCH_INPUTS=()
+BENCH_JSON=""
 
 # No flags at all is a friendly shortcut for --all (do everything).
 if [ "$#" -eq 0 ]; then
@@ -159,6 +163,23 @@ while [ "$#" -gt 0 ]; do
             ;;
         --bench-input=*)
             BENCH_INPUTS+=("${1#--bench-input=}")
+            ;;
+        --bench-json)
+            shift
+            if [ "$#" -eq 0 ]; then
+                echo "Missing value for --bench-json" >&2
+                usage >&2
+                exit 2
+            fi
+            BENCH_JSON="$1"
+            ;;
+        --bench-json=*)
+            BENCH_JSON="${1#--bench-json=}"
+            if [ -z "${BENCH_JSON}" ]; then
+                echo "Missing value for --bench-json" >&2
+                usage >&2
+                exit 2
+            fi
             ;;
         --auto|--yes|-y) AUTO=1 ;;
         -h|--help)      usage; exit 0 ;;
@@ -758,6 +779,9 @@ if [ "${DO_BENCH}" -eq 1 ]; then
     fi
     if [ "${DO_BENCH_COMPARE}" -eq 1 ]; then
         BENCH_ARGS+=(--compare)
+    fi
+    if [ -n "${BENCH_JSON}" ]; then
+        BENCH_ARGS+=(--json "${BENCH_JSON}")
     fi
 
     echo ">> Running benchmarks (Release)"

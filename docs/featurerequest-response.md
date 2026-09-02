@@ -278,12 +278,20 @@ Re-verified by `tests_pointer_patch.cpp`.
 
 ## 10. P2 performance
 
-### PJSON-PERF-001/002/003 — Deferred
-The comparative benchmark harness (`bench/`) and methodology already exist. The
-broader per-workload matrix, regression tracking on controlled runners, and the
-"avoid avoidable work" audit are performance projects deferred to a follow-up so
-this pass could keep correctness gates as the priority. The new unsigned path
-and traversal API were written to avoid extra allocations/copies.
+### PJSON-PERF-001/002/003 — Partially satisfied; enforcement deliberately deferred
+The benchmark now separately covers small/medium/large mixed documents, wide
+objects, large arrays, string-heavy, escape-heavy, integer-heavy, floating-heavy,
+and caller-supplied inputs. `--json`/`--bench-json` emits a versioned report with
+source, compiler, flags, target, allocator disclosure, methodology, workload, and
+raw-result metadata. CI retains baseline and cross-library reports for 30 days.
+
+Hosted GitHub runners are not controlled performance machines, so these jobs do
+not enforce universal timing thresholds. A stable runner and agreed per-case
+baseline are prerequisites for a credible gate. Move timing, allocation counts,
+peak RSS, binary/object size, and build-time measurements also remain separate
+instrumentation projects rather than being mislabeled as operation latency. The
+new unsigned path and traversal API avoid extra allocations/copies; further
+PJSON-PERF-002 work should follow profiles rather than speculative redesign.
 
 ## 11. P2 build, packaging, portability
 

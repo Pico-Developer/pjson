@@ -1043,9 +1043,9 @@ Status legend: [x] done, [~] partial (see `docs/featurerequest-response.md`),
 - [x] PJSON-EXT-001 — JSON Pointer conformance
 - [x] PJSON-EXT-002 — JSON Patch conformance
 - [x] PJSON-EXT-003 — JSON Merge Patch conformance
-- [ ] PJSON-PERF-001 — Maintain representative benchmarks
+- [~] PJSON-PERF-001 — Maintain representative benchmarks
 - [~] PJSON-PERF-002 — Avoid avoidable work in common DOM operations
-- [ ] PJSON-PERF-003 — Track regressions without overclaiming
+- [~] PJSON-PERF-003 — Track regressions without overclaiming
 - [x] PJSON-BUILD-001 — Be a well-behaved CMake subproject
 - [x] PJSON-BUILD-002 — Support static and shared consumption correctly
 - [x] PJSON-BUILD-003 — Publish immutable package inputs

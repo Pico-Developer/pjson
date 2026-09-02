@@ -350,6 +350,24 @@ tracked. Schema validation is external to `pjson`, and stateless value/numeric,
 format, and URI helpers now use focused private translation units behind the one
 public `pjson_schema.h` surface.
 
+A conventional per-node `Impl*` was evaluated and rejected. It would add another
+allocation and indirection to every value (including scalar roots and every child),
+complicate the runtime allocator and allocation-failure contracts, and optimize for
+ABI stability that pjson explicitly does not promise. The existing `pjsonImpl` keeps
+private algorithms out of the public API without that cost. The two small inline
+ownership fields are not redundant: every node has `_allocator`, while only
+allocator-created outer node objects set `_allocatorOwnedNode`; `_disposeNext` is a
+temporary allocation-free destruction work-list link, not persistent parent state.
+A parent link would require mutation-wide maintenance and would not itself provide
+allocation-free deep teardown.
+
+Further DOM/SAX unification and stateful schema-dispatch splitting were also reviewed
+and deliberately left incremental. The parser fronts have different streaming,
+callback, and ownership concerns, while schema families share budgets, annotations,
+reference cycles, and dynamic scope. Numeric conversion and stateless schema helpers
+are already shared; broader movement should follow a concrete defect/profile and keep
+the differential and official suites green after each small step.
+
 ## 15. P3 optional enhancements — Deferred
 Insertion-order object storage, big-integer/decimal types, `string_view`
 overloads, JSON Lines helpers, canonical JSON, and a pull-parser cursor remain

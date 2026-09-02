@@ -856,9 +856,9 @@ namespace ByteDance {
 
     private:
         //== Internal helpers ================================================
-        // The parser, schema validator, encoding routines, and every operation
-        // that needs to touch the data members below live in pjson.cpp as the
-        // pjsonImpl helper struct, so this header stays declaration-only.
+        // Parser, encoding, ownership, and other DOM operations that need to
+        // touch the data members below live behind the pjsonImpl helper. Schema
+        // validation is deliberately separate and uses only the public API.
         // pjsonImpl is a friend so it can reach the storage union directly; no
         // instance helper methods are declared here.
         friend struct pjsonImpl;

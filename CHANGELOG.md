@@ -53,10 +53,10 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases follow
   default dialect, rejects unsupported dialects and required vocabularies, and
   exposes `isSchemaValid()`, `schemaErrors()`, and `dialect()`. Schema errors are
   categorized as `SchemaCompilation` versus `InstanceValidation`.
-- Added a pinned, manifest-driven Draft 2020-12 conformance gate. After the
-  reference and unevaluated-keyword work below, 1,287 supported cases run; four
-  groups (10 cases) and one two-case meta-schema file are explicitly skipped
-  with reasons so coverage cannot silently shrink.
+- Added a pinned, manifest-driven Draft 2020-12 conformance gate. It now
+  explicitly accounts for all 80 pinned files, runs 1,349 applicable cases
+  across 396 groups, and records every selected-group and whole-file deferral.
+  A bidirectional manifest check prevents corpus additions from disappearing.
 - Added `$id` resource bases, `$anchor`, `$dynamicAnchor`, `$ref`, `$dynamicRef`,
   and an explicit function-pointer resolver. pjson performs no implicit I/O;
   resolution is bounded by reference, document, byte, work, and depth limits.
@@ -66,7 +66,15 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases follow
 - Added Draft 2020-12 evaluation-annotation propagation and enforcement for
   `unevaluatedItems` and `unevaluatedProperties` across references, dynamic
   references, combinators, conditionals, `contains`, and container applicators.
-  The official gate now executes 1,287 cases across 378 groups.
+  The official gate now executes 1,349 cases across 396 groups.
+- Published one versioned pjson 2.0 behavioral contract consolidating ownership,
+  parsing, numeric, mutation, invalidation, allocator, thread-safety, error, and
+  standards guarantees.
+- Expanded benchmarks with wide-object, large-array, string-heavy, escape-heavy,
+  integer-heavy, and floating-heavy workloads. Added versioned JSON reports with
+  source/build/environment/methodology metadata and advisory CI artifacts.
+- Aligned SAX null-span diagnostics with DOM parsing by reporting
+  `ParseError::InvalidArgument`.
 - Moved pJsonSchemaValidator storage behind a private implementation pointer;
   schemas are copied to the default allocator, removing dependence on the
   caller's schema allocator lifetime.

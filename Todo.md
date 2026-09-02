@@ -115,6 +115,19 @@ assertion suites also require vocabulary-driven activation; several individual
 format implementations are intentionally absent. Until those gaps land, docs must
 keep saying "documented subset" and must not claim general 2020-12 conformance.
 
+**Validated implementation direction:** vocabulary activation must be stored per
+compiled schema resource, because external resources can select different
+meta-schemas. Bundle/pin the official 2020-12 meta-schema resources and apply a
+vocabulary mask during compilation/validation; do not special-case the handful of
+current fixtures. For regex, a standalone SRELL 2026.06 probe passed all 74 optional
+ECMAScript pattern cases, including Unicode properties. Adoption still requires a
+pinned BSD-2-Clause vendoring/update policy, integration of its roughly 900 KiB
+header/data footprint, explicit rejection of its nonstandard inline-flag extensions
+for `format: regex`, cross-platform verification, and proof that its internal work
+limit plus pjson's safe-mode policy meet PJSON-SEC-004. Ambient ICU, PCRE2, and RE2
+are not substitutes: they either break portability/dependency-free builds or do not
+implement the required ECMAScript language.
+
 ### [~] PERF-BASELINE — Controlled regression policy and auxiliary metrics
 
 The representative matrix and versioned machine-readable results are complete:
@@ -146,6 +159,12 @@ behind the existing buffer/stream cursors and DOM/event sinks. Preserve error
 offsets, duplicate-key policies, resource budgets, streaming behavior, and the
 DOM/SAX differential regression suite.
 
+**Current disposition:** do not perform a wholesale rewrite. SAX has two cursor
+types and callback/cancellation semantics while DOM has allocator-bound ownership
+and transactional attachment. Forcing both through one state machine would replace
+two tested paths at once. Continue extracting only independently testable lexical
+operations when a defect or measured maintenance problem justifies the churn.
+
 ### [ ] MAINT-2 — Further split the stateful schema dispatcher
 
 Stateless value/numeric/regex, format, and URI helpers now live in focused
@@ -154,6 +173,26 @@ keywords, containers, combinators, annotations, and shared budgets. Extracting
 those stateful families requires a shared private context interface and should
 be done only with the official schema and resource-budget suites green after
 each step.
+
+**Current disposition:** no further split until the per-resource dialect/vocabulary
+context is designed. Moving code before that boundary exists would spread the same
+mutable budget, diagnostic, annotation, reference-cycle, and dynamic-scope state
+across more files without reducing coupling.
+
+### [~] MAINT-3 — Keep implementation details out of the public DOM API
+
+Private algorithms already live behind the non-installed `pjsonImpl` friend, but
+the compact per-node allocator/type/storage fields remain inline. Replacing them
+with a conventional owning `Impl*` is deliberately rejected for now: it adds an
+allocation and pointer indirection to every scalar and child, complicates allocator
+failure/destruction invariants, and buys ABI stability the project explicitly does
+not promise. `_allocatorOwnedNode` cannot be inferred from `_allocator`: stack roots
+and allocator-created children both have an allocator, but only the latter's outer
+object is allocator-owned. `_disposeNext` is a transient intrusive work-list link
+that makes deep destruction allocation-free; a parent pointer would not replace that
+requirement and would add reparenting bookkeeping to all mutations. Reconsider only
+with a measured ABI requirement or a representation design that avoids per-node
+allocation regressions.
 
 ### [ ] FEAT-3 — Preserve object key insertion order
 

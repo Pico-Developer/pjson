@@ -38,10 +38,11 @@
 #include <vector>
 
 //===----------------------------------------------------------------------===//
-// pjsonImpl — all parsing, schema-validation, and encoding helpers.
+// pjsonImpl — private DOM, parsing, ownership, and encoding helpers.
 //
-// Keeping implementation-only operations in one friend struct leaves pjson.h
-// declaration-focused while allowing these helpers to maintain DOM invariants.
+// Keeping implementation-only DOM operations in one friend struct leaves
+// pjson.h declaration-focused while allowing these helpers to maintain DOM
+// invariants. pJsonSchemaValidator does not include this header.
 //===----------------------------------------------------------------------===//
 struct ByteDance::pjsonImpl {
     // Public APIs deliberately hide the owning container representation.

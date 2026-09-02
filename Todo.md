@@ -21,7 +21,7 @@ duplicate detection, structured error codes) shipped in 2.0.0. See
 `docs/featurerequest-response.md` for the full per-requirement disposition. The
 remaining, larger items are tracked here.
 
-### [ ] SCHEMA-2020 — Complete JSON Schema Draft 2020-12 as a gated module
+### [ ] SCHEMA-2020 — Finish remaining JSON Schema dialect gaps
 
 **What is done:** `if`/`then`/`else`, `prefixItems`,
 `contains`/`minContains`/`maxContains`, `dependentSchemas`, a strict
@@ -32,17 +32,18 @@ that consumes only pjson's public API and is constructed once per schema, and a
 manifest-driven `draft2020-12` conformance gate
 (`schema_official_draft2020_optional`, SCHEMA-006) that runs the pinned
 JSON-Schema-Test-Suite: supported-keyword files run whole and every deferred
-feature is skipped with a concrete reason (measured baseline 924 cases pass /
-90 skipped). An explicit dialect contract (SCHEMA-001) names pjson's subset
+feature is skipped with a concrete reason. An explicit dialect contract
+(SCHEMA-001) names pjson's subset
 dialect and vocabulary, honors root `$schema`, rejects unsupported dialects and
-required vocabularies, and accepts unknown optional vocabularies.
+required vocabularies, and accepts unknown optional vocabularies. SCHEMA-003 and
+SCHEMA-004 now provide `$id`/URI resources, `$anchor`, `$dynamicAnchor`, `$ref`,
+`$dynamicRef`, an explicit resolver with document/byte/work/depth budgets, and
+annotation propagation for `unevaluatedItems`/`unevaluatedProperties`. The
+official Draft 2020-12 gate now runs 1,245 cases across 372 groups.
 
-**What remains (PJSON-SCHEMA-003/004):**
-`$id`/`$anchor`/`$dynamicAnchor`/`$dynamicRef` with URI base resolution,
-`unevaluatedItems`/`unevaluatedProperties`, full standard-vocabulary/meta-schema
-loading, and an external resolver callback
-with cycle/byte/work budgets for remote references. As each lands, flip its
-skipped groups in the draft2020-12 manifest to enabled. Until all land, docs
+**What remains:** full standard-vocabulary/meta-schema loading, ECMA-262 Unicode
+property escapes, and the dialect's annotation-only default for `format`. The
+remaining skipped official groups document these gaps. Until they land, docs
 must keep saying "documented subset" and must not claim general 2020-12
 conformance.
 

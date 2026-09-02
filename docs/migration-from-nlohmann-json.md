@@ -317,8 +317,10 @@ Unknown or unsupported schema keywords are ignored and therefore impose no
 constraint. This is a compatibility hazard: a typo or unsupported security
 rule can make validation less restrictive without producing an error. Audit
 schemas against the table above and retain an external validator when another
-vocabulary is required. Remote references are unsupported; `$ref` resolves
-only local URI-fragment JSON Pointers.
+vocabulary is required. `$ref` resolves URI resources, pointers, and anchors;
+external documents are available only through an explicit resolver callback, so
+pjson never performs network I/O. `$dynamicRef`/`$dynamicAnchor` and both
+`unevaluated*` keywords are supported by the modern subset option.
 
 `minLength` and `maxLength` count Unicode code points, not UTF-8 bytes.
 `pattern` uses ECMAScript regular-expression syntax with search semantics. The

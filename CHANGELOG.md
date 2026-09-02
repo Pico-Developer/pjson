@@ -28,9 +28,21 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases follow
   default dialect, rejects unsupported dialects and required vocabularies, and
   exposes `isSchemaValid()`, `schemaErrors()`, and `dialect()`. Schema errors are
   categorized as `SchemaCompilation` versus `InstanceValidation`.
-- Added a pinned, manifest-driven Draft 2020-12 conformance gate: 924 supported
-  cases run today; 90 cases requiring deferred features are explicitly skipped
-  with reasons so coverage cannot silently shrink.
+- Added a pinned, manifest-driven Draft 2020-12 conformance gate. After the
+  reference and unevaluated-keyword work below, 1,245 supported cases run and
+  52 cases are explicitly skipped with reasons so coverage cannot silently shrink.
+- Added `$id` resource bases, `$anchor`, `$dynamicAnchor`, `$ref`, `$dynamicRef`,
+  and an explicit function-pointer resolver. pjson performs no implicit I/O;
+  resolution is bounded by reference, document, byte, work, and depth limits.
+  `Options::modernSubset()` enables modern `$ref` sibling semantics while the
+  default retains the prior Draft 7 behavior.
+- Added Draft 2020-12 evaluation-annotation propagation and enforcement for
+  `unevaluatedItems` and `unevaluatedProperties` across references, dynamic
+  references, combinators, conditionals, `contains`, and container applicators.
+  The official gate now executes 1,245 cases across 372 groups.
+- Moved pJsonSchemaValidator storage behind a private implementation pointer;
+  schemas are copied to the default allocator, removing dependence on the
+  caller's schema allocator lifetime.
 
 ## [2.0.0] - 2026-08-31
 

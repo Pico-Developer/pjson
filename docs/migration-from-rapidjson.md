@@ -304,7 +304,10 @@ Unknown or unsupported schema keywords are ignored and therefore are not
 enforced. Treat this as a warning, not forward-compatible validation: typos and
 unsupported security constraints can silently weaken a schema. Audit every
 schema against this table and retain RapidJSON or another validator when the
-application depends on any other vocabulary. Remote references are unsupported.
+application depends on any other vocabulary. URI resources, anchors, dynamic
+references, and `unevaluated*` are available through the modern subset option.
+External documents require an explicit resolver callback; pjson never performs
+network I/O.
 
 `minLength` and `maxLength` count Unicode code points rather than UTF-8 bytes.
 `pattern` uses ECMAScript syntax and search semantics, but the default policy is

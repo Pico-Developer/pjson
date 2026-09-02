@@ -28,6 +28,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <deque>
 #include <exception>
 #include <limits>
 #include <map>
@@ -306,10 +307,67 @@ namespace {
                 : state(Uninitialized) {}
     };
 
+    struct SchemaResource {
+        const pjson* root;
+        std::string baseUri;
+        SchemaResource()
+                : root(nullptr) {}
+        SchemaResource(const pjson* aRoot, const std::string& aBase)
+                : root(aRoot)
+                , baseUri(aBase) {}
+    };
+
+    struct SchemaTarget {
+        const pjson* schema;
+        const pjson* resourceRoot;
+        std::string baseUri;
+        SchemaTarget()
+                : schema(nullptr)
+                , resourceRoot(nullptr) {}
+        SchemaTarget(const pjson* aSchema, const pjson* aResourceRoot,
+                     const std::string& aBase)
+                : schema(aSchema)
+                , resourceRoot(aResourceRoot)
+                , baseUri(aBase) {}
+    };
+
+    struct ResolvedDocument {
+        std::string requestedUri;
+        pjson schema;
+        explicit ResolvedDocument(const std::string& aUri)
+                : requestedUri(aUri) {}
+    };
+
+    struct CompiledSchemaIndex {
+        std::deque<ResolvedDocument> documents;
+        std::map<std::string, SchemaResource> resources;
+        std::map<std::string, SchemaTarget> anchors;
+        std::map<std::string, SchemaTarget> dynamicAnchors;
+        std::map<const pjson*, SchemaTarget> nodeTargets;
+        std::set<std::string> pendingDocuments;
+        size_t resolvedBytes;
+        size_t workUsed;
+
+        CompiledSchemaIndex()
+                : resolvedBytes(0)
+                , workUsed(0) {}
+    };
+
+    struct SchemaAnnotations {
+        std::set<std::string> properties;
+        std::set<size_t> items;
+
+        void merge(const SchemaAnnotations& other) {
+            properties.insert(other.properties.begin(), other.properties.end());
+            items.insert(other.items.begin(), other.items.end());
+        }
+    };
+
     // Mutable limits and recursion state shared by one validation run.
     struct ValidationCtx {
         const pjson& rootSchema;
         const Options& options;
+        const CompiledSchemaIndex& compiled;
         std::vector<SchemaError>* publicErrors;
         size_t depth;
         size_t refResolutions;
@@ -319,11 +377,17 @@ namespace {
         bool aborted;
         std::vector<std::pair<const pjson*, const pjson*>> activeRefs;
         std::map<std::string, RegexCacheEntry> regexCache;
+        // Resource bases encountered along the reference evaluation path,
+        // outermost first. $dynamicRef searches these resources for a matching
+        // dynamic anchor after its initial static resolution.
+        std::vector<SchemaTarget> dynamicScope;
 
         ValidationCtx(const pjson& aRootSchema, const Options& aOptions,
+                      const CompiledSchemaIndex& aCompiled,
                       std::vector<SchemaError>* aPublicErrors)
                 : rootSchema(aRootSchema)
                 , options(aOptions)
+                , compiled(aCompiled)
                 , publicErrors(aPublicErrors)
                 , depth(0)
                 , refResolutions(0)
@@ -771,6 +835,123 @@ namespace {
         return pointer.empty() || pointer[0] == '/';
     }
 
+    bool uriHasScheme(const std::string& uri) {
+        if (uri.empty() || !((uri[0] >= 'A' && uri[0] <= 'Z') ||
+                             (uri[0] >= 'a' && uri[0] <= 'z')))
+            return false;
+        for (size_t i = 1; i < uri.size(); ++i) {
+            const char c = uri[i];
+            if (c == ':')
+                return true;
+            if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+                  (c >= '0' && c <= '9') || c == '+' || c == '-' || c == '.'))
+                return false;
+        }
+        return false;
+    }
+
+    bool validAnchorName(const std::string& name) {
+        if (name.empty() || !((name[0] >= 'A' && name[0] <= 'Z') ||
+                              (name[0] >= 'a' && name[0] <= 'z') || name[0] == '_'))
+            return false;
+        for (size_t i = 1; i < name.size(); ++i) {
+            const char c = name[i];
+            if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+                  (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.' || c == ':'))
+                return false;
+        }
+        return true;
+    }
+
+    std::string stripFragment(const std::string& uri) {
+        const size_t hash = uri.find('#');
+        return hash == std::string::npos ? uri : uri.substr(0, hash);
+    }
+
+    void splitReference(const std::string& uri, std::string& document, std::string& fragment) {
+        const size_t hash = uri.find('#');
+        document = hash == std::string::npos ? uri : uri.substr(0, hash);
+        fragment = hash == std::string::npos ? std::string() : uri.substr(hash + 1);
+    }
+
+    std::string normalizePath(const std::string& path) {
+        const bool absolute = !path.empty() && path[0] == '/';
+        std::vector<std::string> segments;
+        size_t begin = 0;
+        while (begin <= path.size()) {
+            const size_t slash = path.find('/', begin);
+            const std::string segment =
+                path.substr(begin, slash == std::string::npos ? std::string::npos : slash - begin);
+            if (segment.empty() || segment == ".") {
+                // Preserve only the leading slash through `absolute`.
+            } else if (segment == "..") {
+                if (!segments.empty())
+                    segments.pop_back();
+            } else {
+                segments.push_back(segment);
+            }
+            if (slash == std::string::npos)
+                break;
+            begin = slash + 1;
+        }
+        std::string result = absolute ? "/" : std::string();
+        for (size_t i = 0; i < segments.size(); ++i) {
+            if (!result.empty() && result[result.size() - 1] != '/')
+                result += '/';
+            result += segments[i];
+        }
+        if (!path.empty() && path[path.size() - 1] == '/' &&
+            (result.empty() || result[result.size() - 1] != '/'))
+            result += '/';
+        return result;
+    }
+
+    void splitPathSuffix(const std::string& value, std::string& path, std::string& suffix) {
+        const size_t marker = value.find_first_of("?#");
+        path = marker == std::string::npos ? value : value.substr(0, marker);
+        suffix = marker == std::string::npos ? std::string() : value.substr(marker);
+    }
+
+    // RFC 3986 reference resolution sufficient for hierarchical HTTP/file URIs
+    // and opaque URNs used by the official suite. Query strings are preserved.
+    std::string resolveUri(const std::string& baseWithFragment, const std::string& reference) {
+        const std::string base = stripFragment(baseWithFragment);
+        if (reference.empty())
+            return base;
+        if (uriHasScheme(reference))
+            return reference;
+        if (reference[0] == '#')
+            return base + reference;
+
+        const size_t colon = base.find(':');
+        if (colon == std::string::npos)
+            return normalizePath(reference);
+        const std::string scheme = base.substr(0, colon + 1);
+        const std::string remainder = base.substr(colon + 1);
+        if (remainder.compare(0, 2, "//") != 0)
+            return scheme + reference; // Opaque URI (for example urn:).
+
+        const size_t authorityEnd = remainder.find('/', 2);
+        const std::string authority = authorityEnd == std::string::npos
+                                          ? remainder
+                                          : remainder.substr(0, authorityEnd);
+        const std::string basePath = authorityEnd == std::string::npos
+                                         ? std::string("/")
+                                         : remainder.substr(authorityEnd);
+        std::string referencePath;
+        std::string referenceSuffix;
+        splitPathSuffix(reference, referencePath, referenceSuffix);
+        std::string cleanBasePath;
+        std::string ignoredSuffix;
+        splitPathSuffix(basePath, cleanBasePath, ignoredSuffix);
+        if (!referencePath.empty() && referencePath[0] == '/')
+            return scheme + authority + normalizePath(referencePath) + referenceSuffix;
+        const size_t slash = cleanBasePath.rfind('/');
+        const std::string directory =
+            slash == std::string::npos ? std::string() : cleanBasePath.substr(0, slash + 1);
+        return scheme + authority + normalizePath(directory + referencePath) + referenceSuffix;
+    }
+
     void bestEffortSchemaError(std::vector<SchemaError>& errors, const std::string& path,
                                const std::string& message) noexcept {
         try {
@@ -810,6 +991,20 @@ namespace {
         }
     };
 
+    struct DynamicScopeGuard {
+        std::vector<SchemaTarget>& scope;
+        const size_t initialSize;
+        explicit DynamicScopeGuard(std::vector<SchemaTarget>& aScope)
+                : scope(aScope)
+                , initialSize(aScope.size()) {}
+        void pushResource(const SchemaTarget& target) {
+            if (scope.empty() || scope.back().baseUri != target.baseUri ||
+                scope.back().resourceRoot != target.resourceRoot)
+                scope.push_back(target);
+        }
+        ~DynamicScopeGuard() { scope.resize(initialSize); }
+    };
+
     void failValidationBudget(ValidationCtx& ctx, ErrorSink& errors, const std::string& path,
                               const std::string& message) {
         if (ctx.aborted)
@@ -838,6 +1033,15 @@ namespace {
 
     size_t validationWorkLimit(const Options& options) {
         return options.maxValidationWork == 0 ? size_t(1000000) : options.maxValidationWork;
+    }
+
+    size_t resolvedDocumentLimit(const Options& options) {
+        return options.maxResolvedDocuments == 0 ? size_t(32) : options.maxResolvedDocuments;
+    }
+
+    size_t resolvedByteLimit(const Options& options) {
+        return options.maxResolvedBytes == 0 ? size_t(16) * 1024 * 1024
+                                             : options.maxResolvedBytes;
     }
 
     bool chargeValidationWork(ValidationCtx& ctx, ErrorSink& errors, const std::string& path,
@@ -934,8 +1138,10 @@ namespace {
             "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf", "minLength",
             "maxLength", "pattern", "format", "allOf", "anyOf", "oneOf", "not", "if", "then", "else",
             // Metadata/identifier keywords impose no constraint and are always safe.
-            "$schema", "$id", "$anchor", "$defs", "$comment", "definitions", "title", "description",
+            "$schema", "$id", "$anchor", "$dynamicAnchor", "$dynamicRef",
+            "$vocabulary", "$defs", "$comment", "definitions", "title", "description",
             "default", "examples", "deprecated", "readOnly", "writeOnly",
+            "unevaluatedItems", "unevaluatedProperties",
         };
         for (const char* name : kSupported) {
             if (keyword == name)
@@ -946,8 +1152,7 @@ namespace {
 
     bool isStandardSchemaKeyword(const std::string& keyword) {
         static const char* const kStandardUnsupported[] = {
-            "$dynamicRef",      "$dynamicAnchor",   "$recursiveRef",
-            "$recursiveAnchor", "unevaluatedItems", "unevaluatedProperties", "additionalItems",
+            "$recursiveRef",    "$recursiveAnchor", "additionalItems",
             "contentEncoding",  "contentMediaType", "contentSchema",
         };
         for (const char* name : kStandardUnsupported) {
@@ -1025,9 +1230,260 @@ namespace {
         }
     }
 
+    void compileSchemaResource(const pjson& node, const pjson* resourceRoot,
+                               const std::string& inheritedBase, CompiledSchemaIndex& index,
+                               std::vector<SchemaError>& errors, const Options& options,
+                               const std::string& path) {
+        const size_t workLimit = validationWorkLimit(options);
+        if (index.workUsed >= workLimit) {
+            addCompilationError(errors, path, "schema compilation work budget exceeded");
+            return;
+        }
+        ++index.workUsed;
+        const pjson* currentResource = resourceRoot;
+        std::string currentBase = inheritedBase;
+        if (node.isObject()) {
+            const pjson* id = node.find("$id");
+            if (id != nullptr && !id->isString()) {
+                addCompilationError(errors, pointerAppend(path, "$id"),
+                                    "$id must be a string URI-reference");
+                return;
+            }
+            if (id != nullptr) {
+                currentBase = stripFragment(resolveUri(inheritedBase, strOf(*id)));
+                currentResource = &node;
+            }
+            if (!currentBase.empty())
+                index.resources[currentBase] = SchemaResource(currentResource, currentBase);
+            const SchemaTarget nodeTarget(&node, currentResource, currentBase);
+            index.nodeTargets[&node] = nodeTarget;
+
+            const pjson* anchor = node.find("$anchor");
+            if (anchor != nullptr &&
+                (!anchor->isString() || !validAnchorName(strOf(*anchor)))) {
+                addCompilationError(errors, pointerAppend(path, "$anchor"),
+                                    "$anchor must be a valid anchor name");
+                return;
+            }
+            if (anchor != nullptr) {
+                const std::string name = strOf(*anchor);
+                index.anchors[currentBase + "#" + name] = nodeTarget;
+            }
+            const pjson* dynamicAnchor = node.find("$dynamicAnchor");
+            if (dynamicAnchor != nullptr &&
+                (!dynamicAnchor->isString() || !validAnchorName(strOf(*dynamicAnchor)))) {
+                addCompilationError(errors, pointerAppend(path, "$dynamicAnchor"),
+                                    "$dynamicAnchor must be a valid anchor name");
+                return;
+            }
+            if (dynamicAnchor != nullptr) {
+                const std::string name = strOf(*dynamicAnchor);
+                index.dynamicAnchors[currentBase + "#" + name] = nodeTarget;
+                index.anchors[currentBase + "#" + name] = nodeTarget;
+            }
+
+            for (const char* keyword : {"$ref", "$dynamicRef"}) {
+                const pjson* reference = node.find(keyword);
+                if (reference == nullptr)
+                    continue;
+                if (!reference->isString()) {
+                    addCompilationError(errors, pointerAppend(path, keyword),
+                                        std::string(keyword) +
+                                            " must be a string URI-reference");
+                    continue;
+                }
+                std::string document;
+                std::string fragment;
+                splitReference(resolveUri(currentBase, strOf(*reference)), document, fragment);
+                if (!document.empty())
+                    index.pendingDocuments.insert(document);
+            }
+
+            // Traverse only positions whose values are schemas. Objects stored
+            // in const/default/examples or application annotations are instance
+            // data and must never create resources or anchors.
+            for (const char* keyword : {"additionalProperties", "unevaluatedProperties",
+                                        "unevaluatedItems", "items", "contains",
+                                        "propertyNames", "not", "if", "then", "else"}) {
+                const pjson* child = node.find(keyword);
+                if (child != nullptr && (child->isObject() || child->isBool()))
+                    compileSchemaResource(*child, currentResource, currentBase, index, errors,
+                                          options, pointerAppend(path, keyword));
+            }
+            for (const char* keyword : {"$defs", "definitions", "properties",
+                                        "patternProperties", "dependentSchemas"}) {
+                const pjson* container = node.find(keyword);
+                if (container == nullptr || !container->isObject())
+                    continue;
+                const std::vector<std::string> names = container->keys();
+                for (size_t i = 0; i < names.size(); ++i) {
+                    const pjson* child = container->find(names[i]);
+                    if (child != nullptr)
+                        compileSchemaResource(*child, currentResource, currentBase, index, errors,
+                                              options, pointerAppend(pointerAppend(path, keyword),
+                                                                     names[i]));
+                }
+            }
+            // Legacy dependencies may contain either property-name arrays or schemas.
+            if (const pjson* dependencies = node.find("dependencies")) {
+                if (dependencies->isObject()) {
+                    const std::vector<std::string> names = dependencies->keys();
+                    for (size_t i = 0; i < names.size(); ++i) {
+                        const pjson* child = dependencies->find(names[i]);
+                        if (child != nullptr && (child->isObject() || child->isBool()))
+                            compileSchemaResource(
+                                *child, currentResource, currentBase, index, errors, options,
+                                pointerAppend(pointerAppend(path, "dependencies"), names[i]));
+                    }
+                }
+            }
+            for (const char* keyword : {"allOf", "anyOf", "oneOf", "prefixItems"}) {
+                const pjson* array = node.find(keyword);
+                if (array == nullptr || !array->isArray())
+                    continue;
+                for (size_t i = 0; i < array->size(); ++i) {
+                    const pjson* child = array->find(static_cast<int>(i));
+                    if (child != nullptr)
+                        compileSchemaResource(*child, currentResource, currentBase, index, errors,
+                                              options, pointerAppend(pointerAppend(path, keyword),
+                                                                     std::to_string(i)));
+                }
+            }
+            // Draft 7 tuple-form items is an array of schemas.
+            if (const pjson* items = node.find("items")) {
+                if (items->isArray()) {
+                    for (size_t i = 0; i < items->size(); ++i) {
+                        const pjson* child = items->find(static_cast<int>(i));
+                        if (child != nullptr)
+                            compileSchemaResource(
+                                *child, currentResource, currentBase, index, errors, options,
+                                pointerAppend(pointerAppend(path, "items"), std::to_string(i)));
+                    }
+                }
+            }
+        }
+        return;
+    }
+
+    void compileExternalResources(CompiledSchemaIndex& index, const Options& options,
+                                  std::vector<SchemaError>& errors) {
+        while (!index.pendingDocuments.empty()) {
+            const std::string documentUri = *index.pendingDocuments.begin();
+            index.pendingDocuments.erase(index.pendingDocuments.begin());
+            if (index.resources.find(documentUri) != index.resources.end())
+                continue;
+            if (options.resolver == nullptr) {
+                addCompilationError(errors, "",
+                                    "no resolver for external schema: " + documentUri);
+                continue;
+            }
+            if (index.documents.size() >= resolvedDocumentLimit(options)) {
+                addCompilationError(errors, "",
+                                    "schema resolved-document budget exceeded");
+                return;
+            }
+
+            index.documents.push_back(ResolvedDocument(documentUri));
+            ResolvedDocument& loaded = index.documents.back();
+            pjson temporary;
+            if (!options.resolver(documentUri, temporary, options.resolverContext)) {
+                index.documents.pop_back();
+                addCompilationError(errors, "",
+                                    "external schema resolution failed: " + documentUri);
+                continue;
+            }
+            loaded.schema.copyFrom(temporary);
+            const std::string compact = loaded.schema.toString();
+            const size_t limit = resolvedByteLimit(options);
+            if (compact.size() > limit - std::min(index.resolvedBytes, limit)) {
+                index.documents.pop_back();
+                addCompilationError(errors, "", "schema resolved-byte budget exceeded");
+                return;
+            }
+            index.resolvedBytes += compact.size();
+
+            const pjson* root = &loaded.schema;
+            std::string base = documentUri;
+            if (root->isObject()) {
+                const pjson* id = root->find("$id");
+                if (id != nullptr && id->isString())
+                    base = stripFragment(resolveUri(documentUri, strOf(*id)));
+            }
+            index.resources[documentUri] = SchemaResource(root, base);
+            index.resources[base] = SchemaResource(root, base);
+            compileSchemaResource(*root, root, base, index, errors, options, "");
+        }
+    }
+
+    bool resolveSchemaReference(const std::string& reference, const pjson* resourceRoot,
+                                const std::string& baseUri, ValidationCtx& ctx, ErrorSink& errors,
+                                const std::string& path, SchemaTarget& target) {
+        const std::string absolute = resolveUri(baseUri, reference);
+        std::string document;
+        std::string fragment;
+        splitReference(absolute, document, fragment);
+        std::string decodedFragment;
+        if (!fragment.empty()) {
+            if (fragment[0] == '/') {
+                if (!decodeSchemaFragment(fragment, decodedFragment)) {
+                    errors.push_back(SchemaError(path, "malformed schema reference: " + reference));
+                    return false;
+                }
+            } else {
+                if (!decodeSchemaFragment("/" + fragment, decodedFragment)) {
+                    errors.push_back(SchemaError(path, "malformed schema reference: " + reference));
+                    return false;
+                }
+                decodedFragment.erase(0, 1);
+            }
+        }
+
+        if (document.empty())
+            document = stripFragment(baseUri);
+        std::map<std::string, SchemaResource>::const_iterator resource =
+            ctx.compiled.resources.find(document);
+        if (resource == ctx.compiled.resources.end()) {
+            errors.push_back(SchemaError(path, "unresolved compiled schema resource: " + document));
+            return false;
+        }
+
+        const pjson* root = resource->second.root != nullptr ? resource->second.root : resourceRoot;
+        if (fragment.empty()) {
+            target = SchemaTarget(root, root, resource->second.baseUri);
+            return true;
+        }
+        if (fragment[0] != '/') {
+            const std::string anchorKey = document + "#" + decodedFragment;
+            std::map<std::string, SchemaTarget>::const_iterator found =
+                ctx.compiled.anchors.find(anchorKey);
+            if (found == ctx.compiled.anchors.end()) {
+                errors.push_back(SchemaError(path, "unresolved schema anchor: " + absolute));
+                return false;
+            }
+            target = found->second;
+            return true;
+        }
+
+        pjson::PointerError pointerError;
+        const pjson* selected = root->findPointer(decodedFragment, pointerError);
+        if (selected == nullptr) {
+            errors.push_back(SchemaError(path, "unresolved schema reference: " + reference));
+            return false;
+        }
+        std::map<const pjson*, SchemaTarget>::const_iterator indexed =
+            ctx.compiled.nodeTargets.find(selected);
+        target = indexed == ctx.compiled.nodeTargets.end()
+                     ? SchemaTarget(selected, root, resource->second.baseUri)
+                     : indexed->second;
+        return true;
+    }
+
     // Forward declaration: the recursive core.
     bool validateCtx(const pjson& node, const pjson& schema, const std::string& path,
-                     ErrorSink& errors, ValidationCtx& ctx);
+                     ErrorSink& errors, ValidationCtx& ctx,
+                     const pjson* resourceRoot = nullptr,
+                     const std::string& baseUri = std::string(),
+                     SchemaAnnotations* annotations = nullptr);
 
     //===------------------------------------------------------------------===//
     // Budgeted structural equality (public-API traversal)
@@ -1115,7 +1571,11 @@ namespace {
     // Recursive validation core (pure public-API traversal)
     //===------------------------------------------------------------------===//
     bool validateCtx(const pjson& node, const pjson& schema0, const std::string& path,
-                     ErrorSink& errors, ValidationCtx& ctx) {
+                     ErrorSink& errors, ValidationCtx& ctx, const pjson* resourceRoot,
+                     const std::string& baseUri, SchemaAnnotations* annotations) {
+        SchemaAnnotations localAnnotations;
+        SchemaAnnotations& evaluated =
+            annotations == nullptr ? localAnnotations : *annotations;
         if (ctx.aborted)
             return false;
         if (!chargeValidationWork(ctx, errors, path))
@@ -1126,10 +1586,29 @@ namespace {
         }
         DepthGuard depthGuard(ctx);
         ActiveRefGuard activeRefGuard(ctx.activeRefs);
+        DynamicScopeGuard dynamicScopeGuard(ctx.dynamicScope);
         const pjson* currentSchema = &schema0;
+        const pjson* currentResourceRoot = resourceRoot == nullptr ? &ctx.rootSchema : resourceRoot;
+        std::string currentBaseUri = baseUri;
 
-        // Resolve consecutive local references iteratively (stack-safe). A string
-        // $ref object ignores its siblings, matching the draft's reference model.
+        if (currentBaseUri.empty()) {
+            std::map<const pjson*, SchemaTarget>::const_iterator indexed =
+                ctx.compiled.nodeTargets.find(currentSchema);
+            if (indexed != ctx.compiled.nodeTargets.end()) {
+                currentResourceRoot = indexed->second.resourceRoot;
+                currentBaseUri = indexed->second.baseUri;
+            }
+        }
+        std::map<const pjson*, SchemaTarget>::const_iterator initialTarget =
+            ctx.compiled.nodeTargets.find(currentSchema);
+        if (initialTarget != ctx.compiled.nodeTargets.end()) {
+            currentResourceRoot = initialTarget->second.resourceRoot;
+            currentBaseUri = initialTarget->second.baseUri;
+        }
+
+        // Resolve consecutive static references iteratively (stack-safe). In
+        // pjson's subset dialect a string $ref ignores siblings, preserving its
+        // documented draft-07-compatible behavior.
         for (;;) {
             if (currentSchema->isBool()) {
                 if (!boolOf(*currentSchema)) {
@@ -1144,44 +1623,28 @@ namespace {
             const pjson* ref = currentSchema->find("$ref");
             if (ref == nullptr || !ref->isString())
                 break;
+            if (ctx.options.refSiblings)
+                break;
 
             const std::string refText = strOf(*ref);
-            if (!refText.empty() && refText[0] != '#') {
-                errors.push_back(SchemaError(path, "non-local $ref is not supported: " + refText));
-                return false;
-            }
             if (ctx.refResolutions >= validationRefLimit(ctx.options)) {
                 failValidationBudget(ctx, errors, path, "schema $ref resolution budget exceeded");
                 return false;
             }
             ++ctx.refResolutions;
 
-            std::string pointer;
-            const std::string fragment = refText.empty() ? std::string() : refText.substr(1);
-            if (!decodeSchemaFragment(fragment, pointer)) {
-                errors.push_back(SchemaError(path, "malformed local $ref fragment: " + refText));
+            SchemaTarget resolved;
+            if (!resolveSchemaReference(refText, currentResourceRoot, currentBaseUri, ctx, errors,
+                                        path, resolved))
                 return false;
-            }
 
-            pjson::PointerError pointerError;
-            const pjson* target = ctx.rootSchema.findPointer(pointer, pointerError);
-            if (target == nullptr) {
-                const bool malformed = pointerError.code == pjson::PointerError::InvalidSyntax ||
-                                       pointerError.code == pjson::PointerError::InvalidEscape ||
-                                       pointerError.code == pjson::PointerError::InvalidArrayIndex ||
-                                       pointerError.code == pjson::PointerError::AppendTokenNotAllowed;
-                errors.push_back(SchemaError(path, std::string(malformed ? "malformed" : "unresolved") +
-                                                       " local $ref: " + refText));
-                return false;
-            }
-
-            const std::pair<const pjson*, const pjson*> active(&node, target);
+            const std::pair<const pjson*, const pjson*> active(&node, resolved.schema);
             if (std::find(ctx.activeRefs.begin(), ctx.activeRefs.end(), active) !=
                 ctx.activeRefs.end()) {
-                errors.push_back(SchemaError(path, "local $ref cycle detected: " + refText));
+                errors.push_back(SchemaError(path, "schema reference cycle detected: " + refText));
                 return false;
             }
-            activeRefGuard.push(&node, target);
+            activeRefGuard.push(&node, resolved.schema);
 
             if (!chargeValidationWork(ctx, errors, path))
                 return false;
@@ -1190,11 +1653,109 @@ namespace {
                 return false;
             }
             depthGuard.enterResolvedReference();
-            currentSchema = target;
+            currentSchema = resolved.schema;
+            currentResourceRoot = resolved.resourceRoot;
+            currentBaseUri = resolved.baseUri;
         }
 
         const pjson& schema = *currentSchema;
+        std::map<const pjson*, SchemaTarget>::const_iterator resolvedTarget =
+            ctx.compiled.nodeTargets.find(currentSchema);
+        if (resolvedTarget != ctx.compiled.nodeTargets.end()) {
+            currentResourceRoot = resolvedTarget->second.resourceRoot;
+            currentBaseUri = resolvedTarget->second.baseUri;
+        }
         const size_t before = errors.size();
+        dynamicScopeGuard.pushResource(
+            SchemaTarget(currentResourceRoot, currentResourceRoot, currentBaseUri));
+
+        if (ctx.options.refSiblings) {
+            const pjson* ref = schema.find("$ref");
+            if (ref != nullptr && ref->isString()) {
+                if (ctx.refResolutions >= validationRefLimit(ctx.options)) {
+                    failValidationBudget(ctx, errors, path,
+                                         "schema $ref resolution budget exceeded");
+                    return false;
+                }
+                ++ctx.refResolutions;
+                SchemaTarget resolved;
+                const std::string refText = strOf(*ref);
+                if (!resolveSchemaReference(refText, currentResourceRoot, currentBaseUri, ctx,
+                                            errors, path, resolved))
+                    return false;
+                const std::pair<const pjson*, const pjson*> active(&node, resolved.schema);
+                if (std::find(ctx.activeRefs.begin(), ctx.activeRefs.end(), active) !=
+                    ctx.activeRefs.end()) {
+                    errors.push_back(SchemaError(path, "schema reference cycle detected: " + refText));
+                    return false;
+                }
+                activeRefGuard.push(&node, resolved.schema);
+                SchemaAnnotations referenced;
+                const bool referenceValid =
+                    validateCtx(node, *resolved.schema, path, errors, ctx, resolved.resourceRoot,
+                                resolved.baseUri, &referenced);
+                if (referenceValid)
+                    evaluated.merge(referenced);
+                if (ctx.aborted)
+                    return false;
+            }
+        }
+
+        // A dynamic reference first resolves statically. When that target
+        // declares the same dynamic anchor, the outermost matching resource in
+        // the current dynamic scope replaces it, as required by Draft 2020-12.
+        if (const pjson* dynamicRef = schema.find("$dynamicRef")) {
+            if (dynamicRef->isString()) {
+                const std::string refText = strOf(*dynamicRef);
+                if (ctx.refResolutions >= validationRefLimit(ctx.options)) {
+                    failValidationBudget(ctx, errors, path,
+                                         "schema $dynamicRef resolution budget exceeded");
+                    return false;
+                }
+                ++ctx.refResolutions;
+                SchemaTarget resolved;
+                if (!resolveSchemaReference(refText, currentResourceRoot, currentBaseUri, ctx,
+                                            errors, path, resolved))
+                    return false;
+
+                std::string document;
+                std::string fragment;
+                splitReference(resolveUri(currentBaseUri, refText), document, fragment);
+                if (!fragment.empty() && fragment[0] != '/' &&
+                    resolved.schema->isObject()) {
+                    const pjson* declaration = resolved.schema->find("$dynamicAnchor");
+                    if (declaration != nullptr && declaration->isString() &&
+                        strOf(*declaration) == fragment) {
+                        for (size_t i = 0; i < ctx.dynamicScope.size(); ++i) {
+                            const std::string key = ctx.dynamicScope[i].baseUri + "#" + fragment;
+                            std::map<std::string, SchemaTarget>::const_iterator scoped =
+                                ctx.compiled.dynamicAnchors.find(key);
+                            if (scoped != ctx.compiled.dynamicAnchors.end()) {
+                                resolved = scoped->second;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                const std::pair<const pjson*, const pjson*> active(&node, resolved.schema);
+                if (std::find(ctx.activeRefs.begin(), ctx.activeRefs.end(), active) !=
+                    ctx.activeRefs.end()) {
+                    errors.push_back(
+                        SchemaError(path, "schema dynamic-reference cycle detected: " + refText));
+                    return false;
+                }
+                activeRefGuard.push(&node, resolved.schema);
+                SchemaAnnotations referenced;
+                const bool referenceValid =
+                    validateCtx(node, *resolved.schema, path, errors, ctx,
+                                resolved.resourceRoot, resolved.baseUri, &referenced);
+                if (referenceValid)
+                    evaluated.merge(referenced);
+                if (ctx.aborted)
+                    return false;
+            }
+        }
 
         // ---- strict, fail-closed subset check ----
         if (ctx.options.strictSubset) {
@@ -1398,8 +1959,10 @@ namespace {
                         return false;
                     const pjson* elem = node.find(static_cast<int>(i));
                     const pjson* sub = prefixItems->find(static_cast<int>(i));
-                    if (elem && sub)
+                    if (elem && sub) {
+                        evaluated.items.insert(i);
                         validateCtx(*elem, *sub, pointerAppend(path, std::to_string(i)), errors, ctx);
+                    }
                 }
             }
             if (items != nullptr) {
@@ -1411,18 +1974,22 @@ namespace {
                             return false;
                         const pjson* elem = node.find(static_cast<int>(i));
                         const pjson* sub = items->find(static_cast<int>(i));
-                        if (elem && sub)
+                        if (elem && sub) {
+                            evaluated.items.insert(i);
                             validateCtx(*elem, *sub, pointerAppend(path, std::to_string(i)), errors,
                                         ctx);
+                        }
                     }
                 } else {
                     for (size_t i = prefixCount; i < arrSize && !ctx.aborted; ++i) {
                         if (!chargeLoopWork(ctx, errors, path))
                             return false;
                         const pjson* elem = node.find(static_cast<int>(i));
-                        if (elem)
+                        if (elem) {
+                            evaluated.items.insert(i);
                             validateCtx(*elem, *items, pointerAppend(path, std::to_string(i)), errors,
                                         ctx);
+                        }
                     }
                 }
             }
@@ -1439,8 +2006,10 @@ namespace {
                     std::vector<SchemaError> scratch;
                     ErrorSink scratchSink(scratch, ctx, false);
                     if (validateCtx(*elem, *contains, pointerAppend(path, std::to_string(i)),
-                                    scratchSink, ctx))
+                                    scratchSink, ctx)) {
                         ++matched;
+                        evaluated.items.insert(i);
+                    }
                     if (ctx.aborted)
                         return false;
                 }
@@ -1509,8 +2078,10 @@ namespace {
                         return false;
                     const pjson* member = node.find(propKeys[i]);
                     const pjson* sub = props->find(propKeys[i]);
-                    if (member && sub)
+                    if (member && sub) {
+                        evaluated.properties.insert(propKeys[i]);
                         validateCtx(*member, *sub, pointerAppend(path, propKeys[i]), errors, ctx);
+                    }
                     if (ctx.aborted)
                         return false;
                 }
@@ -1530,6 +2101,7 @@ namespace {
                                           pointerAppend(path, memberKeys[i]), errors, ctx, matches) &&
                             matches) {
                             patternMatched.insert(memberKeys[i]);
+                            evaluated.properties.insert(memberKeys[i]);
                             const pjson* member = node.find(memberKeys[i]);
                             if (member && patSchema)
                                 validateCtx(*member, *patSchema, pointerAppend(path, memberKeys[i]),
@@ -1612,6 +2184,7 @@ namespace {
                     const bool matched = patternMatched.find(memberKeys[i]) != patternMatched.end();
                     if (declared || matched)
                         continue;
+                    evaluated.properties.insert(memberKeys[i]);
                     if (addl->isBool()) {
                         if (!boolOf(*addl))
                             errors.push_back(SchemaError(pointerAppend(path, memberKeys[i]),
@@ -1638,30 +2211,51 @@ namespace {
                     if (!node.hasKey(depKeys[d]))
                         continue;
                     const pjson* dep = dependentSchemas->find(depKeys[d]);
-                    if (dep)
-                        validateCtx(node, *dep, path, errors, ctx);
+                    if (dep) {
+                        SchemaAnnotations dependencyAnnotations;
+                        const bool dependencyValid =
+                            validateCtx(node, *dep, path, errors, ctx, nullptr, std::string(),
+                                        &dependencyAnnotations);
+                        if (dependencyValid)
+                            evaluated.merge(dependencyAnnotations);
+                    }
                     if (ctx.aborted)
                         return false;
                 }
             }
+
         }
 
         // ---- if / then / else ----
         if (const pjson* ifSchema = schema.find("if")) {
             std::vector<SchemaError> scratch;
             ErrorSink scratchSink(scratch, ctx, false);
-            const bool matched = validateCtx(node, *ifSchema, path, scratchSink, ctx);
+            SchemaAnnotations conditionalAnnotations;
+            const bool matched = validateCtx(node, *ifSchema, path, scratchSink, ctx, nullptr,
+                                             std::string(), &conditionalAnnotations);
             if (ctx.aborted)
                 return false;
             if (matched) {
+                evaluated.merge(conditionalAnnotations);
                 if (const pjson* thenSchema = schema.find("then")) {
-                    validateCtx(node, *thenSchema, path, errors, ctx);
+                    SchemaAnnotations branchAnnotations;
+                    const bool branchValid = validateCtx(node, *thenSchema, path, errors, ctx,
+                                                         nullptr, std::string(),
+                                                         &branchAnnotations);
+                    if (branchValid) {
+                        evaluated.merge(branchAnnotations);
+                    }
                     if (ctx.aborted)
                         return false;
                 }
             } else {
                 if (const pjson* elseSchema = schema.find("else")) {
-                    validateCtx(node, *elseSchema, path, errors, ctx);
+                    SchemaAnnotations branchAnnotations;
+                    const bool branchValid = validateCtx(node, *elseSchema, path, errors, ctx,
+                                                         nullptr, std::string(),
+                                                         &branchAnnotations);
+                    if (branchValid)
+                        evaluated.merge(branchAnnotations);
                     if (ctx.aborted)
                         return false;
                 }
@@ -1675,8 +2269,13 @@ namespace {
                     if (!chargeLoopWork(ctx, errors, path))
                         return false;
                     const pjson* sub = allOf->find(static_cast<int>(i));
-                    if (sub)
-                        validateCtx(node, *sub, path, errors, ctx);
+                    if (sub) {
+                        SchemaAnnotations branchAnnotations;
+                        const bool branchValid = validateCtx(node, *sub, path, errors, ctx, nullptr,
+                                                             std::string(), &branchAnnotations);
+                        if (branchValid)
+                            evaluated.merge(branchAnnotations);
+                    }
                     if (ctx.aborted)
                         return false;
                 }
@@ -1693,9 +2292,11 @@ namespace {
                         continue;
                     std::vector<SchemaError> scratch;
                     ErrorSink scratchSink(scratch, ctx, false);
-                    if (validateCtx(node, *sub, path, scratchSink, ctx)) {
+                    SchemaAnnotations branchAnnotations;
+                    if (validateCtx(node, *sub, path, scratchSink, ctx, nullptr, std::string(),
+                                    &branchAnnotations)) {
                         any = true;
-                        break;
+                        evaluated.merge(branchAnnotations);
                     }
                     if (ctx.aborted)
                         return false;
@@ -1707,6 +2308,7 @@ namespace {
         if (const pjson* oneOf = schema.find("oneOf")) {
             if (oneOf->isArray()) {
                 int matches = 0;
+                SchemaAnnotations matchingAnnotations;
                 for (size_t i = 0; i < oneOf->size(); ++i) {
                     if (!chargeLoopWork(ctx, errors, path))
                         return false;
@@ -1715,14 +2317,20 @@ namespace {
                         continue;
                     std::vector<SchemaError> scratch;
                     ErrorSink scratchSink(scratch, ctx, false);
-                    if (validateCtx(node, *sub, path, scratchSink, ctx))
+                    SchemaAnnotations branchAnnotations;
+                    if (validateCtx(node, *sub, path, scratchSink, ctx, nullptr, std::string(),
+                                    &branchAnnotations)) {
                         ++matches;
+                        matchingAnnotations = branchAnnotations;
+                    }
                     if (ctx.aborted)
                         return false;
                 }
                 if (matches != 1)
                     errors.push_back(SchemaError(path, "value matched " + std::to_string(matches) +
                                                            " schemas in oneOf (exactly 1 required)"));
+                else
+                    evaluated.merge(matchingAnnotations);
             }
         }
         const pjson* nots = schema.find("not");
@@ -1735,14 +2343,58 @@ namespace {
                 return false;
         }
 
+        if (node.isObject()) {
+            if (const pjson* unevaluated = schema.find("unevaluatedProperties")) {
+                const std::vector<std::string> keys = node.keys();
+                for (size_t i = 0; i < keys.size(); ++i) {
+                    if (evaluated.properties.find(keys[i]) != evaluated.properties.end())
+                        continue;
+                    if (!chargeLoopWork(ctx, errors, path))
+                        return false;
+                    const pjson* member = node.find(keys[i]);
+                    const std::string memberPath = pointerAppend(path, keys[i]);
+                    if (unevaluated->isBool() && !boolOf(*unevaluated)) {
+                        errors.push_back(SchemaError(memberPath,
+                                                     "unevaluated property is not allowed"));
+                    } else if (member != nullptr) {
+                        validateCtx(*member, *unevaluated, memberPath, errors, ctx);
+                    }
+                    evaluated.properties.insert(keys[i]);
+                    if (ctx.aborted)
+                        return false;
+                }
+            }
+        }
+
+        if (node.isArray()) {
+            if (const pjson* unevaluated = schema.find("unevaluatedItems")) {
+                for (size_t i = 0; i < node.size(); ++i) {
+                    if (evaluated.items.find(i) != evaluated.items.end())
+                        continue;
+                    if (!chargeLoopWork(ctx, errors, path))
+                        return false;
+                    const pjson* item = node.find(static_cast<int>(i));
+                    const std::string itemPath = pointerAppend(path, std::to_string(i));
+                    if (unevaluated->isBool() && !boolOf(*unevaluated)) {
+                        errors.push_back(SchemaError(itemPath, "unevaluated item is not allowed"));
+                    } else if (item != nullptr) {
+                        validateCtx(*item, *unevaluated, itemPath, errors, ctx);
+                    }
+                    evaluated.items.insert(i);
+                    if (ctx.aborted)
+                        return false;
+                }
+            }
+        }
+
         return !ctx.aborted && errors.size() == before;
     }
 
     // Runs one noexcept validation session over a compiled schema.
     bool runValidation(const pjson& node, const pjson& schema, std::vector<SchemaError>& errors,
-                       const Options& options) noexcept {
+                       const Options& options, const CompiledSchemaIndex& compiled) noexcept {
         try {
-            ValidationCtx ctx(schema, options, &errors);
+            ValidationCtx ctx(schema, options, compiled, &errors);
             ErrorSink sink(errors, ctx);
             return validateCtx(node, schema, "", sink, ctx);
         } catch (const SchemaBudgetExceeded&) {
@@ -1762,6 +2414,31 @@ namespace {
 //===----------------------------------------------------------------------===//
 // Public pJsonSchemaValidator surface
 //===----------------------------------------------------------------------===//
+struct pJsonSchemaValidator::Impl {
+    pjson schema;
+    Options options;
+    std::string dialect;
+    std::vector<Error> schemaErrors;
+    CompiledSchemaIndex compiled;
+
+    Impl(const pjson& aSchema, const Options& aOptions)
+            : options(aOptions) {
+        // copyFrom() preserves this default-constructed destination allocator,
+        // so the validator never borrows the caller's allocator lifetime.
+        schema.copyFrom(aSchema);
+        compileDialectContract(schema, options, dialect, schemaErrors);
+        std::string rootBase;
+        if (schema.isObject()) {
+            const pjson* id = schema.find("$id");
+            if (id != nullptr && id->isString())
+                rootBase = stripFragment(strOf(*id));
+        }
+        compiled.resources[rootBase] = SchemaResource(&schema, rootBase);
+        compileSchemaResource(schema, &schema, rootBase, compiled, schemaErrors, options, "");
+        compileExternalResources(compiled, options, schemaErrors);
+    }
+};
+
 pJsonSchemaValidator::Error::Error()
         : category(InstanceValidation) {}
 pJsonSchemaValidator::Error::Error(const std::string& aPath, const std::string& aMsg,
@@ -1780,7 +2457,12 @@ pJsonSchemaValidator::Options::Options()
         , maxErrors(100)
         , validateFormats(true)
         , strictSubset(false)
-        , defaultDialectUri(kDocumentedSubsetDialect) {}
+        , refSiblings(false)
+        , defaultDialectUri(kDocumentedSubsetDialect)
+        , resolver(nullptr)
+        , resolverContext(nullptr)
+        , maxResolvedDocuments(32)
+        , maxResolvedBytes(size_t(16) * 1024 * 1024) {}
 
 /*static*/
 pJsonSchemaValidator::Options pJsonSchemaValidator::Options::trustedRegex() {
@@ -1798,33 +2480,37 @@ pJsonSchemaValidator::Options pJsonSchemaValidator::Options::strict() {
     return o;
 }
 
-pJsonSchemaValidator::pJsonSchemaValidator(const pjson& aSchema, const Options& aOptions)
-        : _schema(aSchema) // deep copy: the compiled schema is owned
-        , _options(aOptions) {
-    compileDialectContract(_schema, _options, _dialect, _schemaErrors);
+/*static*/
+pJsonSchemaValidator::Options pJsonSchemaValidator::Options::modernSubset() {
+    Options o;
+    o.refSiblings = true;
+    return o;
 }
 
-pJsonSchemaValidator::~pJsonSchemaValidator() {}
+pJsonSchemaValidator::pJsonSchemaValidator(const pjson& aSchema, const Options& aOptions)
+        : _impl(new Impl(aSchema, aOptions)) {}
+
+pJsonSchemaValidator::~pJsonSchemaValidator() { delete _impl; }
 
 bool pJsonSchemaValidator::validate(const pjson& aInstance) const noexcept {
     if (!isSchemaValid())
         return false;
     std::vector<Error> errors;
-    return runValidation(aInstance, _schema, errors, _options);
+    return runValidation(aInstance, _impl->schema, errors, _impl->options, _impl->compiled);
 }
 
 bool pJsonSchemaValidator::validate(const pjson& aInstance,
                                     std::vector<Error>& aErrors) const noexcept {
     if (!isSchemaValid()) {
         try {
-            aErrors.insert(aErrors.end(), _schemaErrors.begin(), _schemaErrors.end());
+            aErrors.insert(aErrors.end(), _impl->schemaErrors.begin(), _impl->schemaErrors.end());
         } catch (...) {
             // The invalid-schema result remains reliable even when the
             // best-effort diagnostic copy cannot allocate.
         }
         return false;
     }
-    return runValidation(aInstance, _schema, aErrors, _options);
+    return runValidation(aInstance, _impl->schema, aErrors, _impl->options, _impl->compiled);
 }
 
 /*static*/
@@ -1838,22 +2524,22 @@ const char* pJsonSchemaValidator::documentedSubsetVocabularyUri() noexcept {
 }
 
 bool pJsonSchemaValidator::isSchemaValid() const noexcept {
-    return _schemaErrors.empty();
+    return _impl->schemaErrors.empty();
 }
 
 const std::vector<pJsonSchemaValidator::Error>&
 pJsonSchemaValidator::schemaErrors() const noexcept {
-    return _schemaErrors;
+    return _impl->schemaErrors;
 }
 
 const std::string& pJsonSchemaValidator::dialect() const noexcept {
-    return _dialect;
+    return _impl->dialect;
 }
 
 const pjson& pJsonSchemaValidator::schema() const noexcept {
-    return _schema;
+    return _impl->schema;
 }
 
 const pJsonSchemaValidator::Options& pJsonSchemaValidator::options() const noexcept {
-    return _options;
+    return _impl->options;
 }

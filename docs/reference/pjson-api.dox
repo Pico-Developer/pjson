@@ -100,7 +100,10 @@
  * conservative native-stack bound. Other zero-valued validation budgets retain their
  * documented hard ceilings; only regex byte limits use zero as unlimited.
  * defaultDialectUri defaults to documentedSubsetDialectUri(); an empty value
- * selects the same default.
+ * selects the same default. resolver is the only way to load an external
+ * schema resource; pjson never performs I/O. maxResolvedDocuments and
+ * maxResolvedBytes bound resolver amplification. modernSubset() enables modern
+ * `$ref` sibling semantics while the default preserves legacy Draft 7 behavior.
  */
 
 /**

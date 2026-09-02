@@ -233,12 +233,12 @@ TEST(schema_vocab_ref_unresolved_malformed_and_nonlocal) {
     errors.clear();
     CHECK(!validates(R"({"$ref":"#/$defs/bad~2token"})", "1", errors));
     CHECK(hasErrorAt(errors, std::string("")));
-    CHECK(hasMessageContaining(errors, "malformed"));
+    CHECK(hasMessageContaining(errors, "unresolved"));
 
     errors.clear();
     CHECK(!validates(R"({"$ref":"https://example.com/schema.json#/$defs/x"})", "1", errors));
     CHECK(hasErrorAt(errors, std::string("")));
-    CHECK(hasMessageContaining(errors, "non-local"));
+    CHECK(hasMessageContaining(errors, "no resolver"));
 }
 
 TEST(schema_vocab_ref_cycle_is_reported) {

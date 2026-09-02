@@ -972,9 +972,9 @@ bool ok = pJsonSchemaValidator(schema).validate(data);
 
 | Applies to | Keywords |
 |------------|----------|
-| any / references | `type` (name or array of names), `enum`, `const`, local-fragment `$ref` |
-| objects | `properties`, `patternProperties`, `propertyNames`, `required`, `dependentRequired`, `dependencies`, `additionalProperties` (boolean or schema), `minProperties`, `maxProperties` |
-| arrays | single-schema or tuple-array `items`, `minItems`, `maxItems`, `uniqueItems` |
+| any / references | `type` (name or array of names), `enum`, `const`, `$id`, `$anchor`, `$dynamicAnchor`, `$ref`, `$dynamicRef` |
+| objects | `properties`, `patternProperties`, `propertyNames`, `required`, `dependentRequired`, `dependencies`, `additionalProperties`, `unevaluatedProperties`, `minProperties`, `maxProperties` |
+| arrays | single-schema or tuple-array `items`, `prefixItems`, `contains`, `minContains`, `maxContains`, `unevaluatedItems`, `minItems`, `maxItems`, `uniqueItems` |
 | numbers | `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf` |
 | strings | `minLength`, `maxLength`, `pattern` (ECMAScript regex), `format` |
 | combinators | `allOf`, `anyOf`, `oneOf`, `not` |
@@ -985,7 +985,10 @@ Notes:
 - `enum` / `const` use pjson's deep equality, so they work for arrays and
   objects too.
 - A boolean schema is allowed: `true` accepts every value, `false` rejects all.
-- `$ref` resolves local URI fragments only; remote references are rejected.
+- `$ref` resolves URI resources, JSON Pointer fragments, and anchors using `$id`
+  bases. `$dynamicRef` and `$dynamicAnchor` follow dynamic scope. External
+  documents require an explicit function-pointer resolver; pjson never performs
+  network I/O. `Options::modernSubset()` enables modern `$ref` sibling semantics.
 - Known formats are `date`, `time`, `date-time`, `ipv4`, `ipv6`, and `uuid`;
   unknown format names are ignored.
 - `minLength` and `maxLength` count Unicode code points, not UTF-8 bytes.
@@ -994,7 +997,8 @@ Notes:
 - `pJsonSchemaValidator::Options` defaults `maxRegexPatternBytes` to 256,
   `maxRegexSubjectBytes` to 4096, `allowUnsafeRegex` to `false`,
   `maxValidationDepth` to 64, `maxRefResolutions` to 1024,
-  `maxValidationWork` to 1,000,000, `maxErrors` to 100, and
+  `maxValidationWork` to 1,000,000, `maxErrors` to 100,
+  `maxResolvedDocuments` to 32, `maxResolvedBytes` to 16 MiB, and
   `validateFormats` to `true`. Zero removes only a regex byte limit; zero for a
   validation, reference, work, or error budget retains its documented hard
   ceiling. Validation depth has an absolute hard ceiling of 64, so larger
@@ -1327,10 +1331,11 @@ public API families fail validation.
   which consumes only pjson's public API. It ignores unknown keywords by default
   (use `pJsonSchemaValidator::Options::strict()` to fail closed on unsupported
   standard keywords), so unsupported rules and misspellings are otherwise not
-  enforced. It supports `if`/`then`/`else`, `prefixItems`,
-  `contains`/`minContains`/`maxContains`, and `dependentSchemas`, but does not
-  resolve remote `$ref` values, validate during SAX parsing, or implement
-  `$dynamicRef`/`unevaluated*`/`$vocabulary`. Tuple-form `items`/`prefixItems`
+  enforced. It supports URI resources, anchors, dynamic references,
+  `unevaluated*`, conditionals, `prefixItems`, `contains` bounds, and
+  `dependentSchemas`. External references require an application resolver and
+  never perform implicit I/O. It does not validate during SAX parsing or load
+  standard meta-schemas. Tuple-form `items`/`prefixItems`
   validates corresponding positions. String lengths count Unicode code points.
   Regex matching uses the policy-limited default unless trusted mode is
   requested.

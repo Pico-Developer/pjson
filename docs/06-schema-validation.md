@@ -141,10 +141,10 @@ outright.
 
 | Applies to | Keywords and forms |
 |------------|--------------------|
-| any value  | `type`, `enum`, `const`, local-fragment `$ref` |
+| any value  | `type`, `enum`, `const`, `$ref`, `$dynamicRef`, `$id`, `$anchor`, `$dynamicAnchor` |
 | conditional| `if`, `then`, `else` |
-| objects    | `properties`, `patternProperties`, `propertyNames`, `required`, `dependentRequired`, `dependencies`, `dependentSchemas`, `additionalProperties` (boolean or schema), `minProperties`, `maxProperties` |
-| arrays     | single-schema `items`, tuple `prefixItems` (and legacy tuple-array `items`), `contains`, `minContains`, `maxContains`, `minItems`, `maxItems`, `uniqueItems` |
+| objects    | `properties`, `patternProperties`, `propertyNames`, `required`, `dependentRequired`, `dependencies`, `dependentSchemas`, `additionalProperties`, `unevaluatedProperties`, `minProperties`, `maxProperties` |
+| arrays     | single-schema `items`, tuple `prefixItems` (and legacy tuple-array `items`), `contains`, `minContains`, `maxContains`, `unevaluatedItems`, `minItems`, `maxItems`, `uniqueItems` |
 | numbers    | `minimum`, `maximum`, numeric `exclusiveMinimum`, numeric `exclusiveMaximum`, `multipleOf` |
 | strings    | `minLength`, `maxLength`, `pattern` (ECMAScript regex), `format` |
 | combinators| `allOf`, `anyOf`, `oneOf`, `not` |
@@ -155,9 +155,17 @@ A few notes:
   matches any int or double. `type` may also be an **array** of allowed names,
   e.g. `"type": ["string", "null"]`.
 - `enum` and `const` use deep equality, so they work for arrays and objects too.
-- `$ref` resolves only a local URI fragment containing a JSON Pointer, such as
-  `#/$defs/address`; both `$defs` and `definitions` can hold referenced schemas.
-  Remote references are rejected, and siblings of `$ref` are ignored.
+- `$ref` resolves local JSON Pointers and anchors against `$id` resource bases.
+  External document URIs are resolved only through an application-supplied
+  function pointer (`Options::resolver`); pjson never performs network I/O.
+  Resolution is bounded by reference, document, byte, work, and depth budgets.
+- `$dynamicRef` and `$dynamicAnchor` follow dynamic scope across local and
+  explicitly resolved resources. `Options::modernSubset()` applies `$ref`
+  siblings as modern drafts require; the default preserves the former Draft 7
+  replacement behavior for compatibility.
+- `unevaluatedProperties` and `unevaluatedItems` consume successful evaluation
+  annotations propagated through references, conditionals, combinators,
+  `contains`, and the regular object/array applicators.
 - `patternProperties` applies schemas to matching keys, `propertyNames` checks
   each key, and `dependentRequired`/`dependencies` express rules triggered by
   the presence of another property.
@@ -194,7 +202,12 @@ options.maxValidationWork = 1000000;
 options.maxErrors = 100;
 options.validateFormats = true;
 options.strictSubset = false; // set true to fail closed on unsupported keywords
+options.refSiblings = false;  // modernSubset() sets this true
 options.defaultDialectUri = pJsonSchemaValidator::documentedSubsetDialectUri();
+options.resolver = nullptr;   // no implicit external I/O
+options.resolverContext = nullptr;
+options.maxResolvedDocuments = 32;
+options.maxResolvedBytes = size_t(16) * 1024 * 1024;
 
 pJsonSchemaValidator validator(schema, options);
 std::vector<pJsonSchemaValidator::Error> errors;
@@ -212,7 +225,7 @@ and permits unsafe regular expressions while retaining all other defaults. Set
 `validateFormats = false` when known formats should act only as annotations.
 Set `strictSubset = true` (or use `pJsonSchemaValidator::Options::strict()`) to
 **fail closed**: a schema that uses a standard validation/applicator keyword
-pjson does not implement (for example `unevaluatedProperties` or `$dynamicRef`)
+pjson does not implement (for example `contentSchema` or `$recursiveRef`)
 then makes validation fail instead of silently ignoring the constraint. Unknown
 non-standard extension keywords are still allowed as annotations even in strict
 mode.

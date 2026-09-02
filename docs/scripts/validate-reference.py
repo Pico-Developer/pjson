@@ -291,7 +291,12 @@ REQUIRED_PUBLIC_FIELDS = {
         "maxErrors",
         "validateFormats",
         "strictSubset",
+        "refSiblings",
         "defaultDialectUri",
+        "resolver",
+        "resolverContext",
+        "maxResolvedDocuments",
+        "maxResolvedBytes",
     },
     "ByteDance::pjson::PatchOptions": {
         "maxOperations",

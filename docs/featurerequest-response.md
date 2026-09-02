@@ -201,14 +201,15 @@ rejected. Covered by `tests_pointer_patch.cpp`.
 ### PJSON-SEC-004 — Regexes and external resources hostile — Already satisfied
 Schema regex work is size-bounded and screened for catastrophic backtracking by
 default (`trustedRegex()` to opt out). No API fetches a URL; remote `$ref` is
-rejected. Unchanged and re-verified.
+resolved only through an explicit application callback. pjson itself performs
+no I/O, and document/byte/reference/work/depth budgets bound resolution.
 
 ## 8. Optional JSON Schema module
 
 ### PJSON-SCHEMA-000 — Strict fail-closed subset — Implemented
 Added `pJsonSchemaValidator::Options::strict()` / `strictSubset`. In strict
 mode, a standard validation/applicator keyword pjson does not enforce (e.g.
-`unevaluatedProperties`, `$dynamicRef`) fails validation instead of being
+`contentSchema` or `$recursiveRef`) fails validation instead of being
 ignored, while unknown non-standard extension keywords remain allowed as
 annotations. Default remains permissive for compatibility. Tests:
 `tests_schema_2020.cpp`.
@@ -238,18 +239,19 @@ unknown required vocabularies or malformed shapes. Callers inspect
 `isSchemaValid()`, `schemaErrors()`, and `dialect()`. The official 2020-12 URI is
 intentionally unsupported until pjson implements that complete dialect.
 
-### PJSON-SCHEMA-002..006 — Partially implemented / Deferred
+### PJSON-SCHEMA-002..006 — Substantially implemented / remaining dialect gaps
 This pass materially expanded the validator toward 2020-12 by adding
 `if`/`then`/`else`, `prefixItems`, `contains`/`minContains`/`maxContains`, and
 `dependentSchemas` (fixing the A.5 conditional-schema gap), plus the strict
 gate above, by extracting a reusable compiled validator object (SCHEMA-002),
-and by adding the manifest-driven conformance gate (SCHEMA-006). Not yet
-implemented:
-`$dynamicRef`/`$dynamicAnchor`, `unevaluatedItems`/`unevaluatedProperties`,
-standard JSON Schema vocabulary/meta-schema loading, and external resolver
-callbacks. Per the requirement's own rule, documentation continues to describe
-this as a **documented subset** and does not claim general 2020-12 conformance.
-Remaining SCHEMA-003/004 work is tracked in `Todo.md`.
+and by adding the manifest-driven conformance gate (SCHEMA-006). SCHEMA-003/004
+now add `$id` resource bases, anchors, dynamic references, explicit no-I/O
+external resolution with document/byte/work/depth budgets, and annotation
+propagation for both `unevaluated*` keywords. The official gate runs 1,245
+Draft 2020-12 cases across 372 groups. Remaining gaps are standard meta-schema
+loading/vocabulary-driven keyword selection, ECMA-262 Unicode property escapes,
+and annotation-only `format` defaults. Documentation therefore continues to
+describe this as a **documented subset**, not general 2020-12 conformance.
 
 ## 9. Existing extensions
 
@@ -286,12 +288,11 @@ differential, and fuzz jobs exist. This pass added the two mandatory regressions
 differential front-end tests, and every compiled case remains individually
 registered with CTest. A manifest-driven `draft2020-12` conformance gate
 (`schema_official_draft2020_optional`) now runs alongside the existing draft-07
-gate: supported-keyword files run whole, and each file/group needing a deferred
-feature (URI/`$id` and remote `$ref`, `unevaluated*`, `$vocabulary`/custom
-metaschema, Unicode `\p{}` regex, annotation-only `format`) is skipped with a
-concrete reason so coverage cannot silently shrink. Measured baseline: 924
-draft2020-12 cases pass across 241 groups, 90 cases skipped across 28 groups.
-Full unconditional 2020-12 conformance stays deferred with SCHEMA-001/003/004.
+gate: supported-keyword files run whole, and each remaining unsupported group
+(official meta-schema behavior, Unicode `\p{}` regex, annotation-only `format`)
+is skipped with a concrete reason so coverage cannot silently shrink. Measured
+baseline: 1,245 Draft 2020-12 cases pass across 372 groups; 52 cases are skipped
+across 10 groups. Full unconditional 2020-12 conformance remains unclaimed.
 
 ## 13. Documentation and governance
 

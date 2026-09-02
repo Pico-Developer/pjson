@@ -162,8 +162,9 @@ for invalid bytes, while `write()` sets the destination stream's failure state.
 Crossing the output limit or overflowing indentation arithmetic instead throws
 `std::length_error` from `toString()` or sets `failbit` from `write()`. These
 logical failures are detected before `write()` emits bytes. Double formatting
-is locale-independent and uses 15–17
-significant digits for stable round-tripping; integral-looking doubles keep a
+is locale-independent and uses the shortest tested precision from `digits10`
+through `max_digits10`, whose upper bound guarantees bit-exact finite-value
+round-tripping; integral-looking doubles keep a
 decimal marker so reparsing preserves their storage kind.
 
 Running the example produces (abridged):

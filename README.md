@@ -858,12 +858,21 @@ JSON null.
   finite `double` range, are **rejected by default**
   (`ParseOptions::RejectUnrepresentableNumbers`). Set
   `ParseOptions::AllowLossyNumbers` to store the nearest finite `double` instead.
+- Nonzero floating tokens that round all the way to zero are also rejected by
+  default and require `AllowLossyNumbers`. Other finite decimal tokens are
+  converted by the platform's classic-locale C++ iostream implementation; on
+  the supported libc++, libstdc++, and MSVC standard libraries this is the
+  nearest representable `double` under the active floating-point rounding mode.
+  Applications that change that mode must restore round-to-nearest before
+  parsing when reproducibility across environments is required.
 - A stored non-finite `double` (NaN/±infinity) **fails serialization by default**
   (`SerializeOptions::RejectNonFinite`): `toString()` throws and `write()` sets
   `failbit`. Use `NonFiniteToNull` to emit `null` (the pre-2.0 behavior) or
   `NonFiniteToString` to emit `"NaN"`/`"Infinity"`/`"-Infinity"`.
-- Double serialization is locale-independent and uses 15–17 significant digits
-  as needed for stable parse/serialize round-tripping. Integral-looking doubles
+- Double serialization is locale-independent and chooses the shortest tested
+  precision from `digits10` through `max_digits10`; the upper bound guarantees
+  bit-exact serialize/parse recovery for every finite `double` on conforming
+  standard-library implementations. Integral-looking doubles
   retain a decimal marker (for example, `1.0`) so reparsing preserves the double
   storage kind; the spelling is not promised to be the shortest possible.
 
@@ -881,6 +890,18 @@ allocator and `getVersion()` are initialization-safe.
 `pJsonSchemaValidator` owns immutable schema/resource copies and may be read
 concurrently when callers use separate error vectors. Resolver callbacks run
 only during construction and are not retained.
+
+### Floating-point implementation note
+
+Fractional and exponent-form JSON numbers are converted through a
+classic-locale `std::istream` extraction. On the supported libc++, libstdc++,
+and MSVC standard libraries this follows the implementation's correctly rounded
+decimal-to-binary conversion under the active floating-point rounding mode.
+pjson does not change that process/thread rounding mode. The CI matrix verifies
+halfway cases and binary64 extremes on GCC/libstdc++, Clang/libstdc++,
+AppleClang/libc++, and MSVC. Serialization uses `max_digits10`, whose C++
+round-trip guarantee is independent of whether `double` is IEEE binary64; the
+bit-pattern property suite is enabled when the platform reports IEEE binary64.
 
 ---
 
@@ -1335,9 +1356,10 @@ public API families fail validation.
   keep the first or last value.
 - Signed integers use `int64_t`; unsigned integers above `INT64_MAX` use a
   distinct `uint64_t` kind, so the full 64-bit range round-trips exactly.
-  Integer tokens outside `[INT64_MIN, UINT64_MAX]` and floating tokens outside
-  finite `double` range are rejected by default; opt in with
-  `ParseOptions::AllowLossyNumbers` to store the nearest `double`. A stored
+  Integer tokens outside `[INT64_MIN, UINT64_MAX]`, floating overflow, and
+  nonzero floating tokens that underflow to zero are rejected by default; opt
+  in with `ParseOptions::AllowLossyNumbers` to store the nearest finite
+  `double`. A stored
   non-finite `double` fails serialization by default; choose `NonFiniteToNull`
   or `NonFiniteToString` to emit it.
 - Parsing always enforces RFC 8259, including valid UTF-8 and the standard

@@ -516,15 +516,19 @@ namespace {
             if (!reserveNode())
                 return false;
 
+            const bool allowLossy = opts.numberPolicy == ParseOptions::AllowLossyNumbers;
             if (isFloat) {
                 double d = 0.0;
-                if (!pjsonImpl::_parseDouble(text, d) || !std::isfinite(d))
+                bool underflowToZero = false;
+                if (!pjsonImpl::_parseDouble(text, d, &underflowToZero) || !std::isfinite(d))
                     return fail("number out of range");
+                if (underflowToZero && !allowLossy)
+                    return fail(
+                        "number underflows to zero; enable AllowLossyNumbers to permit rounding");
                 return !emit || dispatch(handler.onDouble(d));
             }
 
             const bool negative = !text.empty() && text[0] == '-';
-            const bool allowLossy = opts.numberPolicy == ParseOptions::AllowLossyNumbers;
 
             errno = 0;
             const long long llVal = strtoll(text.c_str(), nullptr, 10);
@@ -1870,7 +1874,8 @@ bool pjsonImpl::_decodeStringBody(ParseCtx& c, std::string& aOut, bool bStopAtQu
     }
     return true;
 }
-// Formats a finite double with enough classic-locale precision to round-trip.
+// Formats a finite double with the shortest precision between digits10 and
+// max_digits10 that round-trips through the same classic-locale conversion.
 // A '.0' suffix is appended when the result would otherwise look like an
 // integer, so the value re-parses into the double representation (type-stable).
 /*static*/
@@ -1880,15 +1885,16 @@ std::string pjsonImpl::_formatDouble(double aValue) {
         return "null";
     }
     std::string result;
-    for (int prec = 15; prec <= 17; ++prec) {
+    for (int precision = std::numeric_limits<double>::digits10;
+         precision <= std::numeric_limits<double>::max_digits10; ++precision) {
         std::ostringstream out;
         out.imbue(std::locale::classic());
-        out << std::setprecision(prec) << aValue;
+        out << std::setprecision(precision) << aValue;
         result = out.str();
         double parsed = 0.0;
-        if (_parseDouble(result, parsed) && parsed == aValue) {
+        if (_parseDouble(result, parsed) && parsed == aValue &&
+            (parsed != 0.0 || std::signbit(parsed) == std::signbit(aValue)))
             break;
-        }
     }
     if (result.find_first_of(".eE") == std::string::npos) {
         result += ".0";
@@ -1896,18 +1902,19 @@ std::string pjsonImpl::_formatDouble(double aValue) {
     return result;
 }
 // Parses an ASCII JSON number independently of the process LC_NUMERIC locale.
-bool pjsonImpl::_parseDouble(const std::string& aText, double& aValue) {
+bool pjsonImpl::_parseDouble(const std::string& aText, double& aValue, bool* aUnderflowToZero) {
+    if (aUnderflowToZero != nullptr)
+        *aUnderflowToZero = false;
     std::istringstream in(aText);
     in.imbue(std::locale::classic());
     in >> std::noskipws >> aValue;
-    if (!in.fail())
-        return in.peek() == std::char_traits<char>::eof();
+    const bool cleanParse = !in.fail() && in.peek() == std::char_traits<char>::eof();
     // libstdc++/libc++ set failbit as well as eofbit for both underflow and
     // overflow. Classify the range direction from the decimal exponent instead
     // of trusting the implementation-specific saturated result. A negative
     // effective decimal exponent cannot overflow binary64, so its finite zero or
     // subnormal result is valid; nonnegative range failures are overflow.
-    if (!in.eof() || !std::isfinite(aValue))
+    if (!cleanParse && (!in.eof() || !std::isfinite(aValue)))
         return false;
     const size_t signOffset = !aText.empty() && aText[0] == '-' ? 1 : 0;
     const size_t exponentMark = aText.find_first_of("eE");
@@ -1927,6 +1934,11 @@ bool pjsonImpl::_parseDouble(const std::string& aText, double& aValue) {
     }
     if (firstNonzero == std::string::npos)
         return true; // exact zero cannot overflow
+    if (cleanParse) {
+        if (aUnderflowToZero != nullptr && aValue == 0.0)
+            *aUnderflowToZero = true;
+        return true;
+    }
 
     const int64_t kExponentCap = INT64_C(1000000000);
     int64_t explicitExponent = 0;
@@ -1954,7 +1966,11 @@ bool pjsonImpl::_parseDouble(const std::string& aText, double& aValue) {
                                       : explicitExponent < -kExponentCap - baseExponent
                                           ? -kExponentCap
                                           : explicitExponent + baseExponent;
-    return effectiveExponent < 0;
+    if (effectiveExponent >= 0)
+        return false;
+    if (aUnderflowToZero != nullptr && aValue == 0.0)
+        *aUnderflowToZero = true;
+    return true;
 }
 namespace {
     //===------------------------------------------------------------------===//
@@ -4319,8 +4335,13 @@ bool pjsonImpl::_parseNumber(ParseCtx& c, pjson*& aOut) {
     const bool allowLossy = c.numberPolicy == pjson::ParseOptions::AllowLossyNumbers;
     if (bFloat) {
         double d = 0.0;
-        if (!_parseDouble(sTemp, d) || !std::isfinite(d)) {
+        bool underflowToZero = false;
+        if (!_parseDouble(sTemp, d, &underflowToZero) || !std::isfinite(d)) {
             return _fail(c, begin, "number out of range");
+        }
+        if (underflowToZero && !allowLossy) {
+            return _fail(c, begin,
+                         "number underflows to zero; enable AllowLossyNumbers to permit rounding");
         }
         pjsonImpl::OwnedNode value(_newNode(c));
         if (!value)

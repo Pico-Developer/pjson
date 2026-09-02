@@ -268,9 +268,10 @@ Default construction selects compact output, two-space indentation, a space
 indent character, UTF-8 output, ascending keys, and a 64 MiB output limit. Set
 `maxOutputBytes = 0` only when explicitly requesting unlimited output. Objects
 are inherently map-ordered; insertion order is unavailable. Non-finite stored
-doubles serialize as JSON `null`. Finite doubles use locale-independent, stable
-round-trip formatting with 15–17 significant digits; shortest spelling is not
-part of the contract.
+doubles serialize as JSON `null`. Finite doubles use locale-independent
+formatting with the shortest tested precision from `digits10` through
+`max_digits10`, whose upper bound guarantees stable round-tripping; globally
+shortest spelling is not part of the contract.
 
 Every stored string value and object key must contain valid UTF-8. Invalid
 stored UTF-8 is a serialization failure even when `escapeNonAscii` is false:

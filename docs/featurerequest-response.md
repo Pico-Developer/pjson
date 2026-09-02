@@ -76,15 +76,15 @@ pretty, and streaming output. `NonFiniteToNull` restores the legacy mapping and
 remains locale-independent. Tests: `tests_numbers.cpp`
 (`non_finite_serialization_policy`, `non_finite_stream_policy`).
 
-### PJSON-NUM-003 — Define finite float conversion precisely — Partially implemented / already satisfied
-The baseline already parsed via a classic-locale conversion, rejected overflow
-to non-finite, and round-tripped finite binary64 (verified in
-`tests_pathological.cpp` and the new `finite_double_round_trips`). This pass
-made the overflow-vs-reject policy explicit through `NumberPolicy`. The formal
-"correctly rounded on every standard library" guarantee and the exhaustive
-halfway/subnormal randomized-corpus proof described in the requirement remain a
-documentation-and-test hardening task (tracked in `Todo.md`); the observable
-round-trip contract holds today.
+### PJSON-NUM-003 — Define finite float conversion precisely — Implemented
+Parsing uses the classic-locale standard-library conversion and rejects
+overflow and nonzero-to-zero underflow by default; `AllowLossyNumbers` is the
+explicit opt-in for underflow and out-of-range integers. Formatting tests
+precisions from `digits10` through `max_digits10`, whose upper bound gives
+bit-exact finite-double serialize/parse recovery on
+conforming libraries. The active rounding-mode dependency is documented.
+Halfway, subnormal, exponent-edge, negative-zero, 2^53-boundary, randomized
+10,000-bit-pattern, and parser-front-end parity tests cover the contract.
 
 ### PJSON-SEC-001 — Make nesting limits stack-safe — Implemented
 Confirmed defect A.4 was real: a large configured `maxDepth` still allowed

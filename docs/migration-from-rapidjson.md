@@ -263,8 +263,9 @@ UTF-8 output, ascending keys, and a 64 MiB output limit. Zero explicitly makes
 `maxOutputBytes` unlimited. Object insertion order is not retained. A stored
 non-finite double fails serialization by default (`SerializeOptions::nonFinite`
 selects `RejectNonFinite`, `NonFiniteToNull`, or `NonFiniteToString`). Finite
-doubles use locale-independent, stable round-trip formatting with 15–17
-significant digits; shortest spelling is not part of the contract.
+doubles use locale-independent formatting with the shortest tested precision
+from `digits10` through `max_digits10`, whose upper bound guarantees stable
+round-tripping; globally shortest spelling is not part of the contract.
 
 Invalid UTF-8 in any stored string or object key is a serialization failure,
 regardless of `escapeNonAscii`: `toString()` throws `std::invalid_argument`.

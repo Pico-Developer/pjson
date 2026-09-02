@@ -23,6 +23,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <sstream>
 #include <string>
@@ -126,8 +127,8 @@ TEST(pathological_mixed_numeric_equality_is_exact_above_binary64_integer_precisi
 
 // A long finite mantissa and a long, zero-padded exponent must be scanned in
 // full without changing their values. Very large positive values fail at a
-// stable location, while a very negative exponent remains a valid finite JSON
-// number (normally underflowing to zero).
+// stable location, while a very negative exponent is rejected unless the
+// caller opts in to its lossy conversion to zero.
 TEST(pathological_very_long_numeric_tokens) {
     const size_t digitCount = 65536;
     pjson::ParseError err;
@@ -171,7 +172,12 @@ TEST(pathological_very_long_numeric_tokens) {
     }
 
     const std::string hugeNegativeExponent = "1e-" + std::string(digitCount, '9');
-    auto underflow = pjson_test::parse(hugeNegativeExponent, err);
+    CHECK(pjson_test::parse(hugeNegativeExponent, err) == nullptr);
+    CHECK(!err.ok);
+    CHECK_EQ(err.code, pjson::ParseError::NumberRange);
+    pjson::ParseOptions lossy;
+    lossy.numberPolicy = pjson::ParseOptions::AllowLossyNumbers;
+    auto underflow = pjson_test::parse(hugeNegativeExponent, err, lossy);
     CHECK(underflow != nullptr);
     CHECK(err.ok);
     if (underflow) {
@@ -179,6 +185,61 @@ TEST(pathological_very_long_numeric_tokens) {
         CHECK(std::isfinite(doubleValue(*underflow)));
         if (isIeeeBinary64())
             CHECK_EQ(doubleValue(*underflow), 0.0);
+    }
+}
+
+TEST(pathological_binary64_halfway_rounding) {
+    if (!isIeeeBinary64()) {
+        CHECK(std::numeric_limits<double>::is_specialized);
+        return;
+    }
+
+    struct Case {
+        const char* text;
+        double expected;
+    };
+    const Case cases[] = {
+        {"1.00000000000000011102230246251565404236316680908203125", 1.0},
+        {"1.00000000000000011102230246251565404236316680908203126", std::nextafter(1.0, 2.0)},
+        {"2.47032822920623272088284396434110686182529901307162382212792841250337753635104375e-324",
+         0.0},
+        {"2.47032822920623272088284396434110686182529901307162382212792841250337753635104376e-324",
+         std::numeric_limits<double>::denorm_min()},
+    };
+    pjson::ParseOptions lossy;
+    lossy.numberPolicy = pjson::ParseOptions::AllowLossyNumbers;
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+        pjson::ParseError error;
+        pjson value = pjson::parse(cases[i].text, error, lossy);
+        CHECK(error.ok);
+        CHECK_EQ(doubleValue(value), cases[i].expected);
+    }
+}
+
+TEST(pathological_random_binary64_round_trips_bit_exactly) {
+    if (!isIeeeBinary64()) {
+        CHECK(std::numeric_limits<double>::is_specialized);
+        return;
+    }
+
+    uint64_t state = UINT64_C(0x9e3779b97f4a7c15);
+    for (size_t i = 0; i < size_t(10000); ++i) {
+        state ^= state >> 12;
+        state ^= state << 25;
+        state ^= state >> 27;
+        const uint64_t bits = state * UINT64_C(2685821657736338717);
+        double value = 0.0;
+        std::memcpy(&value, &bits, sizeof(value));
+        if (!std::isfinite(value))
+            continue;
+        pjson node;
+        node = value;
+        pjson::ParseError error;
+        pjson reparsed = pjson::parse(node.toString(), error);
+        CHECK(error.ok);
+        double result = 0.0;
+        CHECK(reparsed.tryGet(result));
+        CHECK(std::memcmp(&result, &value, sizeof(value)) == 0);
     }
 }
 

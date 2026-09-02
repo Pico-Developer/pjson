@@ -103,12 +103,6 @@ remaining skipped official groups document these gaps. Until they land, docs
 must keep saying "documented subset" and must not claim general 2020-12
 conformance.
 
-### [ ] NUM-3-HARDENING — Prove finite double conversion (PJSON-NUM-003)
-
-Add randomized binary64 round-trip corpora, halfway/subnormal/exponent-extreme
-cases, and a documented correctly-rounded-conversion statement per supported
-standard library. The observable round-trip contract already holds.
-
 ### [ ] PERF-BASELINE — Representative benchmarks and regression tracking
 
 PJSON-PERF-001/002/003: expand the benchmark matrix (wide objects, large

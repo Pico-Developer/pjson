@@ -426,12 +426,14 @@ TEST(streaming_sax_number_range_matches_dom_parser) {
     }
 
     const char* accepted[] = {"1e-400", "4.9406564584124654e-324"};
+    pjson::ParseOptions lossy;
+    lossy.numberPolicy = pjson::ParseOptions::AllowLossyNumbers;
     for (size_t i = 0; i < sizeof(accepted) / sizeof(accepted[0]); ++i) {
-        pjson_test::Parsed dom = pjson_test::parse(accepted[i]);
+        pjson_test::Parsed dom = pjson_test::parse(accepted[i], lossy);
         CHECK(dom != nullptr);
         NumberHandler handler;
         pjson::ParseError err;
-        CHECK(pjson::parseSax(accepted[i], handler, err));
+        CHECK(pjson::parseSax(accepted[i], handler, err, lossy));
         CHECK(err.ok);
         CHECK(handler.sawDouble);
         double domValue = 1.0;
@@ -440,7 +442,7 @@ TEST(streaming_sax_number_range_matches_dom_parser) {
 
         ChunkedIStream stream(accepted[i], 1);
         NumberHandler streamHandler;
-        CHECK(pjson::parseSaxStream(stream, streamHandler, err));
+        CHECK(pjson::parseSaxStream(stream, streamHandler, err, lossy));
         CHECK_EQ(err.message, std::string());
         CHECK(streamHandler.sawDouble);
         CHECK_EQ(streamHandler.value, domValue);

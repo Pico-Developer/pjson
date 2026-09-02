@@ -141,3 +141,31 @@ TEST(parser_front_ends_agree_on_rejection) {
     CountingHandler h2;
     CHECK(!pjson::parseSaxStream(saxStream, h2));
 }
+
+TEST(parser_front_ends_agree_on_nonzero_underflow_policy) {
+    const std::string doc = "-1e-400";
+    pjson::ParseError error;
+    (void)pjson::parse(doc, error);
+    CHECK(!error.ok);
+    CHECK_EQ(error.code, pjson::ParseError::NumberRange);
+    CHECK(pjson_test::parse(doc.data(), doc.size()) == nullptr);
+    std::istringstream in(doc);
+    CHECK(pjson_test::parseStream(in) == nullptr);
+
+    CountingHandler h1;
+    CHECK(!pjson::parseSax(doc, h1));
+    std::istringstream saxStream(doc);
+    CountingHandler h2;
+    CHECK(!pjson::parseSaxStream(saxStream, h2));
+
+    pjson::ParseOptions lossy;
+    lossy.numberPolicy = pjson::ParseOptions::AllowLossyNumbers;
+    CHECK(pjson_test::parse(doc, lossy) != nullptr);
+    std::istringstream lossyStream(doc);
+    CHECK(pjson_test::parseStream(lossyStream, lossy) != nullptr);
+    CountingHandler h3;
+    CHECK(pjson::parseSax(doc, h3, lossy));
+    std::istringstream lossySaxStream(doc);
+    CountingHandler h4;
+    CHECK(pjson::parseSaxStream(lossySaxStream, h4, lossy));
+}

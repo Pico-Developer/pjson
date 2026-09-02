@@ -101,11 +101,21 @@ TEST(number_overflow_rejected) {
 }
 
 TEST(number_underflow_is_zero) {
-    // Underflow to 0.0 is fine and finite.
-    auto p = parse("1e-400");
-    CHECK(p != nullptr);
-    if (p)
-        CHECK_EQ(mustGetDouble(*p), 0.0);
+    // A nonzero token rounded to zero is rejected unless lossy conversion was requested.
+    CHECK(parse("1e-400") == nullptr);
+    CHECK(parse("-1e-400") == nullptr);
+    pjson::ParseOptions lossy;
+    lossy.numberPolicy = pjson::ParseOptions::AllowLossyNumbers;
+    auto positive = pjson_test::parse("1e-400", lossy);
+    auto negative = pjson_test::parse("-1e-400", lossy);
+    CHECK(positive != nullptr);
+    CHECK(negative != nullptr);
+    if (positive)
+        CHECK_EQ(mustGetDouble(*positive), 0.0);
+    if (negative) {
+        CHECK_EQ(mustGetDouble(*negative), 0.0);
+        CHECK(std::signbit(mustGetDouble(*negative)));
+    }
 }
 
 TEST(huge_but_finite_number_ok) {

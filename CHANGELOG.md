@@ -27,6 +27,8 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases follow
 - Added dedicated serialization, JSON Pointer, and JSON Merge Patch fuzzers;
   local and OSS-Fuzz smoke inputs now reach 64 KiB and include checked-in
   inputs larger than 4 KiB.
+- Finite doubles now format with `max_digits10`; default parsing rejects a
+  nonzero decimal token that underflows to zero, with explicit lossy opt-in.
 - **BREAKING (API):** JSON Schema validation is no longer a member of `pjson`.
   The `pjson::validate()` overloads and the nested `pjson::SchemaError` /
   `pjson::SchemaOptions` types are removed. Validation now lives in a standalone

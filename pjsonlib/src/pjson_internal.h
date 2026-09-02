@@ -87,7 +87,8 @@ struct ByteDance::pjsonImpl {
     static bool _hex4(const char* aSrc, size_t aStart, uint32_t& aOut);
     static int _utf8Len(const char* src, size_t pos, size_t end);
     static std::string _formatDouble(double aValue);
-    static bool _parseDouble(const std::string& aText, double& aValue);
+    static bool _parseDouble(const std::string& aText, double& aValue,
+                             bool* aUnderflowToZero = nullptr);
 
     static bool _fail(ParseCtx& c, size_t aPos, const char* aMsg);
     static pjson* _newNode(ParseCtx& c); // budget-checked allocation (nullptr on overflow)

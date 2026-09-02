@@ -117,9 +117,10 @@ namespace ByteDance {
 
             // Governs numeric tokens that cannot be represented exactly. By
             // default an integer token outside [INT64_MIN, UINT64_MAX] or a
-            // floating token that overflows/underflows binary64 is rejected with
-            // a structured numeric-range error. AllowLossyNumbers opts in to the
-            // legacy behavior of storing the nearest finite double instead.
+            // floating token that overflows binary64 or rounds from nonzero to
+            // zero is rejected with a structured numeric-range error.
+            // AllowLossyNumbers opts in to storing the nearest finite double
+            // for out-of-range integers and nonzero-to-zero underflow.
             enum NumberPolicy { RejectUnrepresentableNumbers, AllowLossyNumbers };
 
             int maxDepth;         // nesting limit; values <= 0 enforce a one-level limit

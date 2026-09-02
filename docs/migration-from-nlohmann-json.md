@@ -145,6 +145,9 @@ Do not translate checked or observational nlohmann access into pjson
 subscripting.
 One indexed access that would create more than 1,000,000 children throws
 `std::length_error` before mutation.
+Valid negative `int` indexes count from the end; an index before the beginning
+throws `std::out_of_range`. Prefer the `size_t` overload for non-negative
+builder indexes.
 
 Use `find(key)` and `find(index)` for borrowed node access. Both return
 `nullptr` for the wrong container type or a missing child and never mutate the

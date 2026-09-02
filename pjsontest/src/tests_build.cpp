@@ -19,6 +19,7 @@
 #include "pjson.h"
 #include "test_harness.h"
 
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -213,21 +214,54 @@ TEST(negative_index_from_end) {
     expectInt(arr[-3], int64_t(10));
 }
 
-TEST(negative_index_past_start_clamps) {
+TEST(negative_index_past_start_throws_without_mutation) {
     pjson arr;
     arr[0] = static_cast<int64_t>(10);
     arr[1] = static_cast<int64_t>(20);
     arr[2] = static_cast<int64_t>(30);
-    expectInt(arr[-4], int64_t(10));
-    expectInt(arr[-100], int64_t(10));
+    const std::string before = arr.toString();
+    bool threw = false;
+    try {
+        (void)arr[-4];
+    } catch (const std::out_of_range&) {
+        threw = true;
+    }
+    CHECK(threw);
+    CHECK_EQ(arr.toString(), before);
 }
 
-TEST(negative_index_on_empty_array) {
+TEST(negative_index_on_empty_array_throws_without_growth) {
     pjson arr;
     arr.resetTo(pjson::jsonArray);
-    pjson& element = arr[-1];
-    CHECK_EQ(element.getType(), pjson::jsonNull);
-    CHECK_EQ(arr.size(), size_t(1));
+    bool threw = false;
+    try {
+        (void)arr[-1];
+    } catch (const std::out_of_range&) {
+        threw = true;
+    }
+    CHECK(threw);
+    CHECK(arr.empty());
+}
+
+TEST(negative_index_on_scalar_throws_without_type_change) {
+    pjson value;
+    value = int64_t(7);
+    bool threw = false;
+    try {
+        (void)value[-1];
+    } catch (const std::out_of_range&) {
+        threw = true;
+    }
+    CHECK(threw);
+    CHECK(value.isInt());
+}
+
+TEST(size_t_index_supports_positive_builder_access) {
+    pjson arr;
+    const size_t index = 2;
+    arr[index] = int64_t(9);
+    CHECK_EQ(arr.size(), size_t(3));
+    expectInt(arr[2], int64_t(9));
 }
 
 TEST(find_returns_pointer_or_null) {

@@ -131,8 +131,10 @@ build-then-swap strong-guarantee pattern. Tests: `tests_dom_api.cpp`.
 Added checked, non-vivifying `at(key)` and `at(index)` (throwing
 `std::out_of_range`) and `contains()` alongside the existing non-vivifying
 `find`/`hasKey`/`hasIndex`/`tryGet`. Positive `at(size_t)` uses `size_t`;
-negative indexing stays on the separate signed `find(int)`/`tryGet(int, …)`
-API. Tests: `tests_dom_api.cpp`.
+negative lookup stays on the separate signed `find(int)`/`tryGet(int, …)` API.
+Mutable indexing now also has a `size_t` overload; valid negative `int` indexes
+count from the end and an index before the beginning throws without mutation.
+Tests: `tests_dom_api.cpp`, `tests_build.cpp`, and `tests_mutation.cpp`.
 
 ### PJSON-API-004 — Type conversion and equality — Implemented (semantics) / Partially (docs)
 `tryGet` conversions are exact: signed↔unsigned reads succeed only when

@@ -47,6 +47,9 @@ an object and creates a missing null child. Integer access promotes it to an
 array and grows it with null children. Use explicit final scalar types:
 One indexed access that would create more than 1,000,000 children throws
 `std::length_error` before mutation.
+Valid negative `int` indexes count from the end; an index before the beginning
+throws `std::out_of_range`. Prefer the `size_t` overload for non-negative
+builder indexes.
 
 ```cpp
 pjson document;

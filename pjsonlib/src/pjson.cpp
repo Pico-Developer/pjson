@@ -2803,7 +2803,8 @@ bool pjson::forEachElement(ElementVisitor aVisitor, void* aContext) {
 //
 // Mutating operator[] access auto-vivifies missing containers and children;
 // find() is non-mutating. Negative array indices count from the end. Mutating
-// indices before the beginning clamp to zero, while lookup indices simply miss.
+// indices before the beginning throw without changing the receiver, while lookup
+// indices simply miss.
 //===----------------------------------------------------------------------===//
 
 // Returns or creates an object member, atomically promoting non-object values.
@@ -2844,6 +2845,21 @@ pjson& pjson::operator[](const char* aSkey) {
 // Returns or creates an array element, filling gaps with null nodes. Any failed
 // growth destroys every node appended by this call before rethrowing.
 pjson& pjson::operator[](int index) {
+    if (index < 0) {
+        if (_eType != jsonType::jsonArray)
+            throw std::out_of_range("pjson array negative index requires an existing array");
+        PJSONARRAY& array = *_uValue._pValueArray;
+        const size_t fromEnd = static_cast<size_t>(-(index + 1)) + size_t(1);
+        if (fromEnd > array.size())
+            throw std::out_of_range("pjson array negative index out of range");
+        return *array[array.size() - fromEnd];
+    }
+    return (*this)[static_cast<size_t>(index)];
+}
+
+// Returns or creates an array element at a non-negative index, filling gaps
+// with null nodes. Any failed growth destroys nodes appended by this call.
+pjson& pjson::operator[](size_t index) {
     if (_eType != jsonType::jsonArray) {
         pjson replacement(*_allocator);
         replacement.resetTo(jsonType::jsonArray);
@@ -2853,14 +2869,7 @@ pjson& pjson::operator[](int index) {
         return *resultPtr;
     }
     PJSONARRAY& array = *_uValue._pValueArray;
-    size_t position = 0;
-    if (index < 0) {
-        // Negative indexes count from the end: -1 is the last element.
-        const size_t fromEnd = static_cast<size_t>(-(index + 1)) + size_t(1);
-        position = fromEnd > array.size() ? size_t(0) : array.size() - fromEnd;
-    } else {
-        position = static_cast<size_t>(index);
-    }
+    const size_t position = index;
 
     if (position >= array.size()) {
         static const size_t kMaxAutoGrowth = size_t(1000000);

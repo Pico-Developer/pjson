@@ -656,17 +656,20 @@ namespace ByteDance {
         //== Building / mutable access =======================================
         // operator[] is a direct builder API. A key access changes a non-object
         // into an object and creates a missing null child. An index access changes
-        // a non-array into an array; negative indexes count from the end and clamp
-        // before the beginning to zero, while indexes past the end grow the array
-        // with null children. A single access that would create more than one
-        // million children throws std::length_error before mutation. Use
-        // find()/tryGet() for reads.
+        // a non-array into an array; valid negative indexes count from the end,
+        // while an index before the beginning throws std::out_of_range without
+        // mutation. Non-negative indexes past the end grow the array with null
+        // children. A single access that would create more than one million
+        // children throws std::length_error before mutation. Use find()/tryGet()
+        // for reads.
         /// Returns or creates the child at aString.
         pjson& operator[](const std::string& aString);
         /// Returns or creates the child at aSkey; throws std::invalid_argument for null.
         pjson& operator[](const char* aSkey);
         /// Returns or creates the child at index under the auto-growth rules above.
         pjson& operator[](int index);
+        /// Returns or creates the child at a non-negative index.
+        pjson& operator[](size_t index);
 
         //== Factories and typed construction ================================
         // Explicit, unambiguous ways to create each JSON kind without relying on

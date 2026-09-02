@@ -609,6 +609,9 @@ This is the one sharp edge worth understanding.
 **creates** it, and access can change a node's type. That makes building concise,
 but `operator[]` is not a safe read. A single index access that would create
 more than 1,000,000 children throws `std::length_error` before mutation:
+Valid negative `int` indexes address existing elements from the end; a negative
+index before the beginning throws `std::out_of_range` without mutation. A
+`size_t` overload is available for ordinary non-negative builder indexes.
 
 ```cpp
 pjson building;

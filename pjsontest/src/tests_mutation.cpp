@@ -20,6 +20,7 @@
 #include "pjson.h"
 #include "test_harness.h"
 #include "test_util.h"
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -238,9 +239,16 @@ TEST(mutate_negative_index_edits) {
     j[-3] = static_cast<int64_t>(10); // first
     expectInt(j[0], int64_t(10));
     expectInt(j[2], int64_t(30));
-    // Out-of-range negative clamps to the front element.
-    j[-10] = static_cast<int64_t>(0);
-    expectInt(j[0], int64_t(0));
+    // Out-of-range negative mutation is rejected and preserves the array.
+    const std::string before = j.toString();
+    bool threw = false;
+    try {
+        j[-10] = static_cast<int64_t>(0);
+    } catch (const std::out_of_range&) {
+        threw = true;
+    }
+    CHECK(threw);
+    CHECK_EQ(j.toString(), before);
 }
 
 //===----------------------------------------------------------------------===//

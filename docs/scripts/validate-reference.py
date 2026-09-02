@@ -73,7 +73,7 @@ REQUIRED_MEMBERS = {
     "reserve": 1,
     "escapePointerToken": 1,
     "findPointer": 8,
-    "operator[]": 3,
+    "operator[]": 4,
     "operator=": 14,
     "operator+=": 11,
     "erase": 3,
@@ -212,6 +212,12 @@ EXPECTED_PUBLIC_ENUMS = {
 }
 
 EXPECTED_PARAMETER_TYPES = {
+    "operator[]": {
+        ("const std::string&",),
+        ("const char*",),
+        ("int",),
+        ("size_t",),
+    },
     "tryGet": {
         ("int64_t&",),
         ("uint64_t&",),

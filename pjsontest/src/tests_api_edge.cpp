@@ -599,15 +599,25 @@ TEST(api_extreme_builder_indexes_are_safe_and_preserve_state_on_failure) {
     CHECK(populatedThrew);
     CHECK_EQ(array.toString(), before);
 
-    array[INT_MIN] = int64_t(11);
+    bool negativeThrew = false;
+    try {
+        array[INT_MIN] = int64_t(11);
+    } catch (const std::out_of_range&) {
+        negativeThrew = true;
+    }
+    CHECK(negativeThrew);
     CHECK_EQ(array.size(), size_t(1));
-    CHECK_EQ(mustGetInt(array[0]), int64_t(11));
+    CHECK_EQ(mustGetInt(array[0]), int64_t(7));
 
     pjson empty;
-    empty[INT_MIN] = int64_t(3);
-    CHECK(empty.isArray());
-    CHECK_EQ(empty.size(), size_t(1));
-    CHECK_EQ(mustGetInt(empty[0]), int64_t(3));
+    bool emptyNegativeThrew = false;
+    try {
+        empty[INT_MIN] = int64_t(3);
+    } catch (const std::out_of_range&) {
+        emptyNegativeThrew = true;
+    }
+    CHECK(emptyNegativeThrew);
+    CHECK(empty.isNull());
 }
 
 TEST(api_null_cstring_mutations_throw_and_preserve_prior_value) {

@@ -71,7 +71,7 @@ suites, and custom meta-schema-controlled vocabulary activation.
 Also verified: clang-format, clang-tidy, 20,000 schema-fuzzer runs, seven-target
 libFuzzer smoke coverage with inputs above 4 KiB, Doxygen API
 validation, relocatable static/shared CMake and pkg-config consumers, REUSE
-licensing, GCC, and a direct ThreadSanitizer concurrency probe.
+licensing (174/174 files), GCC, and a direct ThreadSanitizer concurrency probe.
 
 ---
 

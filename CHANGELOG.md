@@ -15,6 +15,9 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases follow
   negative index before the beginning to element zero. It now throws
   `std::out_of_range` without mutation; valid negative indexes still count from
   the end, and a new `operator[](size_t)` serves non-negative builder access.
+- Added non-throwing `toString(out, SerializeError&, options)` and
+  `write(stream, SerializeError&, options)` overloads with stable error codes.
+  String output is transactional; logical stream failures are preflighted.
 - **BREAKING (API):** JSON Schema validation is no longer a member of `pjson`.
   The `pjson::validate()` overloads and the nested `pjson::SchemaError` /
   `pjson::SchemaOptions` types are removed. Validation now lives in a standalone

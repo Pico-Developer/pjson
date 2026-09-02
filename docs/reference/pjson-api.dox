@@ -119,6 +119,16 @@
  */
 
 /**
+ * @struct ByteDance::pjson::SerializeError
+ * @brief Structured result for non-throwing serialization.
+ *
+ * Code distinguishes invalid UTF-8, rejected non-finite numbers, output limits,
+ * allocation failure, physical stream failure, and unexpected internal errors.
+ * String output is transactional; logical stream failures are detected before
+ * emission, while a physical sink failure may leave a prefix.
+ */
+
+/**
  * @struct ByteDance::pjson::PatchOptions
  * @brief Bounds JSON Patch and Merge Patch transactional amplification.
  *

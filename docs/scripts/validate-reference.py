@@ -23,6 +23,7 @@ REQUIRED_COMPOUNDS = {
     "ByteDance::pjson::PatchError",
     "ByteDance::pjson::PatchOptions",
     "ByteDance::pjson::SerializeOptions",
+    "ByteDance::pjson::SerializeError",
     "ByteDance::pjson::StringView",
     "ByteDance::pjson::SaxHandler",
     "ByteDance::pJsonSchemaValidator",
@@ -38,8 +39,8 @@ REQUIRED_MEMBERS = {
     "parseStream": 4,
     "parseSax": 4,
     "parseSaxStream": 2,
-    "toString": 2,
-    "write": 2,
+    "toString": 3,
+    "write": 3,
     "getType": 1,
     "isNull": 1,
     "isString": 1,
@@ -209,6 +210,15 @@ EXPECTED_PUBLIC_ENUMS = {
         "NonFiniteToNull",
         "NonFiniteToString",
     },
+    ("ByteDance::pjson::SerializeError", "Code"): {
+        "None",
+        "InvalidUtf8",
+        "NonFiniteNumber",
+        "OutputLimit",
+        "AllocationFailure",
+        "StreamFailure",
+        "InternalError",
+    },
 }
 
 EXPECTED_PARAMETER_TYPES = {
@@ -244,10 +254,15 @@ EXPECTED_PARAMETER_TYPES = {
         ("int", "std::string&"),
         ("int", "StringView&"),
     },
-    "toString": {(), ("const SerializeOptions&",)},
+    "toString": {
+        (),
+        ("const SerializeOptions&",),
+        ("std::string&", "SerializeError&", "const SerializeOptions&"),
+    },
     "write": {
         ("std::ostream&",),
         ("std::ostream&", "const SerializeOptions&"),
+        ("std::ostream&", "SerializeError&", "const SerializeOptions&"),
     },
     "applyPatch": {
         ("const pjson&", "const PatchOptions&"),
@@ -289,6 +304,10 @@ EXPECTED_PARAMETER_TYPES = {
 }
 
 REQUIRED_PUBLIC_FIELDS = {
+    "ByteDance::pjson::SerializeError": {
+        "code",
+        "message",
+    },
     "ByteDance::pJsonSchemaValidator::Error": {
         "path",
         "message",

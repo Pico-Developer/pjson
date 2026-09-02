@@ -282,6 +282,26 @@ namespace ByteDance {
             static SerializeOptions prettyPrinted();
         };
 
+        /// Structured outcome for the non-throwing serialization APIs.
+        struct SerializeError {
+            enum Code {
+                None,              ///< Serialization succeeded.
+                InvalidUtf8,       ///< A stored string or object key is not valid UTF-8.
+                NonFiniteNumber,   ///< NaN or infinity was rejected by the active policy.
+                OutputLimit,       ///< maxOutputBytes or representable output size was exceeded.
+                AllocationFailure, ///< Temporary serialization storage could not be allocated.
+                StreamFailure,     ///< The destination stream rejected a physical write.
+                InternalError      ///< An unexpected internal exception was contained.
+            };
+
+            Code code;           ///< Stable machine-readable result category.
+            std::string message; ///< Human-readable diagnostic; empty on success.
+            /// Constructs a successful serialization result.
+            SerializeError();
+            /// Resets the result to success.
+            void reset() noexcept;
+        };
+
         // Event sink for non-owning SAX parsing. Return false from any callback
         // to cancel parsing; public parseSax* APIs return false for cancellation
         // or thrown exceptions and populate ParseError when one is supplied.
@@ -439,18 +459,24 @@ namespace ByteDance {
                                    const ParseOptions& aOpts = ParseOptions());
 
         //== Serialization ===================================================
-        // Non-finite stored doubles serialize as JSON null. Invalid UTF-8 in a
-        // string value or object key is a serialization failure: toString() throws,
-        // while write() sets failbit (and may propagate stream exceptions).
-        // toString() may also throw for allocation or length failure.
+        // Invalid UTF-8 and rejected non-finite doubles are serialization
+        // failures: the convenience toString() overloads throw, while legacy
+        // write() sets failbit (and may propagate enabled stream exceptions).
+        // The SerializeError overloads never throw and expose stable categories.
         /// Returns compact JSON using the default serialization options.
         std::string toString() const;
         /// Returns JSON serialized according to aOpts.
         std::string toString(const SerializeOptions& aOpts) const;
+        /// Serializes into aOut transactionally and reports failure without throwing.
+        bool toString(std::string& aOut, SerializeError& aError,
+                      const SerializeOptions& aOpts = SerializeOptions()) const noexcept;
         /// Writes compact JSON to aOut using the default serialization options.
         void write(std::ostream& aOut) const;
         /// Writes JSON configured by aOpts to aOut.
         void write(std::ostream& aOut, const SerializeOptions& aOpts) const;
+        /// Writes JSON and reports logical or physical failure without throwing.
+        bool write(std::ostream& aOut, SerializeError& aError,
+                   const SerializeOptions& aOpts = SerializeOptions()) const noexcept;
 
         //== Type inspection =================================================
         /// Returns this node's stored JSON representation.

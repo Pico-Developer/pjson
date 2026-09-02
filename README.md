@@ -1048,6 +1048,10 @@ This is the documented pjson subset, not a complete JSON Schema draft. See
   `failbit` before emitting bytes. The default
   `SerializeOptions::maxOutputBytes` is 64 MiB; exceeding it produces
   `std::length_error` from `toString()` or preflight `failbit` from `write()`.
+- Non-throwing overloads accept `SerializeError` and report stable categories
+  for invalid UTF-8, rejected non-finite numbers, output limits, allocation
+  failure, stream failure, and internal errors. String output remains unchanged
+  on failure; only a physical stream failure may leave a partial prefix.
 - `tryGet` returns `false` without changing its output on a missing value or type
   mismatch. Operations that allocate,
   such as copying a string or moving across allocators, can still report

@@ -149,11 +149,10 @@ documentation follow-up.
 `ParseError` gained a stable `Code` enum (syntax, invalid encoding, duplicate
 key, number range, depth/input/node limits, allocation failure, stream error,
 callback error, invalid argument) set alongside the existing message and
-byte/line/column. Serialization already reports through exception/`failbit`
-with distinct exception types for UTF-8 vs. limit vs. (new) non-finite. Tests:
-`tests_error_model.cpp`. A separate `SerializeError` result type is not added;
-the existing typed-exception/`failbit` contract satisfies the machine-facing
-need.
+byte/line/column. Serialization now also exposes non-throwing `SerializeError`
+overloads with stable categories while retaining the existing convenience
+exception/stream-state APIs. Tests: `tests_error_model.cpp`,
+`tests_serialize_limits.cpp`.
 
 ### PJSON-API-006 — Ownership and allocator completeness — Already satisfied (documented scope)
 The baseline already documents that the custom `Allocator` covers persistent

@@ -47,6 +47,18 @@ namespace {
             return 1;
         return aConfigured < kParseDepthHardLimit ? aConfigured : kParseDepthHardLimit;
     }
+
+    // Publishes a structured serialization failure without weakening the
+    // noexcept contract if storing the optional diagnostic text allocates.
+    void setSerializeError(pjson::SerializeError& aError, pjson::SerializeError::Code aCode,
+                           const char* aMessage) noexcept {
+        aError.code = aCode;
+        try {
+            aError.message = aMessage;
+        } catch (...) {
+            aError.message.clear();
+        }
+    }
 } // namespace
 
 namespace {
@@ -946,6 +958,14 @@ pjson::SerializeOptions pjson::SerializeOptions::prettyPrinted() {
     SerializeOptions o;
     o.pretty = true;
     return o;
+}
+// Constructs a successful structured serialization result.
+pjson::SerializeError::SerializeError()
+        : code(None) {}
+// Clears a reusable serialization result before each operation.
+void pjson::SerializeError::reset() noexcept {
+    code = None;
+    message.clear();
 }
 // Constructs a success-state parse diagnostic at the start of input.
 pjson::ParseError::ParseError()
@@ -2440,6 +2460,45 @@ std::string pjson::toString(const SerializeOptions& aOpts) const {
     return result;
 }
 
+// Serializes transactionally into a caller-owned string. The caller's prior
+// bytes survive every logical, allocation, or internal failure.
+bool pjson::toString(std::string& aOut, SerializeError& aError,
+                     const SerializeOptions& aOpts) const noexcept {
+    aError.reset();
+    try {
+        CountingSink count(aOpts.maxOutputBytes);
+        if (!pjsonImpl::_writeValueTo(count, *this, aOpts)) {
+            if (count.hasInvalidUtf8()) {
+                setSerializeError(aError, SerializeError::InvalidUtf8,
+                                  "JSON string contains invalid UTF-8");
+            } else if (count.hasInvalidNumber()) {
+                setSerializeError(aError, SerializeError::NonFiniteNumber,
+                                  "JSON number is not finite");
+            } else {
+                setSerializeError(aError, SerializeError::OutputLimit,
+                                  "JSON output exceeds maxOutputBytes or representable size");
+            }
+            return false;
+        }
+        std::string result;
+        result.reserve(count.size());
+        pjsonImpl::_appendValue(result, *this, aOpts);
+        aOut.swap(result);
+        return true;
+    } catch (const std::bad_alloc&) {
+        setSerializeError(aError, SerializeError::AllocationFailure,
+                          "JSON serialization ran out of memory");
+    } catch (const std::length_error& exception) {
+        setSerializeError(aError, SerializeError::OutputLimit, exception.what());
+    } catch (const std::invalid_argument& exception) {
+        setSerializeError(aError, SerializeError::InternalError, exception.what());
+    } catch (...) {
+        setSerializeError(aError, SerializeError::InternalError,
+                          "JSON serialization failed with an internal exception");
+    }
+    return false;
+}
+
 // Streams with compact default options.
 void pjson::write(std::ostream& aOut) const {
     write(aOut, SerializeOptions());
@@ -2449,6 +2508,57 @@ void pjson::write(std::ostream& aOut) const {
 // output errors because the public streaming API reports through std::ostream.
 void pjson::write(std::ostream& aOut, const SerializeOptions& aOpts) const {
     pjsonImpl::_writeValue(aOut, *this, aOpts);
+}
+
+// Non-throwing stream serialization. Logical failures are detected by the
+// existing preflight before emission; only a physical stream failure may have
+// emitted a prefix.
+bool pjson::write(std::ostream& aOut, SerializeError& aError,
+                  const SerializeOptions& aOpts) const noexcept {
+    aError.reset();
+    try {
+        CountingSink count(aOpts.maxOutputBytes);
+        if (!pjsonImpl::_writeValueTo(count, *this, aOpts)) {
+            if (count.hasInvalidUtf8()) {
+                setSerializeError(aError, SerializeError::InvalidUtf8,
+                                  "JSON string contains invalid UTF-8");
+            } else if (count.hasInvalidNumber()) {
+                setSerializeError(aError, SerializeError::NonFiniteNumber,
+                                  "JSON number is not finite");
+            } else {
+                setSerializeError(aError, SerializeError::OutputLimit,
+                                  "JSON output exceeds maxOutputBytes or representable size");
+            }
+            try {
+                aOut.setstate(std::ios::failbit);
+            } catch (...) {
+                // Keep the more precise logical SerializeError category even
+                // when the caller enabled stream exceptions for failbit.
+            }
+            return false;
+        }
+        StreamSink sink(aOut, 0);
+        if (!pjsonImpl::_writeValueTo(sink, *this, aOpts)) {
+            setSerializeError(aError, SerializeError::StreamFailure,
+                              "JSON destination stream write failed");
+            return false;
+        }
+        return true;
+    } catch (const std::bad_alloc&) {
+        setSerializeError(aError, SerializeError::AllocationFailure,
+                          "JSON serialization ran out of memory");
+    } catch (const std::ios_base::failure& exception) {
+        setSerializeError(aError, SerializeError::StreamFailure, exception.what());
+    } catch (...) {
+        setSerializeError(aError, SerializeError::InternalError,
+                          "JSON serialization failed with an internal exception");
+    }
+    try {
+        aOut.setstate(std::ios::failbit);
+    } catch (...) {
+        // The structured result remains authoritative for this noexcept API.
+    }
+    return false;
 }
 
 //===----------------------------------------------------------------------===//

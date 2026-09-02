@@ -20,6 +20,7 @@
 #include "test_harness.h"
 #include "test_util.h"
 
+#include <limits>
 #include <sstream>
 #include <string>
 
@@ -115,4 +116,65 @@ TEST(deterministic_key_order) {
     CHECK(reDesc != nullptr);
     if (reAsc && reDesc)
         CHECK(*reAsc == *reDesc); // order does not affect structural equality
+}
+
+TEST(structured_serialization_success_and_output_limit) {
+    pjson value;
+    value["answer"] = int64_t(42);
+
+    pjson::SerializeError error;
+    std::string output = "old";
+    CHECK(value.toString(output, error));
+    CHECK_EQ(error.code, pjson::SerializeError::None);
+    CHECK(error.message.empty());
+    CHECK_EQ(output, std::string("{\"answer\":42}"));
+
+    pjson::SerializeOptions limited;
+    limited.maxOutputBytes = output.size() - 1;
+    output = "preserved";
+    CHECK(!value.toString(output, error, limited));
+    CHECK_EQ(error.code, pjson::SerializeError::OutputLimit);
+    CHECK(!error.message.empty());
+    CHECK_EQ(output, std::string("preserved"));
+}
+
+TEST(structured_serialization_classifies_invalid_utf8_and_nonfinite) {
+    pjson::SerializeError error;
+    std::string output = "unchanged";
+
+    pjson invalidUtf8;
+    invalidUtf8 = std::string("\xC0\xAF", 2);
+    CHECK(!invalidUtf8.toString(output, error));
+    CHECK_EQ(error.code, pjson::SerializeError::InvalidUtf8);
+    CHECK_EQ(output, std::string("unchanged"));
+
+    pjson nonFinite;
+    nonFinite = std::numeric_limits<double>::infinity();
+    CHECK(!nonFinite.toString(output, error));
+    CHECK_EQ(error.code, pjson::SerializeError::NonFiniteNumber);
+    CHECK_EQ(output, std::string("unchanged"));
+}
+
+TEST(structured_stream_serialization_reports_logical_and_physical_failure) {
+    pjson value;
+    value["key"] = "value";
+    pjson::SerializeError error;
+
+    pjson::SerializeOptions limited;
+    limited.maxOutputBytes = 1;
+    std::ostringstream logical;
+    CHECK(!value.write(logical, error, limited));
+    CHECK_EQ(error.code, pjson::SerializeError::OutputLimit);
+    CHECK(logical.str().empty());
+
+    std::ostringstream throwingLogical;
+    throwingLogical.exceptions(std::ios::failbit);
+    CHECK(!value.write(throwingLogical, error, limited));
+    CHECK_EQ(error.code, pjson::SerializeError::OutputLimit);
+    CHECK(throwingLogical.str().empty());
+
+    std::ostringstream physical;
+    physical.setstate(std::ios::badbit);
+    CHECK(!value.write(physical, error));
+    CHECK_EQ(error.code, pjson::SerializeError::StreamFailure);
 }

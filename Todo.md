@@ -16,6 +16,10 @@ cross-platform CI.
 
 Current implementation commits on branch `featurerequest`:
 
+- `2cfd60c` — full post-churn ABI, error handling, packaging, and documentation audit;
+- `334cd70` — stable opaque ABI baseline and pjson 3.0 version transition;
+- `3904d3f` — deduplicated private storage aliases;
+- `9d2a070` — extracted `pJsonParser` and split core implementation;
 - `abed3ba` — external, public-API-only `pJsonSchemaValidator`;
 - `f0d6b5e` — manifest-driven Draft 2020-12 conformance gate;
 - `abcd331` — explicit subset dialect and `$vocabulary` contract;
@@ -30,6 +34,22 @@ Current implementation commits on branch `featurerequest`:
 - `478bc97` — private schema utility module split;
 - `ea16a8c` — shared DOM/SAX numeric conversion;
 - `6203aff` — CTest discovery from the compiled registry.
+
+The worktree was clean immediately after `2cfd60c`; nothing has been pushed.
+Version 3.0.0 is the new ABI baseline (`PJSON_ABI_VERSION == 3`, shared-library
+`SOVERSION == 3`). The stable public object shapes are:
+
+- `pjson`: two pointers (`Allocator*` plus opaque `pjsonImpl*`);
+- `pJsonParser`: one opaque implementation pointer;
+- `pJsonSchemaValidator`: one opaque implementation pointer.
+
+`pjsonImpl` owns the type tag, direct anonymous payload union, private
+`ArrayStorage`/`ObjectStorage` aliases, and intrusive `_disposeNext` teardown link.
+There is no named `Storage`, `_uValue`, `_pValueRaw`, `_allocatorOwnedNode`, or
+parent pointer. Null values share an allocation-free process-lifetime sentinel;
+each non-null value allocates its implementation with
+`Allocator::ImplementationAllocation`. Deep destruction remains iterative and
+allocation-free.
 
 Important invariants now enforced:
 
@@ -89,6 +109,41 @@ segments, and made benchmark comparison reject missing/duplicate/invalid rows.
 A follow-up ABI audit added non-narrowing `findIndex(size_t)`, corrected SAX
 allocation/stream error categories, made null construction explicitly `noexcept`,
 and verified shared-import visibility through CMake, pkg-config, and Conan.
+It also made parse-error publication best-effort during allocation failure, added
+an rvalue-array-append overflow guard, removed stale inline-storage documentation,
+and prevented formatting checks from traversing generated Conan build trees.
+
+Additional audit evidence:
+
+- all three installed public headers compile independently as C++11 with warnings
+  as errors and hidden consumer visibility;
+- a stricter `-Wconversion -Wsign-conversion -Wshadow` build is clean for project
+  code (one warning remains inside the unchanged vendored Ryu source);
+- shared CMake, pkg-config, and Conan consumers receive `PJSON_SHARED` and pass
+  while compiled with hidden visibility;
+- static and shared Conan package/test-package runs pass;
+- exported-symbol inspection shows no `pjsonImpl`, `pJsonParserImpl`, or
+  `pJsonSchemaValidator::Impl` symbols; and
+- `git diff --check`, Python benchmark-tool tests, and public-header
+  self-containment checks pass.
+
+### Resume here
+
+No release-blocking defect is known. Start by checking `git status` and the two
+latest commits above. For further work, choose one of the open items below rather
+than reopening the completed ABI migration. The highest-value remaining choices are:
+
+1. finish optional asserted JSON Schema formats under `SCHEMA-2020`;
+2. continue only incremental, independently testable parser deduplication under
+   `MAINT-1`;
+3. split stateful schema validation only where a cohesive private interface can
+   preserve budgets, diagnostics, annotations, and reference scope (`MAINT-2`); or
+4. establish controlled-runner performance thresholds before enabling a benchmark
+   regression gate (`PERF-BASELINE`).
+
+Keep `std::map` for object storage unless insertion-order semantics are deliberately
+designed as a future major-version feature. Do not replace it with
+`std::unordered_map`.
 
 ---
 

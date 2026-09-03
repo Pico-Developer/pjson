@@ -8,6 +8,8 @@
 
 namespace ByteDance {
     struct pJsonParserImpl {
+        static const int DepthHardLimit = 1024;
+
         struct ParseCtx {
             const char* src;
             size_t pos;
@@ -67,13 +69,5 @@ namespace ByteDance {
                                    pJsonParser::Error* aError);
     };
 } // namespace ByteDance
-
-typedef ByteDance::pJsonParser::Options ParseOptions;
-typedef ByteDance::pJsonParser::Error ParseError;
-typedef ByteDance::pJsonParser::SaxHandler SaxHandler;
-typedef ByteDance::pJsonParserImpl::ParseCtx ParseCtx;
-typedef ByteDance::pJsonParserImpl::ParsedNumber ParsedNumber;
-
-static const int kParseDepthHardLimit = 1024;
 
 #endif // PRAVEENJSON_PARSER_INTERNAL_H

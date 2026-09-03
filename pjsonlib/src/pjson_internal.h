@@ -27,7 +27,6 @@
 
 #include "pjson.h"
 
-#include <map>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -41,9 +40,11 @@
 // invariants. pJsonSchemaValidator does not include this header.
 //===----------------------------------------------------------------------===//
 struct ByteDance::pjsonImpl {
-    // Public APIs deliberately hide the owning container representation.
-    typedef std::vector<pjson*> ArrayStorage;
-    typedef std::map<std::string, pjson*> ObjectStorage;
+    // Reuse pjson's canonical private storage aliases. pjsonImpl is a friend,
+    // so the raw-pointer ownership representation remains hidden from consumers
+    // and is not independently declared here.
+    typedef pjson::ArrayStorage ArrayStorage;
+    typedef pjson::ObjectStorage ObjectStorage;
 
     // One suspended container in the iterative serializer. Exactly one of
     // array/object is active according to isObject; the associated cursor
@@ -136,10 +137,4 @@ struct ByteDance::pjsonImpl {
     static bool _containsNode(const pjson& aRoot, const pjson* aNode) noexcept;
 };
 
-// File-scope aliases keep internal type names concise without exposing the
-// owning containers in the public header. They are visible in every library
-// translation unit that includes this header.
-typedef ByteDance::pjson::jsonType jsonType;
-typedef ByteDance::pjsonImpl::ArrayStorage PJSONARRAY;
-typedef ByteDance::pjsonImpl::ObjectStorage PJSONMAP;
 #endif /* !PRAVEENJSON_INTERNAL_H */

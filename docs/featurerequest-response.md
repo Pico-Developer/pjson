@@ -366,6 +366,13 @@ temporary allocation-free destruction work-list link, not persistent parent stat
 A parent link would require mutation-wide maintenance and would not itself provide
 allocation-free deep teardown.
 
+`ArrayStorage` and `ObjectStorage` likewise remain private because their exact
+types expose both the container choice and raw owning child pointers. Their concrete
+definitions now exist only once in `pjson`; `pjsonImpl` reuses those private aliases
+through friendship, and the former file-scope `PJSONARRAY`/`PJSONMAP` aliases are
+removed. This reduces declaration drift without turning storage representation into
+a supported public API.
+
 Further DOM/SAX unification and stateful schema-dispatch splitting were also reviewed
 and deliberately left incremental. The parser fronts have different streaming,
 callback, and ownership concerns, while schema families share budgets, annotations,

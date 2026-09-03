@@ -113,6 +113,8 @@ REQUIRED_SCHEMA_OPTIONS_MEMBERS = {
 REMOVED_PUBLIC_MEMBERS = {
     "PJSONARRAY",
     "PJSONMAP",
+    "ArrayStorage",
+    "ObjectStorage",
     "getInt64",
     "getDouble",
     "getBool",

@@ -19,7 +19,8 @@ namespace {
     int clampParseDepth(int configured) {
         if (configured <= 0)
             return 1;
-        return configured < kParseDepthHardLimit ? configured : kParseDepthHardLimit;
+        return configured < pJsonParserImpl::DepthHardLimit ? configured
+                                                            : pJsonParserImpl::DepthHardLimit;
     }
 } // namespace
 
@@ -108,24 +109,27 @@ namespace ByteDance {
     pjson pJsonParser::parseStream(std::istream& input, Error& error) const {
         return pJsonParserImpl::parseStream(input, _options, &error, *_allocator);
     }
-    bool pJsonParser::parseSax(const std::string& input, SaxHandler& handler) const {
+    bool pJsonParser::parseSax(const std::string& input, pJsonParser::SaxHandler& handler) const {
         return pJsonParserImpl::parseSaxTop(input.c_str(), input.size(), handler, _options,
                                             nullptr);
     }
-    bool pJsonParser::parseSax(const char* input, size_t size, SaxHandler& handler) const {
+    bool pJsonParser::parseSax(const char* input, size_t size,
+                               pJsonParser::SaxHandler& handler) const {
         return pJsonParserImpl::parseSaxTop(input, size, handler, _options, nullptr);
     }
-    bool pJsonParser::parseSax(const std::string& input, SaxHandler& handler, Error& error) const {
+    bool pJsonParser::parseSax(const std::string& input, pJsonParser::SaxHandler& handler,
+                               Error& error) const {
         return pJsonParserImpl::parseSaxTop(input.c_str(), input.size(), handler, _options, &error);
     }
-    bool pJsonParser::parseSax(const char* input, size_t size, SaxHandler& handler,
+    bool pJsonParser::parseSax(const char* input, size_t size, pJsonParser::SaxHandler& handler,
                                Error& error) const {
         return pJsonParserImpl::parseSaxTop(input, size, handler, _options, &error);
     }
-    bool pJsonParser::parseSaxStream(std::istream& input, SaxHandler& handler) const {
+    bool pJsonParser::parseSaxStream(std::istream& input, pJsonParser::SaxHandler& handler) const {
         return pJsonParserImpl::parseSaxStream(input, handler, _options, nullptr);
     }
-    bool pJsonParser::parseSaxStream(std::istream& input, SaxHandler& handler, Error& error) const {
+    bool pJsonParser::parseSaxStream(std::istream& input, pJsonParser::SaxHandler& handler,
+                                     Error& error) const {
         return pJsonParserImpl::parseSaxStream(input, handler, _options, &error);
     }
 } // namespace ByteDance
@@ -317,53 +321,54 @@ namespace {
         }
     }
 
-    // Maps a parser diagnostic message to a stable ParseError::Code. The exact
+    // Maps a parser diagnostic message to a stable pJsonParser::Error::Code. The exact
     // message wording may evolve; this keeps the machine-facing category stable
     // by classifying on the well-known phrases the parser emits.
-    ParseError::Code classifyParseMessage(const std::string& message) {
+    pJsonParser::Error::Code classifyParseMessage(const std::string& message) {
         if (message.find("UTF-8") != std::string::npos ||
             message.find("surrogate") != std::string::npos ||
             message.find("escape") != std::string::npos || message.find("\\u") != std::string::npos)
-            return ParseError::InvalidEncoding;
+            return pJsonParser::Error::InvalidEncoding;
         if (message.find("duplicate object key") != std::string::npos)
-            return ParseError::DuplicateKey;
+            return pJsonParser::Error::DuplicateKey;
         if (message.find("out of range") != std::string::npos ||
             message.find("number") != std::string::npos)
-            return ParseError::NumberRange;
+            return pJsonParser::Error::NumberRange;
         if (message.find("nesting depth") != std::string::npos)
-            return ParseError::DepthLimit;
+            return pJsonParser::Error::DepthLimit;
         if (message.find("maxInputBytes") != std::string::npos)
-            return ParseError::InputLimit;
+            return pJsonParser::Error::InputLimit;
         if (message.find("maxNodes") != std::string::npos ||
             message.find("node budget") != std::string::npos)
-            return ParseError::NodeLimit;
+            return pJsonParser::Error::NodeLimit;
         if (message.find("out of memory") != std::string::npos)
-            return ParseError::AllocationFailure;
+            return pJsonParser::Error::AllocationFailure;
         if (message.find("stream read") != std::string::npos)
-            return ParseError::StreamError;
-        return ParseError::Syntax;
+            return pJsonParser::Error::StreamError;
+        return pJsonParser::Error::Syntax;
     }
 
     // Publishes a buffer-parser failure, deriving source coordinates from the
     // authoritative byte offset. A null destination intentionally discards it.
     // The code is classified from the message unless an explicit one is given.
-    void setParseError(ParseError* err, const char* src, size_t size, size_t offset,
-                       const std::string& message, ParseError::Code code = ParseError::None) {
+    void setParseError(pJsonParser::Error* err, const char* src, size_t size, size_t offset,
+                       const std::string& message,
+                       pJsonParser::Error::Code code = pJsonParser::Error::None) {
         if (!err)
             return;
         err->ok = false;
-        err->code = code == ParseError::None ? classifyParseMessage(message) : code;
+        err->code = code == pJsonParser::Error::None ? classifyParseMessage(message) : code;
         err->offset = offset;
         lineAndColumn(src, size, offset, err->line, err->column);
         err->message = message;
     }
 
     // Restores the public error object to its successful, start-of-input state.
-    void resetParseError(ParseError* err) {
+    void resetParseError(pJsonParser::Error* err) {
         if (!err)
             return;
         err->ok = true;
-        err->code = ParseError::None;
+        err->code = pJsonParser::Error::None;
         err->offset = 0;
         err->line = 1;
         err->column = 1;
@@ -371,7 +376,7 @@ namespace {
     }
 
     // Internal control-flow exception used to unwind immediately when a SAX
-    // callback returns false; parseDocument converts it back into ParseError.
+    // callback returns false; parseDocument converts it back into pJsonParser::Error.
     class SaxParseCancelled : public std::exception {
     public:
         // Supplies a stable diagnostic if cancellation escapes an internal frame.
@@ -628,13 +633,14 @@ namespace {
     // DOM parsing, but can suppress callbacks for KeepFirstDuplicate values.
     template <typename Cursor> struct SaxParser {
         Cursor& cur;
-        SaxHandler& handler;
-        const ParseOptions& opts;
-        ParseError* err;
+        pJsonParser::SaxHandler& handler;
+        const pJsonParser::Options& opts;
+        pJsonParser::Error* err;
         size_t nodeCount;
 
         // Couples a cursor and event sink for one parse, with fresh node accounting.
-        SaxParser(Cursor& aCur, SaxHandler& aHandler, const ParseOptions& aOpts, ParseError* aErr)
+        SaxParser(Cursor& aCur, pJsonParser::SaxHandler& aHandler,
+                  const pJsonParser::Options& aOpts, pJsonParser::Error* aErr)
                 : cur(aCur)
                 , handler(aHandler)
                 , opts(aOpts)
@@ -768,16 +774,16 @@ namespace {
             if (!reserveNode())
                 return false;
 
-            ParsedNumber number;
+            pJsonParserImpl::ParsedNumber number;
             const char* message = nullptr;
             if (!pJsonParserImpl::convertNumberToken(text, isFloat, opts.numberPolicy, number,
                                                      message))
                 return fail(message);
             if (!emit)
                 return true;
-            if (number.kind == ParsedNumber::SignedInteger)
+            if (number.kind == pJsonParserImpl::ParsedNumber::SignedInteger)
                 return dispatch(handler.onInt(number.signedValue));
-            if (number.kind == ParsedNumber::UnsignedInteger)
+            if (number.kind == pJsonParserImpl::ParsedNumber::UnsignedInteger)
                 return dispatch(handler.onUInt(number.unsignedValue));
             return dispatch(handler.onDouble(number.floatingValue));
         }
@@ -890,17 +896,18 @@ namespace {
                     return fail("expected ':' after object key");
 
                 bool duplicate = false;
-                if (opts.duplicateKeys != ParseOptions::KeepLastDuplicate) {
+                if (opts.duplicateKeys != pJsonParser::Options::KeepLastDuplicate) {
                     duplicate = seenKeys.find(key) != seenKeys.end();
                 }
-                if (duplicate && opts.duplicateKeys == ParseOptions::RejectDuplicateKeys) {
+                if (duplicate && opts.duplicateKeys == pJsonParser::Options::RejectDuplicateKeys) {
                     return failAt(keyOffset, keyLine, keyColumn, "duplicate object key");
                 }
-                if (!duplicate && opts.duplicateKeys != ParseOptions::KeepLastDuplicate)
+                if (!duplicate && opts.duplicateKeys != pJsonParser::Options::KeepLastDuplicate)
                     seenKeys[key] = true;
 
                 const bool emitValue =
-                    emit && !(duplicate && opts.duplicateKeys == ParseOptions::KeepFirstDuplicate);
+                    emit &&
+                    !(duplicate && opts.duplicateKeys == pJsonParser::Options::KeepFirstDuplicate);
                 if (emitValue && !dispatch(handler.onKey(key)))
                     return false;
                 if (!parseValue(depth, emitValue))
@@ -1143,7 +1150,7 @@ namespace {
         bool failNoThrow(const char* message) noexcept {
             if (err) {
                 err->ok = false;
-                err->code = ParseError::CallbackError;
+                err->code = pJsonParser::Error::CallbackError;
                 err->offset = cur.position();
                 err->line = cur.line();
                 err->column = cur.column();
@@ -1163,7 +1170,7 @@ namespace {
 // Records the first parse error (byte offset + message) and returns false so
 // callers can `return fail(...)`.
 /*static*/
-bool pJsonParserImpl::fail(ParseCtx& c, size_t aPos, const char* aMsg) {
+bool pJsonParserImpl::fail(pJsonParserImpl::ParseCtx& c, size_t aPos, const char* aMsg) {
     if (!c.failed) {
         c.failed = true;
         c.errPos = aPos;
@@ -1176,7 +1183,7 @@ bool pJsonParserImpl::fail(ParseCtx& c, size_t aPos, const char* aMsg) {
 // created, which caps total memory even for inputs that stay within maxDepth
 // (e.g. a huge flat array). The caller propagates the nullptr as a parse error.
 /*static*/
-pjson* pJsonParserImpl::newNode(ParseCtx& c) {
+pjson* pJsonParserImpl::newNode(pJsonParserImpl::ParseCtx& c) {
     if (c.maxNodes != 0 && c.nodeCount >= c.maxNodes) {
         fail(c, c.pos, "document too large (node budget exceeded)");
         return nullptr;
@@ -1189,7 +1196,8 @@ pjson* pJsonParserImpl::newNode(ParseCtx& c) {
 // stops at (and consumes) the first unescaped '"'. RFC 8259-invalid escapes,
 // control bytes, surrogate halves, and UTF-8 are rejected.
 /*static*/
-bool pJsonParserImpl::decodeStringBody(ParseCtx& c, std::string& aOut, bool bStopAtQuote) {
+bool pJsonParserImpl::decodeStringBody(pJsonParserImpl::ParseCtx& c, std::string& aOut,
+                                       bool bStopAtQuote) {
     aOut.clear();
     while (c.pos < c.end) {
         unsigned char ch = static_cast<unsigned char>(c.src[c.pos]);
@@ -1277,8 +1285,8 @@ bool pJsonParserImpl::decodeStringBody(ParseCtx& c, std::string& aOut, bool bSto
 // Reads incrementally so maxInputBytes bounds memory before the complete stream
 // has been materialized. Returns the parsed document by value (null on failure).
 /*static*/
-pjson pJsonParserImpl::parseStream(std::istream& aIn, const ParseOptions& aOpts, ParseError* aErr,
-                                   pjson::Allocator& aAlloc) {
+pjson pJsonParserImpl::parseStream(std::istream& aIn, const pJsonParser::Options& aOpts,
+                                   pJsonParser::Error* aErr, pjson::Allocator& aAlloc) {
     std::string content;
     char buffer[8192];
     while (aIn.good()) {
@@ -1295,24 +1303,24 @@ pjson pJsonParserImpl::parseStream(std::istream& aIn, const ParseOptions& aOpts,
                 content.append(buffer, aOpts.maxInputBytes - content.size());
             }
             setParseError(aErr, content.data(), content.size(), aOpts.maxInputBytes,
-                          "input exceeds maxInputBytes", ParseError::InputLimit);
+                          "input exceeds maxInputBytes", pJsonParser::Error::InputLimit);
             return pjson(aAlloc);
         }
         content.append(buffer, chunk);
     }
     if (aIn.bad()) {
         setParseError(aErr, content.data(), content.size(), content.size(), "stream read failed",
-                      ParseError::StreamError);
+                      pJsonParser::Error::StreamError);
         return pjson(aAlloc);
     }
     return parseTop(content.c_str(), content.length(), aOpts, aErr, aAlloc);
 }
 /*static*/
-bool pJsonParserImpl::parseSaxTop(const char* aSrc, size_t aSize, SaxHandler& aHandler,
-                                  const ParseOptions& aOpts, ParseError* aErr) {
+bool pJsonParserImpl::parseSaxTop(const char* aSrc, size_t aSize, pJsonParser::SaxHandler& aHandler,
+                                  const pJsonParser::Options& aOpts, pJsonParser::Error* aErr) {
     resetParseError(aErr);
     if (aSrc == nullptr) {
-        setParseError(aErr, "", 0, 0, "null input", ParseError::InvalidArgument);
+        setParseError(aErr, "", 0, 0, "null input", pJsonParser::Error::InvalidArgument);
         return false;
     }
     if (aOpts.maxInputBytes != 0 && aSize > aOpts.maxInputBytes) {
@@ -1324,8 +1332,8 @@ bool pJsonParserImpl::parseSaxTop(const char* aSrc, size_t aSize, SaxHandler& aH
     return parser.parseDocument();
 }
 /*static*/
-bool pJsonParserImpl::parseSaxStream(std::istream& aIn, SaxHandler& aHandler,
-                                     const ParseOptions& aOpts, ParseError* aErr) {
+bool pJsonParserImpl::parseSaxStream(std::istream& aIn, pJsonParser::SaxHandler& aHandler,
+                                     const pJsonParser::Options& aOpts, pJsonParser::Error* aErr) {
     resetParseError(aErr);
     StreamSaxCursor cursor(aIn);
     SaxParser<StreamSaxCursor> parser(cursor, aHandler, aOpts, aErr);
@@ -1341,24 +1349,24 @@ bool pJsonParserImpl::parseSaxStream(std::istream& aIn, SaxHandler& aHandler,
 //===----------------------------------------------------------------------===//
 
 // Shared driver: parse a single top-level value, require only trailing
-// whitespace, and report success/failure through the optional ParseError.
+// whitespace, and report success/failure through the optional pJsonParser::Error.
 /*static*/
-pjson pJsonParserImpl::parseTop(const char* aSrc, size_t aSize, const ParseOptions& aOpts,
-                                ParseError* aErr, pjson::Allocator& aAlloc) {
+pjson pJsonParserImpl::parseTop(const char* aSrc, size_t aSize, const pJsonParser::Options& aOpts,
+                                pJsonParser::Error* aErr, pjson::Allocator& aAlloc) {
     resetParseError(aErr);
     if (aSrc == nullptr) {
-        setParseError(aErr, "", 0, 0, "null input", ParseError::InvalidArgument);
+        setParseError(aErr, "", 0, 0, "null input", pJsonParser::Error::InvalidArgument);
         return pjson(aAlloc);
     }
 
     // Reject an over-large input up front (cheap DoS guard before any work).
     if (aOpts.maxInputBytes != 0 && aSize > aOpts.maxInputBytes) {
         setParseError(aErr, aSrc, aSize, aOpts.maxInputBytes, "input exceeds maxInputBytes",
-                      ParseError::InputLimit);
+                      pJsonParser::Error::InputLimit);
         return pjson(aAlloc);
     }
 
-    ParseCtx c;
+    pJsonParserImpl::ParseCtx c;
     c.src = aSrc;
     c.pos = 0;
     c.end = aSize;
@@ -1386,7 +1394,7 @@ pjson pJsonParserImpl::parseTop(const char* aSrc, size_t aSize, const ParseOptio
         char trailing;
         if (peek(c, trailing)) {
             setParseError(aErr, aSrc, aSize, c.pos, "trailing characters after JSON value",
-                          ParseError::Syntax);
+                          pJsonParser::Error::Syntax);
             return pjson(aAlloc);
         }
         // Move the parsed node's storage into a value bound to the same allocator.
@@ -1397,7 +1405,7 @@ pjson pJsonParserImpl::parseTop(const char* aSrc, size_t aSize, const ParseOptio
         return result;
     } catch (const std::bad_alloc&) {
         setParseError(aErr, aSrc, aSize, c.pos, "parse ran out of memory",
-                      ParseError::AllocationFailure);
+                      pJsonParser::Error::AllocationFailure);
     } catch (const std::exception& ex) {
         setParseError(aErr, aSrc, aSize, c.pos,
                       std::string("parse failed with exception: ") + ex.what());
@@ -1408,7 +1416,7 @@ pjson pJsonParserImpl::parseTop(const char* aSrc, size_t aSize, const ParseOptio
 }
 // Skips whitespace and reports the next character without consuming it.
 /*static*/
-bool pJsonParserImpl::peek(ParseCtx& c, char& aOut) {
+bool pJsonParserImpl::peek(pJsonParserImpl::ParseCtx& c, char& aOut) {
     while (c.pos < c.end) {
         aOut = c.src[c.pos];
         if (isWhitespace(aOut)) {
@@ -1421,7 +1429,7 @@ bool pJsonParserImpl::peek(ParseCtx& c, char& aOut) {
 }
 // Consumes the ':' separating an object key from its value (skipping ws).
 /*static*/
-bool pJsonParserImpl::skipColon(ParseCtx& c) {
+bool pJsonParserImpl::skipColon(pJsonParserImpl::ParseCtx& c) {
     while (c.pos < c.end) {
         char ch = c.src[c.pos++];
         if (ch == ':') {
@@ -1436,7 +1444,7 @@ bool pJsonParserImpl::skipColon(ParseCtx& c) {
 }
 // Dispatches on the next non-whitespace character to the right sub-parser.
 /*static*/
-bool pJsonParserImpl::parseValue(ParseCtx& c, pjson*& aOut) {
+bool pJsonParserImpl::parseValue(pJsonParserImpl::ParseCtx& c, pjson*& aOut) {
     char ch;
     if (!peek(c, ch)) {
         return fail(c, c.pos, "unexpected end of input; expected a value");
@@ -1456,7 +1464,7 @@ bool pJsonParserImpl::parseValue(ParseCtx& c, pjson*& aOut) {
 }
 // Matches a keyword literal using the exact lowercase RFC spelling.
 /*static*/
-bool pJsonParserImpl::parseKeyword(ParseCtx& c, pjson*& aOut) {
+bool pJsonParserImpl::parseKeyword(pJsonParserImpl::ParseCtx& c, pjson*& aOut) {
     struct KW {
         const char* word;
         size_t len;
@@ -1497,7 +1505,7 @@ bool pJsonParserImpl::parseKeyword(ParseCtx& c, pjson*& aOut) {
 }
 // Reads a quoted string body starting at the opening '"'.
 /*static*/
-bool pJsonParserImpl::extractString(ParseCtx& c, std::string& aOut) {
+bool pJsonParserImpl::extractString(pJsonParserImpl::ParseCtx& c, std::string& aOut) {
     if (c.pos >= c.end || c.src[c.pos] != '\"') {
         return fail(c, c.pos, "expected '\"' to start a string");
     }
@@ -1506,7 +1514,7 @@ bool pJsonParserImpl::extractString(ParseCtx& c, std::string& aOut) {
 }
 /*static*/
 // Parses and allocates one string value after decoding its complete token.
-bool pJsonParserImpl::parseString(ParseCtx& c, pjson*& aOut) {
+bool pJsonParserImpl::parseString(pJsonParserImpl::ParseCtx& c, pjson*& aOut) {
     std::string s;
     if (!extractString(c, s)) {
         return false;
@@ -1527,11 +1535,11 @@ bool pJsonParserImpl::parseString(ParseCtx& c, pjson*& aOut) {
 // AllowLossyNumbers policy opts in to storing the nearest finite double. Never
 // throws.
 /*static*/
-bool pJsonParserImpl::parseNumber(ParseCtx& c, pjson*& aOut) {
+bool pJsonParserImpl::parseNumber(pJsonParserImpl::ParseCtx& c, pjson*& aOut) {
     const size_t begin = c.pos;
     size_t scanPosition = c.pos;
     struct Adapter {
-        ParseCtx& context;
+        pJsonParserImpl::ParseCtx& context;
         size_t& position;
         bool peek(char& ch) {
             if (position >= context.end)
@@ -1551,16 +1559,16 @@ bool pJsonParserImpl::parseNumber(ParseCtx& c, pjson*& aOut) {
     const char* scanError = nullptr;
     if (!scanJsonNumber(adapter, text, bFloat, scanError))
         return fail(c, scanPosition, scanError == nullptr ? "invalid number" : scanError);
-    ParsedNumber number;
+    pJsonParserImpl::ParsedNumber number;
     const char* message = nullptr;
     if (!convertNumberToken(text, bFloat, c.numberPolicy, number, message))
         return fail(c, begin, message);
     pjsonImpl::OwnedNode value(newNode(c));
     if (!value)
         return false;
-    if (number.kind == ParsedNumber::SignedInteger)
+    if (number.kind == pJsonParserImpl::ParsedNumber::SignedInteger)
         *value = number.signedValue;
-    else if (number.kind == ParsedNumber::UnsignedInteger)
+    else if (number.kind == pJsonParserImpl::ParsedNumber::UnsignedInteger)
         *value = number.unsignedValue;
     else
         *value = number.floatingValue;
@@ -1571,7 +1579,7 @@ bool pJsonParserImpl::parseNumber(ParseCtx& c, pjson*& aOut) {
 // Parses one array under a balanced depth charge. A child remains RAII-owned
 // until vector growth succeeds, preventing leaks on allocation failure.
 /*static*/
-bool pJsonParserImpl::parseArray(ParseCtx& c, pjson*& aOut) {
+bool pJsonParserImpl::parseArray(pJsonParserImpl::ParseCtx& c, pjson*& aOut) {
     if (++c.depth > c.maxDepth) {
         --c.depth;
         return fail(c, c.pos, "maximum nesting depth exceeded");
@@ -1581,7 +1589,7 @@ bool pJsonParserImpl::parseArray(ParseCtx& c, pjson*& aOut) {
         --c.depth;
         return false;
     }
-    arr->resetTo(jsonType::jsonArray);
+    arr->resetTo(pjson::jsonType::jsonArray);
     ++c.pos; // consume '['
 
     bool bExpectValue = false; // a comma was seen, a value must follow
@@ -1628,7 +1636,7 @@ bool pJsonParserImpl::parseArray(ParseCtx& c, pjson*& aOut) {
 // Parses one object under a balanced depth charge and applies duplicate policy
 // only after the replacement value is fully parsed and owned.
 /*static*/
-bool pJsonParserImpl::parseObject(ParseCtx& c, pjson*& aOut) {
+bool pJsonParserImpl::parseObject(pJsonParserImpl::ParseCtx& c, pjson*& aOut) {
     if (++c.depth > c.maxDepth) {
         --c.depth;
         return fail(c, c.pos, "maximum nesting depth exceeded");
@@ -1638,7 +1646,7 @@ bool pJsonParserImpl::parseObject(ParseCtx& c, pjson*& aOut) {
         --c.depth;
         return false;
     }
-    obj->resetTo(jsonType::jsonObject);
+    obj->resetTo(pjson::jsonType::jsonObject);
     ++c.pos; // consume '{'
 
     bool bExpectMember = false; // a comma was seen, a member must follow
@@ -1677,7 +1685,7 @@ bool pJsonParserImpl::parseObject(ParseCtx& c, pjson*& aOut) {
             // allocating) its value subtree.
             const bool duplicate =
                 pjsonImpl::_object(*obj).find(mkey) != pjsonImpl::_object(*obj).end();
-            if (duplicate && c.duplicateKeys == ParseOptions::RejectDuplicateKeys) {
+            if (duplicate && c.duplicateKeys == pJsonParser::Options::RejectDuplicateKeys) {
                 --c.depth;
                 return fail(c, keyOffset, "duplicate object key");
             }
@@ -1690,8 +1698,8 @@ bool pJsonParserImpl::parseObject(ParseCtx& c, pjson*& aOut) {
             // Apply the remaining duplicate-key policy: keep the first or last
             // value deterministically (reject was already handled above).
             if (duplicate) {
-                PJSONMAP::iterator it = pjsonImpl::_object(*obj).find(mkey);
-                if (c.duplicateKeys == ParseOptions::KeepLastDuplicate) {
+                pjsonImpl::ObjectStorage::iterator it = pjsonImpl::_object(*obj).find(mkey);
+                if (c.duplicateKeys == pJsonParser::Options::KeepLastDuplicate) {
                     pjsonImpl::_destroyNode(it->second);
                     it->second = val;
                 } else {

@@ -87,7 +87,7 @@ namespace {
                                  "JSON patch cloned-byte budget exceeded"))
                     return false;
             } else if (current->isArray()) {
-                const PJSONARRAY& array = pjsonImpl::_array(*current);
+                const pjsonImpl::ArrayStorage& array = pjsonImpl::_array(*current);
                 const size_t remainingWork =
                     budget.workLimit - std::min(budget.work, budget.workLimit);
                 if (array.size() > remainingWork)
@@ -95,13 +95,14 @@ namespace {
                                      "JSON patch work budget exceeded");
                 work.insert(work.end(), array.begin(), array.end());
             } else if (current->isObject()) {
-                const PJSONMAP& object = pjsonImpl::_object(*current);
+                const pjsonImpl::ObjectStorage& object = pjsonImpl::_object(*current);
                 const size_t remainingWork =
                     budget.workLimit - std::min(budget.work, budget.workLimit);
                 if (object.size() > remainingWork)
                     return failPatch(error, PatchError::ResourceLimit,
                                      "JSON patch work budget exceeded");
-                for (PJSONMAP::const_iterator it = object.begin(); it != object.end(); ++it) {
+                for (pjsonImpl::ObjectStorage::const_iterator it = object.begin();
+                     it != object.end(); ++it) {
                     if (!chargePatch(budget.bytes, budget.byteLimit, it->first.size(), error,
                                      "JSON patch cloned-byte budget exceeded"))
                         return false;
@@ -151,8 +152,8 @@ namespace {
                 if (pjsonImpl::_boolean(lhs) != pjsonImpl::_boolean(rhs))
                     return true;
             } else if (lhs.isArray()) {
-                const PJSONARRAY& l = pjsonImpl::_array(lhs);
-                const PJSONARRAY& r = pjsonImpl::_array(rhs);
+                const pjsonImpl::ArrayStorage& l = pjsonImpl::_array(lhs);
+                const pjsonImpl::ArrayStorage& r = pjsonImpl::_array(rhs);
                 if (l.size() != r.size())
                     return true;
                 for (size_t i = 0; i < l.size(); ++i) {
@@ -160,12 +161,12 @@ namespace {
                     pending.push_back(child);
                 }
             } else if (lhs.isObject()) {
-                const PJSONMAP& l = pjsonImpl::_object(lhs);
-                const PJSONMAP& r = pjsonImpl::_object(rhs);
+                const pjsonImpl::ObjectStorage& l = pjsonImpl::_object(lhs);
+                const pjsonImpl::ObjectStorage& r = pjsonImpl::_object(rhs);
                 if (l.size() != r.size())
                     return true;
-                PJSONMAP::const_iterator li = l.begin();
-                PJSONMAP::const_iterator ri = r.begin();
+                pjsonImpl::ObjectStorage::const_iterator li = l.begin();
+                pjsonImpl::ObjectStorage::const_iterator ri = r.begin();
                 for (; li != l.end(); ++li, ++ri) {
                     if (!chargePatch(budget.work, budget.workLimit,
                                      std::max(li->first.size(), ri->first.size()) + size_t(1),
@@ -327,8 +328,8 @@ namespace {
         const std::string& token = aTokens.back();
 
         if (parent->isObject()) {
-            PJSONMAP* object = &pjsonImpl::_object(*parent);
-            PJSONMAP::iterator existing = object->find(token);
+            pjsonImpl::ObjectStorage* object = &pjsonImpl::_object(*parent);
+            pjsonImpl::ObjectStorage::iterator existing = object->find(token);
             if (existing != object->end()) {
                 pjsonImpl::_swapStorage(*existing->second, *aValue);
                 return true;
@@ -336,7 +337,7 @@ namespace {
             if (!chargePatch(aBudget.bytes, aBudget.byteLimit, token.size(), aError,
                              "JSON Patch cloned-byte budget exceeded"))
                 return false;
-            const std::pair<PJSONMAP::iterator, bool> inserted =
+            const std::pair<pjsonImpl::ObjectStorage::iterator, bool> inserted =
                 object->insert(std::make_pair(token, static_cast<pjson*>(nullptr)));
             if (!inserted.second)
                 return failPatchAtToken(aError, PatchError::InternalError, finalIndex, token,
@@ -350,11 +351,11 @@ namespace {
             bool append = false;
             if (!patchArrayIndex(*parent, token, true, finalIndex, index, append, aError))
                 return false;
-            PJSONARRAY* array = &pjsonImpl::_array(*parent);
+            pjsonImpl::ArrayStorage* array = &pjsonImpl::_array(*parent);
             if (!chargePatch(aBudget.work, aBudget.workLimit, array->size() - index, aError,
                              "JSON Patch work budget exceeded"))
                 return false;
-            const PJSONARRAY::iterator inserted =
+            const pjsonImpl::ArrayStorage::iterator inserted =
                 array->insert(array->begin() + static_cast<std::ptrdiff_t>(index), nullptr);
             *inserted = aValue.release();
             return true;
@@ -380,8 +381,8 @@ namespace {
         const std::string& token = aTokens.back();
 
         if (parent->isObject()) {
-            PJSONMAP* object = &pjsonImpl::_object(*parent);
-            PJSONMAP::iterator existing = object->find(token);
+            pjsonImpl::ObjectStorage* object = &pjsonImpl::_object(*parent);
+            pjsonImpl::ObjectStorage::iterator existing = object->find(token);
             if (existing == object->end())
                 return failPatchAtToken(aError, PatchError::TargetMissing, finalIndex, token,
                                         "replace target does not exist");
@@ -426,8 +427,8 @@ namespace {
         const std::string& token = aTokens.back();
 
         if (parent->isObject()) {
-            PJSONMAP* object = &pjsonImpl::_object(*parent);
-            PJSONMAP::iterator existing = object->find(token);
+            pjsonImpl::ObjectStorage* object = &pjsonImpl::_object(*parent);
+            pjsonImpl::ObjectStorage::iterator existing = object->find(token);
             if (existing == object->end())
                 return failPatchAtToken(aError, PatchError::TargetMissing, finalIndex, token,
                                         "remove source does not exist");
@@ -441,7 +442,7 @@ namespace {
             bool append = false;
             if (!patchArrayIndex(*parent, token, false, finalIndex, index, append, aError))
                 return false;
-            PJSONARRAY* array = &pjsonImpl::_array(*parent);
+            pjsonImpl::ArrayStorage* array = &pjsonImpl::_array(*parent);
             if (!chargePatch(aBudget.work, aBudget.workLimit, array->size() - index - size_t(1),
                              aError, "JSON Patch work budget exceeded"))
                 return false;
@@ -471,13 +472,13 @@ namespace {
     // Replaces or adopts an allocator-compatible object child without exposing
     // a null map entry if insertion fails.
     bool insertObjectChild(pjson& aObject, const std::string& aKey, pjsonImpl::OwnedNode aChild) {
-        PJSONMAP* object = &pjsonImpl::_object(aObject);
-        PJSONMAP::iterator existing = object->find(aKey);
+        pjsonImpl::ObjectStorage* object = &pjsonImpl::_object(aObject);
+        pjsonImpl::ObjectStorage::iterator existing = object->find(aKey);
         if (existing != object->end()) {
             pjsonImpl::_swapStorage(*existing->second, *aChild);
             return true;
         }
-        const std::pair<PJSONMAP::iterator, bool> inserted =
+        const std::pair<pjsonImpl::ObjectStorage::iterator, bool> inserted =
             object->insert(std::make_pair(aKey, static_cast<pjson*>(nullptr)));
         if (!inserted.second)
             return false;
@@ -516,9 +517,9 @@ namespace {
             if (!item.target->isObject())
                 item.target->resetTo(pjson::jsonObject);
 
-            const PJSONMAP* patchObject = &pjsonImpl::_object(*item.patch);
-            for (PJSONMAP::const_iterator it = patchObject->begin(); it != patchObject->end();
-                 ++it) {
+            const pjsonImpl::ObjectStorage* patchObject = &pjsonImpl::_object(*item.patch);
+            for (pjsonImpl::ObjectStorage::const_iterator it = patchObject->begin();
+                 it != patchObject->end(); ++it) {
                 if (!chargePatch(aBudget.operations, aBudget.operationLimit, 1, aError,
                                  "JSON Merge Patch operation budget exceeded") ||
                     !chargePatch(aBudget.work, aBudget.workLimit, 1, aError,
@@ -584,7 +585,7 @@ bool pjson::applyPatch(const pjson& aPatch, PatchError& aError,
                              "JSON Patch document must be an array");
 
         PatchBudget budget(aOpts);
-        const PJSONARRAY& operations = pjsonImpl::_array(aPatch);
+        const pjsonImpl::ArrayStorage& operations = pjsonImpl::_array(aPatch);
         if (!chargePatch(budget.operations, budget.operationLimit, operations.size(), aError,
                          "JSON Patch operation budget exceeded") ||
             !measureClone(*this, budget, aError))

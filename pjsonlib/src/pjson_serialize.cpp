@@ -408,27 +408,27 @@ bool pjsonImpl::_openOrEmit(Sink& aOut, const pjson* aValue, size_t aDepth,
                             const pjson::SerializeOptions& aOpts,
                             std::vector<SerializeFrame>& aFrames) {
     switch (aValue->_eType) {
-        case jsonType::jsonNull:
+        case pjson::jsonType::jsonNull:
             aOut.write("null", 4);
             return static_cast<bool>(aOut);
-        case jsonType::jsonString:
+        case pjson::jsonType::jsonString:
             aOut.put('"');
             if (!aOut ||
                 !_writeEscapedTo(aOut, *aValue->_uValue._pValueString, aOpts.escapeNonAscii))
                 return false;
             aOut.put('"');
             return static_cast<bool>(aOut);
-        case jsonType::jsonNumberInt: {
+        case pjson::jsonType::jsonNumberInt: {
             const std::string text = std::to_string(aValue->_uValue._valueInt);
             aOut.write(text.data(), text.size());
             return static_cast<bool>(aOut);
         }
-        case jsonType::jsonNumberUInt: {
+        case pjson::jsonType::jsonNumberUInt: {
             const std::string text = std::to_string(aValue->_uValue._valueUInt);
             aOut.write(text.data(), text.size());
             return static_cast<bool>(aOut);
         }
-        case jsonType::jsonNumberDouble: {
+        case pjson::jsonType::jsonNumberDouble: {
             const double d = aValue->_uValue._valueDouble;
             if (!std::isfinite(d)) {
                 switch (aOpts.nonFinite) {
@@ -449,20 +449,20 @@ bool pjsonImpl::_openOrEmit(Sink& aOut, const pjson* aValue, size_t aDepth,
             aOut.write(text.data(), text.size());
             return static_cast<bool>(aOut);
         }
-        case jsonType::jsonBoolean:
+        case pjson::jsonType::jsonBoolean:
             if (aValue->_uValue._valueBool)
                 aOut.write("true", 4);
             else
                 aOut.write("false", 5);
             return static_cast<bool>(aOut);
-        case jsonType::jsonArray:
+        case pjson::jsonType::jsonArray:
             if (aValue->_uValue._pValueArray->empty()) {
                 aOut.write("[]", 2);
                 return static_cast<bool>(aOut);
             }
             aOut.put('[');
             break;
-        case jsonType::jsonObject:
+        case pjson::jsonType::jsonObject:
             if (aValue->_uValue._pValueMap->empty()) {
                 aOut.write("{}", 2);
                 return static_cast<bool>(aOut);
@@ -474,7 +474,7 @@ bool pjsonImpl::_openOrEmit(Sink& aOut, const pjson* aValue, size_t aDepth,
         return false;
 
     SerializeFrame frame;
-    frame.isObject = aValue->_eType == jsonType::jsonObject;
+    frame.isObject = aValue->_eType == pjson::jsonType::jsonObject;
     frame.depth = aDepth;
     frame.first = true;
     frame.array = frame.isObject ? nullptr : aValue->_uValue._pValueArray;

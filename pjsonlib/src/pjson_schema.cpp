@@ -50,10 +50,6 @@ namespace {
     typedef pJsonSchemaValidator::Error SchemaError;
     typedef pJsonSchemaValidator::Options Options;
 
-    const char* const kDocumentedSubsetDialect = documentedSubsetDialect();
-    const char* const kDocumentedSubsetVocabulary = documentedSubsetVocabulary();
-    const char* const kDraft2020Dialect = draft2020Dialect();
-
     // Recursive validation still uses native recursion for applicator keywords.
     // Keep its logical depth below a conservative stack-safe ceiling even when a
     // caller requests a larger value.
@@ -873,7 +869,7 @@ namespace {
                                     "$vocabulary entries must be boolean");
                 continue;
             }
-            if (uris[i] == kDocumentedSubsetVocabulary) {
+            if (uris[i] == documentedSubsetVocabulary()) {
                 policy = subsetPolicy(options);
                 continue;
             }
@@ -961,7 +957,7 @@ namespace {
                                 CompiledSchemaIndex& index, std::string& dialect,
                                 DialectPolicy& policy, std::vector<SchemaError>& errors,
                                 const std::string& location = std::string()) {
-        dialect = options.defaultDialectUri.empty() ? kDocumentedSubsetDialect
+        dialect = options.defaultDialectUri.empty() ? documentedSubsetDialect()
                                                     : options.defaultDialectUri;
 
         if (schema.isObject()) {
@@ -978,9 +974,9 @@ namespace {
             }
         }
 
-        if (dialect == kDocumentedSubsetDialect)
+        if (dialect == documentedSubsetDialect())
             policy = subsetPolicy(options);
-        else if (dialect == kDraft2020Dialect && options.defaultDialectUri == kDraft2020Dialect)
+        else if (dialect == draft2020Dialect() && options.defaultDialectUri == draft2020Dialect())
             policy = draft2020Policy(options);
         else {
             const pjson* metaSchema = nullptr;
@@ -2508,7 +2504,7 @@ namespace {
                                    const std::string& retrievalBase, const Options& options,
                                    const CompiledSchemaIndex& compiled,
                                    std::vector<SchemaError>& errors) {
-        if (dialect == kDocumentedSubsetDialect || !errors.empty())
+        if (dialect == documentedSubsetDialect() || !errors.empty())
             return;
         SchemaTarget metaSchema;
         if (!resolveCompiledTarget(dialect, retrievalBase, compiled, metaSchema)) {
@@ -2567,7 +2563,7 @@ struct pJsonSchemaValidator::Impl {
             return;
         }
         compiled.resources[retrievalBase] = SchemaResource(&schema, retrievalBase, rootPolicy);
-        if (dialect != kDocumentedSubsetDialect)
+        if (dialect != documentedSubsetDialect())
             compiled.pendingDocuments.insert(stripFragment(dialect));
         compileSchemaResource(schema, &schema, retrievalBase, compiled, schemaErrors, options,
                               rootPolicy, "", 0, retrievalBase);
@@ -2627,7 +2623,7 @@ pJsonSchemaValidator::Options::Options()
         , refSiblings(false)
         , resolveCustomDialects(false)
         , retrievalUri()
-        , defaultDialectUri(kDocumentedSubsetDialect)
+        , defaultDialectUri(documentedSubsetDialect())
         , resolver(nullptr)
         , resolverContext(nullptr)
         , maxResolvedDocuments(32)
@@ -2660,7 +2656,7 @@ pJsonSchemaValidator::Options pJsonSchemaValidator::Options::modernSubset() {
 /*static*/
 pJsonSchemaValidator::Options pJsonSchemaValidator::Options::draft2020() {
     Options o = modernSubset();
-    o.defaultDialectUri = kDraft2020Dialect;
+    o.defaultDialectUri = draft2020Dialect();
     o.resolveCustomDialects = true;
     return o;
 }
@@ -2696,17 +2692,17 @@ bool pJsonSchemaValidator::validate(const pjson& aInstance,
 
 /*static*/
 const char* pJsonSchemaValidator::documentedSubsetDialectUri() noexcept {
-    return kDocumentedSubsetDialect;
+    return documentedSubsetDialect();
 }
 
 /*static*/
 const char* pJsonSchemaValidator::documentedSubsetVocabularyUri() noexcept {
-    return kDocumentedSubsetVocabulary;
+    return documentedSubsetVocabulary();
 }
 
 /*static*/
 const char* pJsonSchemaValidator::draft2020DialectUri() noexcept {
-    return kDraft2020Dialect;
+    return draft2020Dialect();
 }
 
 bool pJsonSchemaValidator::isSchemaValid() const noexcept {

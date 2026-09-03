@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "pjson_schema_regex.h"
 
-#include "third_party/srell/srell.hpp"
+#include <srell/srell.hpp>
 
 #include <new>
 
@@ -19,14 +19,17 @@ namespace ByteDance {
                 for (size_t i = 0; i < pattern.size(); ++i) {
                     const char value = pattern[i];
                     if (value == '\\') {
-                        if (++i >= pattern.size())
+                        ++i;
+                        if (i >= pattern.size())
                             return false;
                         const char escaped = pattern[i];
                         if (escaped == 'c') {
-                            if (++i >= pattern.size() || !isAsciiLetter(pattern[i]))
+                            ++i;
+                            if (i >= pattern.size() || !isAsciiLetter(pattern[i]))
                                 return false;
                         } else if (escaped == 'p' || escaped == 'P') {
-                            if (++i >= pattern.size() || pattern[i] != '{')
+                            ++i;
+                            if (i >= pattern.size() || pattern[i] != '{')
                                 return false;
                             const size_t close = pattern.find('}', i + 1);
                             if (close == std::string::npos || close == i + 1)

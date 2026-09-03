@@ -1894,7 +1894,19 @@ std::string pjsonImpl::_formatDouble(double aValue) {
     }
     const size_t exponent = result.find('e');
     if (exponent != std::string::npos) {
-        const int exponentValue = std::atoi(result.c_str() + exponent + 1);
+        size_t cursor = exponent + 1;
+        bool negativeExponent = false;
+        if (cursor < result.size() && (result[cursor] == '+' || result[cursor] == '-')) {
+            negativeExponent = result[cursor] == '-';
+            ++cursor;
+        }
+        int exponentValue = 0;
+        while (cursor < result.size()) {
+            exponentValue = exponentValue * 10 + (result[cursor] - '0');
+            ++cursor;
+        }
+        if (negativeExponent)
+            exponentValue = -exponentValue;
         if (exponentValue >= -4 && exponentValue < std::numeric_limits<double>::digits10) {
             const bool negative = !result.empty() && result[0] == '-';
             const size_t mantissaBegin = negative ? 1 : 0;

@@ -4367,26 +4367,28 @@ bool pjsonImpl::_parseString(ParseCtx& c, pjson*& aOut) {
 /*static*/
 bool pjsonImpl::_parseNumber(ParseCtx& c, pjson*& aOut) {
     const size_t begin = c.pos;
+    size_t scanPosition = c.pos;
     struct Adapter {
         ParseCtx& context;
+        size_t& position;
         bool peek(char& ch) {
-            if (context.pos >= context.end)
+            if (position >= context.end)
                 return false;
-            ch = context.src[context.pos];
+            ch = context.src[position];
             return true;
         }
         bool take(char& ch) {
             if (!peek(ch))
                 return false;
-            ++context.pos;
+            ++position;
             return true;
         }
-    } adapter = {c};
+    } adapter = {c, scanPosition};
     std::string text;
     bool bFloat = false;
     const char* scanError = nullptr;
     if (!scanJsonNumber(adapter, text, bFloat, scanError))
-        return _fail(c, c.pos, scanError == nullptr ? "invalid number" : scanError);
+        return _fail(c, scanPosition, scanError == nullptr ? "invalid number" : scanError);
     ParsedNumber number;
     const char* message = nullptr;
     if (!_convertNumberToken(text, bFloat, c.numberPolicy, number, message))
@@ -4401,6 +4403,7 @@ bool pjsonImpl::_parseNumber(ParseCtx& c, pjson*& aOut) {
     else
         *value = number.floatingValue;
     aOut = value.release();
+    c.pos = scanPosition;
     return true;
 }
 // Parses one array under a balanced depth charge. A child remains RAII-owned

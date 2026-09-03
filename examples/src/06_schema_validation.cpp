@@ -5,8 +5,8 @@
 //===----------------------------------------------------------------------===//
 // 06 — Schema validation
 //
-// Validate a document against a JSON-Schema-subset schema (itself a pjson
-// value), collecting applicable failures within configured budgets.
+// Validate a document against a schema (itself a pjson value), using pjson's
+// default subset dialect and collecting failures within configured budgets.
 // Referenced by docs/06-schema-validation.md.
 //
 #include "pjson.h"

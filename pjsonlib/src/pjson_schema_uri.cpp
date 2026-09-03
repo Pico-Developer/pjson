@@ -125,13 +125,39 @@ namespace ByteDance {
             if (reference[0] == '#')
                 return base + reference;
 
+            std::string referencePath;
+            std::string referenceSuffix;
+            splitPathSuffix(reference, referencePath, referenceSuffix);
+
             const size_t colon = base.find(':');
-            if (colon == std::string::npos)
-                return normalizePath(reference);
+            if (colon == std::string::npos) {
+                std::string basePath;
+                std::string ignoredSuffix;
+                splitPathSuffix(base, basePath, ignoredSuffix);
+                if (reference[0] == '?')
+                    return basePath + reference;
+                if (!referencePath.empty() && referencePath[0] == '/')
+                    return normalizePath(referencePath) + referenceSuffix;
+                const size_t slash = basePath.rfind('/');
+                const std::string directory =
+                    slash == std::string::npos ? std::string() : basePath.substr(0, slash + 1);
+                return normalizePath(directory + referencePath) + referenceSuffix;
+            }
             const std::string scheme = base.substr(0, colon + 1);
             const std::string remainder = base.substr(colon + 1);
-            if (remainder.compare(0, 2, "//") != 0)
-                return scheme + reference;
+            if (remainder.compare(0, 2, "//") != 0) {
+                std::string basePath;
+                std::string ignoredSuffix;
+                splitPathSuffix(remainder, basePath, ignoredSuffix);
+                if (reference[0] == '?')
+                    return scheme + basePath + reference;
+                if (!referencePath.empty() && referencePath[0] == '/')
+                    return scheme + normalizePath(referencePath) + referenceSuffix;
+                const size_t slash = basePath.rfind('/');
+                const std::string directory =
+                    slash == std::string::npos ? std::string() : basePath.substr(0, slash + 1);
+                return scheme + normalizePath(directory + referencePath) + referenceSuffix;
+            }
             if (reference.compare(0, 2, "//") == 0)
                 return scheme + reference;
 
@@ -141,9 +167,6 @@ namespace ByteDance {
             const std::string basePath = authorityEnd == std::string::npos
                                              ? std::string("/")
                                              : remainder.substr(authorityEnd);
-            std::string referencePath;
-            std::string referenceSuffix;
-            splitPathSuffix(reference, referencePath, referenceSuffix);
             std::string cleanBasePath;
             std::string ignoredSuffix;
             splitPathSuffix(basePath, cleanBasePath, ignoredSuffix);

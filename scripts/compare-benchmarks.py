@@ -6,6 +6,7 @@
 
 import argparse
 import json
+import math
 import sys
 
 
@@ -39,10 +40,19 @@ def source_key(report):
 
 
 def indexed(report):
-    return {
-        (row["library"], row["workload"], row["operation"]): row
-        for row in report.get("results", [])
-    }
+    rows = report.get("results")
+    if not isinstance(rows, list) or not rows:
+        raise ValueError("benchmark report has no results")
+    result = {}
+    for row in rows:
+        key = (row["library"], row["workload"], row["operation"])
+        if key in result:
+            raise ValueError(f"benchmark report has duplicate case: {key!r}")
+        median = float(row["median_ns"])
+        if not math.isfinite(median) or median < 0.0:
+            raise ValueError(f"benchmark case has invalid median_ns: {key!r}")
+        result[key] = row
+    return result
 
 
 def main():
@@ -74,17 +84,26 @@ def main():
 
     before = indexed(baseline)
     after = indexed(candidate)
-    common = sorted(set(before) & set(after))
-    if not common:
-        print("benchmark reports have no comparable cases", file=sys.stderr)
+    before_keys = set(before)
+    after_keys = set(after)
+    if before_keys != after_keys:
+        print("benchmark reports do not contain the same cases:", file=sys.stderr)
+        for key in sorted(before_keys - after_keys):
+            print(f"  missing from candidate: {key!r}", file=sys.stderr)
+        for key in sorted(after_keys - before_keys):
+            print(f"  missing from baseline: {key!r}", file=sys.stderr)
         return 2
+    common = sorted(before_keys)
 
     regressions = 0
     print("library workload operation baseline_us candidate_us change status")
     for key in common:
         old = float(before[key]["median_ns"])
         new = float(after[key]["median_ns"])
-        change = ((new / old) - 1.0) * 100.0 if old > 0.0 else 0.0
+        if old == 0.0:
+            change = 0.0 if new == 0.0 else math.inf
+        else:
+            change = ((new / old) - 1.0) * 100.0
         status = "REGRESSION" if change > args.threshold_percent else "ok"
         if status == "REGRESSION":
             regressions += 1

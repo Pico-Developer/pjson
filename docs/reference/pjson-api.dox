@@ -73,7 +73,7 @@
 
 /**
  * @class ByteDance::pJsonSchemaValidator
- * @brief Validates pjson values against a JSON-Schema-subset schema.
+ * @brief Validates pjson values using the subset or Draft 2020-12 contract.
  *
  * pJsonSchemaValidator is a standalone helper declared in <pjson_schema.h> and
  * built from focused private schema translation units. It is a pure consumer of pjson's public API and
@@ -82,9 +82,11 @@
  * unit for future optional-library packaging.
  * Construct one validator from a schema (deep-copied on construction) and reuse
  * it to validate many instances; validation never throws and never mutates its
- * inputs. The class implements one explicitly named subset dialect. A root
- * `$schema` or Options::defaultDialectUri selects it; unsupported dialects and
- * required vocabularies fail compilation. Inspect isSchemaValid(),
+ * inputs. Default options implement pjson's explicitly named subset dialect;
+ * Options::draft2020() selects the required Draft 2020-12 vocabularies, bundled
+ * meta-schema validation, and per-resource vocabulary activation. A root
+ * `$schema` or Options::defaultDialectUri selects the effective dialect;
+ * unsupported dialects and required vocabularies fail compilation. Inspect isSchemaValid(),
  * schemaErrors(), and dialect() before trusting validation results.
  *
  * @see ByteDance::pJsonSchemaValidator::Options
@@ -107,6 +109,8 @@
  * maxResolvedBytes bound resolver amplification. modernSubset() enables modern
  * `$ref` sibling semantics and the Draft 2020-12 annotation-only `format`
  * default, while normal options preserve legacy Draft 7-compatible behavior.
+ * draft2020() additionally selects the official dialect and meta-schema
+ * compilation.
  */
 
 /**

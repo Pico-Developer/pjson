@@ -27,8 +27,9 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases follow
 - Added dedicated serialization, JSON Pointer, and JSON Merge Patch fuzzers;
   local and OSS-Fuzz smoke inputs now reach 64 KiB and include checked-in
   inputs larger than 4 KiB.
-- Finite doubles now format with `max_digits10`; default parsing rejects a
-  nonzero decimal token that underflows to zero, with explicit lossy opt-in.
+- Finite doubles now use pinned Ryu shortest-round-trip conversion while
+  preserving pjson's fixed/scientific spelling policy; default parsing rejects
+  a nonzero decimal token that underflows to zero, with explicit lossy opt-in.
 - Split stateless JSON Schema value/numeric/regex, format, and URI helpers into
   focused private translation units while retaining one public schema API.
 - Unified DOM and SAX numeric-token classification/conversion behind one
@@ -96,6 +97,15 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases follow
 - Moved pJsonSchemaValidator storage behind a private implementation pointer;
   schemas are copied to the default allocator, removing dependence on the
   caller's schema allocator lifetime.
+- Hardened move assignment, `pushBack`, `insertOrAssign`, and `swap` for
+  ancestor/descendant aliasing. Overlapping swaps are rejected by `canSwap()`,
+  and insertion cannot create an ownership cycle or consume a source before a
+  potentially throwing container insertion commits.
+- Count custom meta-schema documents and bytes once when the same resolved URI
+  is subsequently compiled as a schema resource, and normalize relative URI
+  dot segments before invoking an external resolver.
+- Hardened benchmark report comparison to reject missing, extra, duplicate, or
+  invalid result rows instead of silently comparing only their intersection.
 
 ## [2.0.0] - 2026-08-31
 

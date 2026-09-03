@@ -79,9 +79,81 @@ TEST(aliasing_move_assign_descendant_from_root) {
     pjson root;
     root["a"] = std::int64_t{1};
     root["child"]["value"] = std::int64_t{2};
-    root["child"] = std::move(root); // legal, must not corrupt memory
-    // We only require memory safety and a valid resulting tree here.
-    CHECK(root.getType() == pjson::jsonObject || root.getType() == pjson::jsonNull);
+    root["child"] = std::move(root); // snapshots the ancestor; cannot steal it
+    CHECK(root.isObject());
+    CHECK(root.hasKey("a"));
+    const pjson* child = root.find("child");
+    CHECK(child != nullptr);
+    if (child != nullptr) {
+        CHECK(child->isObject());
+        CHECK(child->hasKey("a"));
+        CHECK(child->hasKey("child"));
+    }
+}
+
+TEST(aliasing_generic_insertions_snapshot_ancestors) {
+    pjson appended;
+    appended["value"] = int64_t(7);
+    appended.pushBack(std::move(appended));
+    CHECK(appended.isArray());
+    CHECK_EQ(appended.size(), size_t(1));
+    int64_t value = 0;
+    CHECK(appended.find(0) != nullptr);
+    CHECK(appended.find(0)->tryGet("value", value));
+    CHECK_EQ(value, int64_t(7));
+
+    pjson inserted;
+    inserted["before"] = true;
+    inserted.insertOrAssign("snapshot", std::move(inserted));
+    CHECK(inserted.isObject());
+    const pjson* snapshot = inserted.find("snapshot");
+    CHECK(snapshot != nullptr);
+    CHECK(snapshot->hasKey("before"));
+    CHECK(!snapshot->hasKey("snapshot"));
+
+    pjson siblings;
+    siblings["source"]["value"] = int64_t(13);
+    pjson& source = siblings["source"];
+    siblings.insertOrAssign("destination", std::move(source));
+    CHECK(siblings.find("source") != nullptr);
+    CHECK(siblings.find("source")->isNull());
+    CHECK(siblings.find("destination") != nullptr);
+    int64_t siblingValue = 0;
+    CHECK(siblings.find("destination")->tryGet("value", siblingValue));
+    CHECK_EQ(siblingValue, int64_t(13));
+
+    pjson arraySiblings;
+    arraySiblings[0]["value"] = int64_t(17);
+    pjson& first = arraySiblings[0];
+    arraySiblings.pushBack(std::move(first));
+    CHECK_EQ(arraySiblings.size(), size_t(2));
+    CHECK(arraySiblings.find(0)->isNull());
+    int64_t arrayValue = 0;
+    CHECK(arraySiblings.find(1)->tryGet("value", arrayValue));
+    CHECK_EQ(arrayValue, int64_t(17));
+}
+
+TEST(aliasing_generic_insertions_survive_container_promotion) {
+    pjson arraySource;
+    arraySource[0]["value"] = int64_t(9);
+    pjson& arrayChild = arraySource[0];
+    arrayChild.insertOrAssign("root", std::move(arraySource));
+    CHECK(arraySource.isArray());
+    const pjson* promoted = arraySource.find(0);
+    CHECK(promoted != nullptr);
+    const pjson* rootSnapshot = promoted == nullptr ? nullptr : promoted->find("root");
+    CHECK(rootSnapshot != nullptr);
+    CHECK(rootSnapshot->isArray());
+
+    pjson objectSource;
+    objectSource["child"]["value"] = int64_t(11);
+    pjson& objectChild = objectSource["child"];
+    objectChild.pushBack(std::move(objectSource));
+    CHECK(objectSource.isObject());
+    const pjson* childArray = objectSource.find("child");
+    CHECK(childArray != nullptr);
+    CHECK(childArray->isArray());
+    CHECK_EQ(childArray->size(), size_t(1));
 }
 
 //===----------------------------------------------------------------------===//
@@ -139,6 +211,8 @@ TEST(aliasing_swap_root_and_descendant_is_safe) {
     pjson root;
     root["child"]["value"] = std::int64_t{5};
     pjson& child = root["child"];
+    CHECK(!root.canSwap(child));
+    CHECK(!child.canSwap(root));
     root.swap(child); // overlapping swap; must not corrupt memory
     // The tree must remain traversable and destructible without error.
     CHECK(root.isObject());

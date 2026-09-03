@@ -79,10 +79,10 @@ remains locale-independent. Tests: `tests_numbers.cpp`
 ### PJSON-NUM-003 — Define finite float conversion precisely — Implemented
 Parsing uses the classic-locale standard-library conversion and rejects
 overflow and nonzero-to-zero underflow by default; `AllowLossyNumbers` is the
-explicit opt-in for underflow and out-of-range integers. Formatting tests
-precisions from `digits10` through `max_digits10`, whose upper bound gives
-bit-exact finite-double serialize/parse recovery on
-conforming libraries. The active rounding-mode dependency is documented.
+explicit opt-in for underflow and out-of-range integers. Formatting uses pinned
+Ryu shortest-round-trip conversion followed by pjson's documented
+fixed/scientific spelling policy. The active parse rounding-mode dependency is
+documented.
 Halfway, subnormal, exponent-edge, negative-zero, 2^53-boundary, randomized
 10,000-bit-pattern, and parser-front-end parity tests cover the contract.
 
@@ -228,7 +228,7 @@ promotes the exact cross-kind numeric ordering the validator needs from a
 former private helper. This also delivers the compiled/immutable validator
 object requested by PJSON-SCHEMA-002.
 
-### PJSON-SCHEMA-001 — Explicit dialect contract — Implemented for the subset
+### PJSON-SCHEMA-001 — Explicit dialect contract — Implemented
 `pJsonSchemaValidator` now names its contract with
 `documentedSubsetDialectUri()` and `documentedSubsetVocabularyUri()`.
 `Options::defaultDialectUri` selects the dialect when `$schema` is absent; a
@@ -236,10 +236,11 @@ root `$schema` overrides it. Any unsupported declared/default dialect fails
 schema compilation with a `SchemaCompilation` diagnostic. `$vocabulary` accepts
 the pjson subset vocabulary, ignores unknown optional vocabularies, and rejects
 unknown required vocabularies or malformed shapes. Callers inspect
-`isSchemaValid()`, `schemaErrors()`, and `dialect()`. The official 2020-12 URI is
-intentionally unsupported until pjson implements that complete dialect.
+`isSchemaValid()`, `schemaErrors()`, and `dialect()`.
+`Options::draft2020()` selects the official 2020-12 URI, bundled standard
+meta-schemas, and per-resource vocabulary activation.
 
-### PJSON-SCHEMA-002..006 — Substantially implemented / remaining dialect gaps
+### PJSON-SCHEMA-002..006 — Required vocabularies implemented / optional gaps
 This pass materially expanded the validator toward 2020-12 by adding
 `if`/`then`/`else`, `prefixItems`, `contains`/`minContains`/`maxContains`, and
 `dependentSchemas` (fixing the A.5 conditional-schema gap), plus the strict
@@ -260,7 +261,8 @@ subset**, not general 2020-12 conformance.
 
 PJSON-SCHEMA-002 strict keyword-shape compilation is implemented for the full
 documented keyword set; permissive mode retains its compatibility behavior.
-Standard meta-schema loading remains part of the broader 2020-12 work.
+Official standard meta-schemas are bundled and custom meta-schemas are loaded
+only through the explicit resolver.
 
 PJSON-SCHEMA-005 is implemented: errors distinguish schema compilation from
 instance validation and provide stable fine-grained codes, separate instance
@@ -320,14 +322,12 @@ registered with CTest through post-link discovery from the executable's actual
 test registry rather than source-text scraping. A manifest-driven
 `draft2020-12` conformance gate
 (`schema_official_draft2020_optional`) now runs alongside the existing draft-07
-gate: supported-keyword files run whole, and each remaining unsupported group
-(official meta-schema behavior and Unicode `\p{}` regex)
-is skipped with a concrete reason so coverage cannot silently shrink. The
-manifest also enumerates every optional file, and a bidirectional filesystem
-check fails on unclassified additions or stale entries. Measured baseline: 1,773
-Draft 2020-12 cases pass across 437 groups with zero selected-group skips and 15
-whole optional files explicitly deferred. Full unconditional 2020-12
-conformance remains unclaimed.
+gate. Its complete 80-file manifest runs 1,773 applicable Draft 2020-12 cases
+across 437 groups with zero selected-group skips and explicitly defers 15 whole
+optional files. A bidirectional filesystem check fails on unclassified
+additions or stale entries. The required vocabularies, meta-schema behavior, and
+Unicode ECMAScript regex are covered; the complete optional format-assertion
+vocabulary remains unclaimed.
 
 ## 13. Documentation and governance
 
@@ -388,7 +388,7 @@ are complete: embedded-NUL keys, aliasing safety, exact unsigned integers, the
 non-finite policy, stack-safe/equivalent front ends, and early duplicate
 detection with structured diagnostics — each with a permanent regression test
 and clean under ASan/UBSan. Step 7 (traversal, generic insertion, factories,
-checked indexing) and the structured-error portion of step 6 are done. The full
-JSON Schema 2020-12 module (step 10) is advanced but intentionally still labeled
-a documented subset, and steps 9/11 (performance baselines, registry publishing)
-plus the deferred items above remain open and tracked in `Todo.md`.
+checked indexing) and the structured-error portion of step 6 are done. The
+required JSON Schema 2020-12 vocabularies from step 10 and the performance
+baseline work from step 9 are implemented. Optional format-assertion, registry
+publishing, and the explicitly deferred items remain tracked in `Todo.md`.

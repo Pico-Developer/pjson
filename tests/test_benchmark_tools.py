@@ -54,9 +54,19 @@ def main():
         baseline = directory / "baseline.json"
         candidate = directory / "candidate.json"
         mismatch = directory / "mismatch.json"
+        missing = directory / "missing.json"
+        duplicate = directory / "duplicate.json"
+        zero = directory / "zero.json"
         baseline.write_text(json.dumps(report("controlled", 100.0)), encoding="utf-8")
         candidate.write_text(json.dumps(report("controlled", 120.0)), encoding="utf-8")
         mismatch.write_text(json.dumps(report("different", 100.0)), encoding="utf-8")
+        missing_report = report("controlled", 120.0)
+        missing_report["results"] = []
+        missing.write_text(json.dumps(missing_report), encoding="utf-8")
+        duplicate_report = report("controlled", 120.0)
+        duplicate_report["results"].append(dict(duplicate_report["results"][0]))
+        duplicate.write_text(json.dumps(duplicate_report), encoding="utf-8")
+        zero.write_text(json.dumps(report("controlled", 0.0)), encoding="utf-8")
         run([sys.executable, str(comparator), str(baseline), str(candidate)], 0)
         run(
             [
@@ -71,6 +81,18 @@ def main():
             1,
         )
         run([sys.executable, str(comparator), str(baseline), str(mismatch)], 2)
+        run([sys.executable, str(comparator), str(baseline), str(missing)], 2)
+        run([sys.executable, str(comparator), str(baseline), str(duplicate)], 2)
+        run(
+            [
+                sys.executable,
+                str(comparator),
+                str(zero),
+                str(candidate),
+                "--fail-on-regression",
+            ],
+            1,
+        )
     return 0
 
 

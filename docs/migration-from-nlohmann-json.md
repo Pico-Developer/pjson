@@ -49,7 +49,7 @@ sources; generated documentation and examples are explanatory.
 | `json::sax_parse(...)` | `pjson::parseSax(...)` / `parseSaxStream(...)` | `parseSaxStream()` is the incremental stream path. |
 | `j = j.patch(patch)` | `j.applyPatch(patch[, error][, options])` | Mutates atomically; `PatchOptions` bounds amplification. |
 | `j.merge_patch(patch)` | `j.applyMergePatch(patch[, error][, options])` | Atomic RFC 7396 with the same limits. |
-| external JSON Schema library | `pJsonSchemaValidator v(schema[, options]); v.validate(value[, errors])` | Standalone validator; implements only the documented subset. |
+| external JSON Schema library | `pJsonSchemaValidator v(schema[, options]); v.validate(value[, errors])` | Standalone validator; subset by default, with required Draft 2020-12 vocabularies via `Options::draft2020()`. |
 
 ## Parsing and ownership
 
@@ -268,10 +268,10 @@ Default construction selects compact output, two-space indentation, a space
 indent character, UTF-8 output, ascending keys, and a 64 MiB output limit. Set
 `maxOutputBytes = 0` only when explicitly requesting unlimited output. Objects
 are inherently map-ordered; insertion order is unavailable. Non-finite stored
-doubles serialize as JSON `null`. Finite doubles use locale-independent
-formatting with the shortest tested precision from `digits10` through
-`max_digits10`, whose upper bound guarantees stable round-tripping; globally
-shortest spelling is not part of the contract.
+doubles fail serialization unless `SerializeOptions::nonFinite` explicitly
+selects `NonFiniteToNull` or `NonFiniteToString`. Finite doubles use pinned Ryu
+shortest-round-trip conversion followed by pjson's documented
+fixed/scientific spelling policy.
 
 Every stored string value and object key must contain valid UTF-8. Invalid
 stored UTF-8 is a serialization failure even when `escapeNonAscii` is false:
@@ -290,22 +290,25 @@ references valid only for the duration of the callback. Returning `false` from
 a callback cancels parsing; the public call then returns `false` and populates
 `ParseError` when supplied.
 
-## JSON Schema validation is a subset
+## JSON Schema validation modes
 
 pjson compiles a schema (itself a `pjson` value) into a standalone
 `ByteDance::pJsonSchemaValidator` (declared in `<pjson_schema.h>`) and validates
-values against it. The validator is a pure consumer of pjson's public API; it
-does not validate against a meta-schema. The collecting overload appends
+values against it. The validator is a pure consumer of pjson's public API. The
+collecting overload appends
 `pJsonSchemaValidator::Error` entries; clear a reused vector first. Error paths
 are RFC 6901 pointers, with the empty string denoting the root.
 
-The validator implements pjson's explicitly named subset dialect, not the
-official 2020-12 dialect. An unsupported root `$schema` or required
+Default construction implements pjson's explicitly named subset dialect.
+`Options::draft2020()` selects the official Draft 2020-12 URI, bundled standard
+meta-schema validation, modern `$ref` behavior, and per-resource vocabulary
+activation. Custom meta-schema URIs and external resources are loaded only
+through the explicit resolver. An unsupported root `$schema` or required
 `$vocabulary` makes `isSchemaValid()` false; inspect `schemaErrors()` before
 trusting validation. Unknown optional vocabularies are accepted as annotations.
 
-The documented pjson subset is the complete enforced vocabulary; it is not a
-complete JSON Schema draft implementation:
+The following keywords form the default subset and the required Draft 2020-12
+vocabularies implemented by the opt-in mode:
 
 | Area | Supported keywords and forms |
 |---|---|
@@ -318,11 +321,13 @@ complete JSON Schema draft implementation:
 | Composition | `allOf`, `anyOf`, `oneOf`, `not`, `if`, `then`, `else` |
 | Schema values | Boolean schemas |
 
-Unknown or unsupported schema keywords are ignored and therefore impose no
-constraint. This is a compatibility hazard: a typo or unsupported security
-rule can make validation less restrictive without producing an error. Audit
-schemas against the table above and retain an external validator when another
-vocabulary is required. `$ref` resolves URI resources, pointers, and anchors;
+In permissive subset mode, unknown or unsupported schema keywords are ignored
+and therefore impose no constraint. This is a compatibility hazard: a typo or
+unsupported security rule can make validation less restrictive without an
+error. Use `Options::strict()` for a fail-closed subset boundary or
+`Options::draft2020()` for the implemented official dialect. The complete
+optional format-assertion vocabulary, arbitrary-precision numbers, and other
+drafts remain out of scope. `$ref` resolves URI resources, pointers, and anchors;
 external documents are available only through an explicit resolver callback, so
 pjson never performs network I/O. `$dynamicRef`/`$dynamicAnchor` and both
 `unevaluated*` keywords are supported by the modern subset option.
@@ -348,9 +353,9 @@ ignored.
    `tryGet`; reserve `operator[]` for building.
 6. Replace raw-container iteration with `size()` plus `find(index)`, or
    `keys()` plus `find(key)`.
-7. Normalize numeric code to `int64_t` and `double`, with explicit range checks
-   at unsigned boundaries.
+7. Normalize numeric code to `int64_t`, `uint64_t`, and `double`, with explicit
+   range checks at signed/unsigned boundaries.
 8. Replace dump flags and pretty booleans with `SerializeOptions`, and handle
    invalid-UTF-8 serialization failure.
-9. Audit every schema keyword against pjson's documented subset and test both
-   accepted and rejected instances.
+9. Choose the default/strict subset or `Options::draft2020()` deliberately and
+   test both accepted and rejected instances.

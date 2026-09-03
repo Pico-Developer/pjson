@@ -59,9 +59,10 @@ key/index or wrong container type. `tryGet` leaves its output unchanged on failu
 No scalar-to-string or boolean coercions occur. Integer reads permit only
 range-safe signed/unsigned conversion; a `double` read accepts all stored numbers.
 
-`pushBack` and `insertOrAssign` copy lvalues. They transfer an rvalue without a deep
-copy when allocator domains match and deep-copy it otherwise. `reserve` promotes a
-non-array to an empty array. Array erasure shifts later elements left.
+`pushBack` and `insertOrAssign` copy lvalues. They transfer a same-allocator rvalue
+without a deep copy and deep-copy it otherwise. An ancestor rvalue is snapshotted
+when the destination lies inside it, preventing an ownership cycle. `reserve` promotes a non-array to
+an empty array. Array erasure shifts later elements left.
 
 ### Borrowing and invalidation
 
@@ -83,9 +84,12 @@ visitor or wrong container type is a successful no-op; returning `false` stops e
 - Copy construction and assignment are deep. Copy assignment preserves the
   destination allocator.
 - Move construction transfers storage in O(1) and leaves the source null. Move
-  assignment is O(1) when allocators match; a cross-allocator move deep-copies, may
-  allocate, and clears the source only after success.
-- `swap` is O(1) only when `canSwap` is true. Cross-allocator swap is a safe no-op.
+  assignment transfers same-allocator storage after an ancestry-safety check; a
+  cross-allocator move deep-copies, may allocate, and clears the source only after
+  success. Moving an ancestor into its descendant snapshots the ancestor instead.
+- `swap` performs an ancestry-safety check followed by an O(1) exchange when
+  `canSwap` is true. Cross-allocator and overlapping ancestor/descendant swaps are
+  safe no-ops.
 - Self-copy and self-move are safe. Assignment from an ancestor, descendant, or
   sibling is snapshot-safe. Swapping an ancestor with its descendant is rejected as
   a safe no-op so an ownership cycle cannot be formed.
@@ -230,7 +234,7 @@ Default validation implements the named dialect returned by
 activation. It supports the
 keyword allowlist documented in `pjson_schema.h`, including references/anchors,
 conditionals, applicators, `unevaluated*`, object/array/string/numeric assertions, and
-six formats. It never performs implicit network I/O. Unknown keywords are ignored in
+seven formats. It never performs implicit network I/O. Unknown keywords are ignored in
 permissive mode; `Options::strict()` rejects unsupported standard keywords and
 malformed supported keywords. `Options::modernSubset()` enables modern `$ref` sibling
 semantics and makes `format` annotation-only by default.

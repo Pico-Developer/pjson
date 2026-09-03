@@ -247,6 +247,25 @@ TEST(schema_custom_dialect_controls_validation_vocabulary) {
     CHECK(validator.validate(pjson::parse(R"({"number":1})")));
 }
 
+TEST(schema_custom_dialect_is_charged_once_as_a_resolved_document) {
+    const std::string dialect = "https://example.test/meta/small";
+    ResolverFixture fixture;
+    fixture.documents[dialect] = pjson::parse(
+        R"({"$id":"https://example.test/meta/small","$vocabulary":{"https://json-schema.org/draft/2020-12/vocab/core":true,"https://json-schema.org/draft/2020-12/vocab/validation":true},"type":["object","boolean"]})");
+    pjson schema =
+        pjson::parse(R"({"$schema":"https://example.test/meta/small","type":"integer"})");
+    pJsonSchemaValidator::Options options = pJsonSchemaValidator::Options::draft2020();
+    options.resolver = resolveFixture;
+    options.resolverContext = &fixture;
+    options.maxResolvedDocuments = 1;
+    pJsonSchemaValidator validator(schema, options);
+    CHECK(validator.isSchemaValid());
+    CHECK_EQ(fixture.calls, size_t(1));
+    pjson value;
+    value = int64_t(3);
+    CHECK(validator.validate(value));
+}
+
 TEST(schema_invalid_root_dialect_does_not_invoke_resolver) {
     ResolverFixture fixture;
     pjson schema =
@@ -541,6 +560,23 @@ TEST(schema_retrieval_uri_resolves_relative_root_reference) {
     missingBaseOptions.resolverContext = &fixture;
     pJsonSchemaValidator missingBase(noBaseSchema, missingBaseOptions);
     CHECK(!missingBase.isSchemaValid());
+}
+
+TEST(schema_reference_resolution_normalizes_dot_segments) {
+    ResolverFixture fixture;
+    fixture.documents["https://example.test/schemas/remote.json"] =
+        pjson::parse(R"({"type":"integer"})");
+    pjson schema = pjson::parse(R"({"$ref":"./defs/../remote.json"})");
+    pJsonSchemaValidator::Options options;
+    options.retrievalUri = "https://example.test/schemas/root.json";
+    options.resolver = resolveFixture;
+    options.resolverContext = &fixture;
+    pJsonSchemaValidator validator(schema, options);
+    CHECK(validator.isSchemaValid());
+    CHECK_EQ(fixture.calls, size_t(1));
+    pjson value;
+    value = int64_t(1);
+    CHECK(validator.validate(value));
 }
 
 TEST(schema_retrieval_uri_applies_relative_root_id_once) {

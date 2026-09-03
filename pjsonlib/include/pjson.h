@@ -18,7 +18,7 @@
 // A single class, ByteDance::pjson, represents any JSON value and offers an
 // ergonomic obj["key"][i] = value building style plus parsing, serialization,
 // lookup, mutation, and equality. All method bodies live in pjson.cpp; this
-// header only declares the interface. JSON-Schema-subset validation lives in
+// header only declares the interface. JSON Schema validation lives in
 // the separate ByteDance::pJsonSchemaValidator helper in <pjson_schema.h>,
 // which consumes only this public API.
 //
@@ -65,8 +65,9 @@ namespace ByteDance {
 
         // JSON value kind. Numbers are stored in one of three representations:
         // signed whole numbers as a 64-bit signed integer (jsonNumberInt),
-        // unsigned whole numbers above INT64_MAX as a 64-bit unsigned integer
-        // (jsonNumberUInt), and everything else as a double (jsonNumberDouble).
+        // explicitly unsigned whole numbers (and parsed tokens above INT64_MAX)
+        // as a 64-bit unsigned integer (jsonNumberUInt), and fractional/exponent
+        // values as a double (jsonNumberDouble).
         //
         // jsonNumberUInt is appended at the end so the numeric values of the
         // pre-existing tags are never renumbered (see VERSIONING.md); code that
@@ -369,13 +370,14 @@ namespace ByteDance {
         void resetTo(jsonType aeType);
         /// Calls resetTo() only when the type differs, otherwise preserving contents.
         void resetIfNeeded(jsonType aeType);
-        // Same-allocator swap is O(1). A cross-allocator swap is rejected as a
-        // safe no-op; use canSwap() to test before requesting it.
-        /// Exchanges contents when allocators match; otherwise does nothing.
+        // Same-allocator, non-overlapping swap is O(1). Cross-allocator and
+        // ancestor/descendant swaps are rejected as safe no-ops; use canSwap()
+        // to test before requesting one.
+        /// Exchanges compatible, non-overlapping contents; otherwise does nothing.
         void swap(pjson& aOther) noexcept;
         /// Returns the borrowed allocator bound to this value.
         Allocator& getAllocator() const noexcept;
-        /// Returns whether swap(aOther) can exchange contents.
+        /// Returns whether swap(aOther) can exchange contents safely.
         bool canSwap(const pjson& aOther) const noexcept;
 
         //== DOM parsing with the default allocator ==========================
@@ -731,11 +733,11 @@ namespace ByteDance {
         // deep-copy the value into this node's allocator.
         /// Appends a deep copy of aValue, promoting this node to an array.
         pjson& pushBack(const pjson& aValue);
-        /// Appends aValue by move when allocators match; otherwise deep-copies it.
+        /// Moves an independent same-allocator value; otherwise deep-copies it.
         pjson& pushBack(pjson&& aValue);
         /// Inserts or replaces the member aKey with a deep copy of aValue.
         pjson& insertOrAssign(const std::string& aKey, const pjson& aValue);
-        /// Inserts or replaces the member aKey, moving aValue when allocators match.
+        /// Moves an independent same-allocator value; otherwise deep-copies it.
         pjson& insertOrAssign(const std::string& aKey, pjson&& aValue);
         /// Reserves capacity for at least aCount array elements (no-op for non-arrays
         /// unless this node is first made an array); returns *this for chaining.

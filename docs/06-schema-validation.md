@@ -9,11 +9,12 @@ ranges. That is what **schema validation** is for. Follow along with
 
 A **schema** is a description of what valid data looks like: "must be an object,
 must have a `name` string and a non-negative `age` integer", and so on. In
-pjson, a schema is *itself a JSON value* (a `pjson`), written with pjson's
-documented subset of the widely-used
-[JSON Schema](https://json-schema.org) vocabulary. It is not a claim of complete
-conformance to a JSON Schema draft. Schemas load, build, and round-trip exactly
-like any other pjson value.
+pjson, a schema is *itself a JSON value* (a `pjson`). Default options use
+pjson's documented subset; `Options::draft2020()` opts into the required
+[JSON Schema Draft 2020-12](https://json-schema.org/draft/2020-12/)
+vocabularies. The latter does not claim the complete optional format-assertion
+vocabulary, arbitrary-precision numbers, or support for other drafts. Schemas
+load, build, and round-trip exactly like any other pjson value.
 
 Validation itself lives in a separate helper class,
 `ByteDance::pJsonSchemaValidator`, declared in `<pjson_schema.h>`. It is a pure
@@ -140,7 +141,7 @@ into arrays (`/roles/0`).
 
 ## Supported keywords
 
-pjson implements the documented keyword subset below. By default, unknown and
+pjson implements the keywords below. In the default subset, unknown and
 unsupported keywords are **ignored, not enforced**. This permits annotations and
 future vocabulary to pass through, but it also means a misspelled or unsupported
 constraint can silently weaken validation. Treat this table as an allowlist and
@@ -161,7 +162,8 @@ outright.
 A few notes:
 
 - `type: "integer"` matches whole numbers (including `2.0`); `type: "number"`
-  matches any int or double. `type` may also be an **array** of allowed names,
+  matches signed integers, unsigned integers, and doubles. `type` may also be an
+  **array** of allowed names,
   e.g. `"type": ["string", "null"]`.
 - `enum` and `const` use deep equality, so they work for arrays and objects too.
 - `$ref` resolves local JSON Pointers and anchors against `$id` resource bases.
@@ -214,7 +216,7 @@ validator-owned storage, and the callback/context pointers are then cleared.
   conservative syntax policy with
   `pJsonSchemaValidator::Options::trustedRegex()`.
 
-The supported vocabulary is deliberately a subset. Tuple-form `items` validates
+The default vocabulary is deliberately a subset. Tuple-form `items` validates
 the corresponding array positions, but elements beyond the tuple remain
 unconstrained because `additionalItems` is not implemented. `minLength` and
 `maxLength` count Unicode code points, not UTF-8 bytes. Unknown keywords and
@@ -304,14 +306,16 @@ schema["properties"]["age"]["minimum"] = int64_t(0);
 
 ## What you learned
 
-- A schema is a `pjson` describing valid data with pjson's documented JSON
-  Schema keyword subset, not a complete draft implementation.
+- A schema is a `pjson`; default options use pjson's documented subset, while
+  `Options::draft2020()` implements the required Draft 2020-12 vocabularies.
 - Validation lives in the standalone `pJsonSchemaValidator` (in
   `<pjson_schema.h>`), a pure consumer of pjson's public API. Compile a schema
   once, then reuse the validator for many instances.
 - `validator.validate(data)` returns yes/no; `validator.validate(data, errors)`
-  collects **all** failures, each with a JSON-Pointer `path` and a `message`.
-- The subset includes URI/anchor/dynamic references, `unevaluated*`, object and
+  collects **all** failures, each with JSON-Pointer `instanceLocation` and
+  `schemaLocation` fields plus a `message`.
+- The implemented keyword set includes URI/anchor/dynamic references,
+  `unevaluated*`, object and
   array constraints, known string formats, and logical combinators. External
   resources are available only through an explicit resolver callback. Unknown
   keywords are ignored and therefore enforce no constraint.

@@ -5,13 +5,14 @@ the git history for their implementation details. FEAT-3 is intentionally
 deferred: pjson will keep its current `std::map` object representation for now.
 
 Current baseline: strict RFC 8259 parsing, bounded parser and schema resources,
-JSON Pointer/Patch/Merge Patch, an expanded documented JSON Schema subset,
+JSON Pointer/Patch/Merge Patch, a documented default schema subset plus opt-in
+required Draft 2020-12 vocabularies,
 configurable serialization, allocator-aware DOM storage, non-vivifying typed
 access, SAX streaming, individually registered tests, pinned conformance
 corpora, libFuzzer/OSS-Fuzz targets, benchmarks, packaging, API reference, and
 cross-platform CI.
 
-## Resume notes (2026-09-02)
+## Resume notes (2026-09-03)
 
 Current implementation commits on branch `featurerequest`:
 
@@ -62,7 +63,9 @@ PJSON_JSON_SCHEMA_TEST_SUITE_DIR="$PWD/.test-corpora/JSON-Schema-Test-Suite" \
 ./build.sh --all --auto
 ```
 
-The last complete Debug/ASan/Release runs passed 529/529 tests. The current
+The last complete contributor gate built Release and ASan/UBSan Debug, then
+passed all 533 CTest checks in sanitized Debug (532 compiled C++ cases plus the
+benchmark-tool regression suite). The current
 Draft 2020-12 manifest explicitly accounts for all 80 files in the pinned
 corpus. It executes 1,773 official cases across 437 groups with no selected-group
 skips and explicitly defers 15 whole optional files. Those cover unsupported
@@ -71,6 +74,11 @@ Also verified: clang-format, clang-tidy, 20,000 schema-fuzzer runs, seven-target
 libFuzzer smoke coverage with inputs above 4 KiB, Doxygen API
 validation, relocatable static/shared CMake and pkg-config consumers, REUSE
 licensing (203/203 files), GCC, and a direct ThreadSanitizer concurrency probe.
+The 2026-09-03 full-churn audit also hardened move assignment and generic
+insertion against ancestor/descendant aliasing, made `canSwap()` accurately
+reject overlapping nodes without violating its `noexcept` contract, fixed
+duplicate custom-meta-schema resource accounting, normalized relative URI dot
+segments, and made benchmark comparison reject missing/duplicate/invalid rows.
 
 ---
 

@@ -66,18 +66,24 @@ full sweep. The fetch helper checks out a pinned corpus commit for reproducible
 results. Plain `./build.sh --test --auto` also fetches either corpus when it is
 missing. Without `--auto`, both `--test` and `--all` ask before downloading.
 
-The schema suite uses a separately pinned subset manifest drawn from the
-JSON-Schema-Test-Suite `draft7` directory. Fetch and run that manifest with:
+The schema suite uses a pinned JSON-Schema-Test-Suite checkout. It runs the
+legacy subset manifest from `draft7` and a complete 80-file Draft 2020-12
+manifest. The Draft 2020-12 gate currently executes 1,773 applicable cases
+across 437 groups with no selected-group skips; 15 whole optional files
+are explicitly deferred and checked by the bidirectional manifest. Fetch and
+run both gates with:
 
 ```sh
 ./scripts/fetch-json-schema-test-suite.sh
 PJSON_JSON_SCHEMA_TEST_SUITE_DIR="$PWD/.test-corpora/JSON-Schema-Test-Suite" \
   ctest --test-dir out/build-debug --output-on-failure \
-  -R '^pjson\.schema_official_draft7_optional$'
+  -R '^pjson\.schema_official_(draft7|draft2020)_optional$'
 ```
 
-Without that checkout, the official-schema case reports a clean skip; the
-repository's inline schema tests still run.
+Without that checkout, an explicitly optional local test run reports clean
+skips; `--auto`, the full contributor gate, and release CI fetch the pinned
+checkout and require the manifest-backed cases to run. The repository's inline
+schema tests always run.
 
 ## How the suite is organized
 
@@ -93,7 +99,7 @@ one executable:
 | `tests_roundtrip.cpp` | serialize/parse stability, formatting |
 | `tests_features.cpp` | version, depth guard, RFC 8259 parsing, errors, equality, streams |
 | `tests_schema.cpp`, `tests_schema_complex.cpp`, `tests_schema_vocabulary.cpp` | schema validation and vocabulary |
-| `tests_schema_official.cpp` | optional pinned JSON-Schema-Test-Suite subset manifest |
+| `tests_schema_official.cpp` | pinned draft-07 subset plus complete Draft 2020-12 manifest and deferral accounting |
 | `tests_malformed.cpp` | exhaustive invalid/hostile input (never throws) |
 | `tests_mutation.cpp` | complex add/edit/delete/rebuild scenarios |
 | `tests_api_edge.cpp` | normal + edge case for every public method |

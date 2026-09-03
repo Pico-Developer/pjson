@@ -21,7 +21,8 @@
 // fully decoupled from the DOM layout, so future DOM changes cannot silently
 // alter validation behavior.
 //
-// This is a documented JSON Schema subset, not a complete draft implementation.
+// Default options implement pjson's subset dialect; Options::draft2020()
+// activates the required Draft 2020-12 vocabularies and meta-schema policy.
 //===----------------------------------------------------------------------===//
 #include "pjson_schema.h"
 #include "pjson_schema_builtins.h"
@@ -1229,6 +1230,34 @@ namespace {
                 index.failedDocuments.insert(documentUri);
                 continue;
             }
+
+            // A dialect document was already resolved, copied, and charged by
+            // loadDialectDocument(). Compile that stable owned copy directly
+            // instead of counting and copying the same URI a second time.
+            const pjson* existingDialectDocument = nullptr;
+            for (size_t i = 0; i < index.dialectDocuments.size(); ++i) {
+                if (index.dialectDocuments[i].requestedUri == documentUri) {
+                    existingDialectDocument = &index.dialectDocuments[i].schema;
+                    break;
+                }
+            }
+            if (existingDialectDocument != nullptr) {
+                std::string resolvedDialect;
+                DialectPolicy resolvedPolicy;
+                const size_t beforeContract = errors.size();
+                compileDialectContract(*existingDialectDocument, options, index, resolvedDialect,
+                                       resolvedPolicy, errors, documentUri + "#");
+                if (errors.size() != beforeContract) {
+                    index.failedDocuments.insert(documentUri);
+                    continue;
+                }
+                index.resources[documentUri] =
+                    SchemaResource(existingDialectDocument, documentUri, resolvedPolicy);
+                compileSchemaResource(*existingDialectDocument, existingDialectDocument,
+                                      documentUri, index, errors, options, resolvedPolicy, "", 0,
+                                      documentUri);
+                continue;
+            }
             std::string builtinText;
             const bool hasBuiltin = builtinSchemaText(documentUri, builtinText);
             if (options.resolver == nullptr && !hasBuiltin) {
@@ -1250,15 +1279,7 @@ namespace {
             pjson temporary;
             bool resolved = false;
             try {
-                for (size_t i = 0; i < index.dialectDocuments.size(); ++i) {
-                    if (index.dialectDocuments[i].requestedUri == documentUri) {
-                        temporary.copyFrom(index.dialectDocuments[i].schema);
-                        resolved = true;
-                        break;
-                    }
-                }
-                if (!resolved)
-                    resolved = loadBuiltinSchema(documentUri, temporary);
+                resolved = loadBuiltinSchema(documentUri, temporary);
                 if (!resolved && options.resolver != nullptr)
                     resolved = options.resolver(documentUri, temporary, options.resolverContext);
             } catch (const std::exception& exception) {

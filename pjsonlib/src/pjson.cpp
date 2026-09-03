@@ -1215,19 +1215,26 @@ pjson::pjson(pjson&& aFrom, Allocator& aAlloc)
         aFrom.reset();
     }
 }
-// Replaces this value from an rvalue, using constant-time transfer only when
-// both allocator domains match. Self-move is a no-op.
+// Replaces this value from an rvalue, transferring storage when allocator
+// domains match after an ancestry-safety check. Self-move is a no-op.
 //
 // Aliasing safety (PJSON-COR-002): aFrom may be an ancestor or descendant of
-// *this. The previous implementation called reset() before reading aFrom, which
-// freed aFrom's storage when aFrom lived inside *this's subtree (heap
-// use-after-free). Instead, first steal aFrom's inline storage into a local
-// snapshot in O(1), then swap that snapshot into *this. Our previous contents
-// end up in the snapshot and are released by its destructor, after aFrom's
-// storage has already been safely adopted.
+// *this. A source descendant can be detached safely before the old destination
+// tree is destroyed. When the destination is a descendant of the source, copy
+// first because consuming the ancestor would invalidate the destination and can
+// create an ownership cycle.
 pjson& pjson::operator=(pjson&& aFrom) {
     if (&aFrom == this)
         return *this;
+    // A destination that lives inside aFrom cannot outlive a destructive move
+    // from that ancestor. Preserve value semantics by snapshotting the source
+    // before replacing the descendant; a moved-from object is permitted to
+    // retain its value. This also avoids creating an unreachable ownership
+    // cycle such as root["child"] = std::move(root).
+    if (pjsonImpl::_containsNode(aFrom, this)) {
+        copyFrom(aFrom);
+        return *this;
+    }
 
     if (_allocator == aFrom._allocator) {
         pjson snapshot(*_allocator);              // null placeholder in the same allocator domain
@@ -1254,8 +1261,6 @@ pjson& pjson::operator=(pjson&& aFrom) {
 void pjson::swap(pjson& aOther) noexcept {
     if (this == &aOther || !canSwap(aOther))
         return;
-    if (pjsonImpl::_containsNode(*this, &aOther) || pjsonImpl::_containsNode(aOther, this))
-        return;
     pjsonImpl::_swapStorage(*this, aOther);
 }
 // Performs the raw storage exchange with no aliasing or allocator checks. Used
@@ -1272,29 +1277,34 @@ void pjsonImpl::_swapStorage(pjson& aLeft, pjson& aRight) noexcept {
     std::memcpy(&aRight._uValue, &temp, sizeof(aRight._uValue));
 }
 // Reports whether aNode is aRoot or a descendant of it. The walk is iterative so
-// it stays stack-safe on deep documents and never allocates on the hot path.
+// it stays stack-safe on deep documents. Allocation failure is treated
+// conservatively as overlap, preserving the noexcept callers' safety contract.
 /*static*/
 bool pjsonImpl::_containsNode(const pjson& aRoot, const pjson* aNode) noexcept {
     if (aNode == nullptr)
         return false;
-    std::vector<const pjson*> work;
-    work.push_back(&aRoot);
-    while (!work.empty()) {
-        const pjson* cur = work.back();
-        work.pop_back();
-        if (cur == aNode)
-            return true;
-        if (cur->_eType == jsonType::jsonArray) {
-            const PJSONARRAY& arr = *cur->_uValue._pValueArray;
-            for (size_t i = 0; i < arr.size(); ++i)
-                work.push_back(arr[i]);
-        } else if (cur->_eType == jsonType::jsonObject) {
-            const PJSONMAP& obj = *cur->_uValue._pValueMap;
-            for (PJSONMAP::const_iterator it = obj.begin(); it != obj.end(); ++it)
-                work.push_back(it->second);
+    try {
+        std::vector<const pjson*> work;
+        work.push_back(&aRoot);
+        while (!work.empty()) {
+            const pjson* cur = work.back();
+            work.pop_back();
+            if (cur == aNode)
+                return true;
+            if (cur->_eType == jsonType::jsonArray) {
+                const PJSONARRAY& arr = *cur->_uValue._pValueArray;
+                for (size_t i = 0; i < arr.size(); ++i)
+                    work.push_back(arr[i]);
+            } else if (cur->_eType == jsonType::jsonObject) {
+                const PJSONMAP& obj = *cur->_uValue._pValueMap;
+                for (PJSONMAP::const_iterator it = obj.begin(); it != obj.end(); ++it)
+                    work.push_back(it->second);
+            }
         }
+        return false;
+    } catch (...) {
+        return true;
     }
-    return false;
 }
 // Returns the allocator permanently associated with this value and its descendants.
 pjson::Allocator& pjson::getAllocator() const noexcept {
@@ -1302,7 +1312,9 @@ pjson::Allocator& pjson::getAllocator() const noexcept {
 }
 // Reports whether contents can be exchanged without crossing allocator domains.
 bool pjson::canSwap(const pjson& aOther) const noexcept {
-    return _allocator == aOther._allocator;
+    return _allocator == aOther._allocator &&
+           (this == &aOther ||
+            (!pjsonImpl::_containsNode(*this, &aOther) && !pjsonImpl::_containsNode(aOther, this)));
 }
 // Copy assignment (copy-and-swap: safe even when aFrom aliases a child of
 // this, because the deep copy completes before any of our storage is freed).
@@ -1311,7 +1323,7 @@ pjson& pjson::operator=(const pjson& aFrom) {
         return *this;
 
     pjson tmp(aFrom, *_allocator);
-    swap(tmp);
+    pjsonImpl::_swapStorage(*this, tmp);
     return *this;
 }
 // Returns the active storage tag.
@@ -1535,7 +1547,7 @@ void pjson::copyFrom(const pjson& aFrom) {
     if (this == &aFrom)
         return;
     pjson replacement(aFrom, *_allocator);
-    swap(replacement);
+    pjsonImpl::_swapStorage(*this, replacement);
 }
 // Populates aDst from aFrom without recursion. If copying fails, partial
 // descendants are reclaimed and aDst is reset to a valid null state.
@@ -2714,7 +2726,7 @@ namespace {
             *child = aValue;
             pjsonImpl::_array(replacement).push_back(nullptr);
             pjsonImpl::_array(replacement).back() = child.release();
-            aTarget.swap(replacement);
+            pjsonImpl::_swapStorage(aTarget, replacement);
             return;
         }
 
@@ -2731,7 +2743,7 @@ namespace {
         for (const auto& value : aValues) {
             appendDomValue(replacement, value);
         }
-        aTarget.swap(replacement);
+        pjsonImpl::_swapStorage(aTarget, replacement);
     }
 
     // Appends a range atomically: newly attached children are reclaimed in
@@ -2743,7 +2755,7 @@ namespace {
             for (const auto& value : aValues) {
                 appendDomValue(replacement, value);
             }
-            aTarget.swap(replacement);
+            pjsonImpl::_swapStorage(aTarget, replacement);
             return;
         }
 
@@ -2897,8 +2909,16 @@ const pjson& pjson::at(size_t aIndex) const {
 // Generic child append. Promotes a non-array target to an array, then attaches
 // a deep copy (copy overload) or a moved/cross-allocator-copied value.
 pjson& pjson::pushBack(const pjson& aValue) {
-    if (_eType != jsonType::jsonArray)
-        resetTo(jsonType::jsonArray);
+    // When converting a container that owns aValue, build the complete
+    // replacement before destroying the old tree. This also gives all
+    // non-array promotions a strong exception guarantee.
+    if (_eType != jsonType::jsonArray) {
+        pjson replacement(*_allocator);
+        replacement.resetTo(jsonType::jsonArray);
+        replacement.pushBack(aValue);
+        pjsonImpl::_swapStorage(*this, replacement);
+        return *this;
+    }
     pjsonImpl::OwnedNode child = pjsonImpl::_makeNode(*_allocator);
     pjsonImpl::_copyContentsInto(*child, aValue);
     _uValue._pValueArray->push_back(nullptr);
@@ -2906,9 +2926,24 @@ pjson& pjson::pushBack(const pjson& aValue) {
     return *this;
 }
 pjson& pjson::pushBack(pjson&& aValue) {
-    if (_eType != jsonType::jsonArray)
-        resetTo(jsonType::jsonArray);
+    // Moving an ancestor into its descendant cannot consume the source without
+    // invalidating the destination. Snapshot it instead; moved-from values are
+    // allowed to retain their value. Self-append therefore appends a finite
+    // snapshot rather than creating an ownership cycle.
+    if (pjsonImpl::_containsNode(aValue, this))
+        return pushBack(static_cast<const pjson&>(aValue));
+    if (_eType != jsonType::jsonArray) {
+        pjson replacement(*_allocator);
+        replacement.resetTo(jsonType::jsonArray);
+        replacement.pushBack(std::move(aValue));
+        pjsonImpl::_swapStorage(*this, replacement);
+        return *this;
+    }
     pjsonImpl::OwnedNode child = pjsonImpl::_makeNode(*_allocator);
+    // Reserve before consuming aValue so allocation failure leaves both values
+    // logically unchanged. Child nodes are separately allocated, so a vector
+    // reallocation cannot invalidate an aliased descendant source.
+    _uValue._pValueArray->reserve(_uValue._pValueArray->size() + 1);
     if (child->_allocator == aValue._allocator) {
         pjsonImpl::_swapStorage(*child, aValue);
         aValue.reset();
@@ -2922,17 +2957,75 @@ pjson& pjson::pushBack(pjson&& aValue) {
 }
 // Insert-or-assign an object member from an arbitrary pjson value.
 pjson& pjson::insertOrAssign(const std::string& aKey, const pjson& aValue) {
-    if (_eType != jsonType::jsonObject)
-        resetTo(jsonType::jsonObject);
-    pjson& slot = (*this)[aKey];
-    slot.copyFrom(aValue);
+    // Snapshot an ancestor (including *this) before adding/replacing its child,
+    // otherwise insertion could change the very source being copied.
+    if (pjsonImpl::_containsNode(aValue, this)) {
+        pjson sourceCopy(aValue, *_allocator);
+        return insertOrAssign(aKey, std::move(sourceCopy));
+    }
+    if (_eType != jsonType::jsonObject) {
+        pjson replacement(*_allocator);
+        replacement.resetTo(jsonType::jsonObject);
+        replacement.insertOrAssign(aKey, aValue);
+        pjsonImpl::_swapStorage(*this, replacement);
+        return *this;
+    }
+    PJSONMAP& object = *_uValue._pValueMap;
+    PJSONMAP::iterator existing = object.find(aKey);
+    if (existing != object.end()) {
+        existing->second->copyFrom(aValue);
+        return *this;
+    }
+    pjsonImpl::OwnedNode child = pjsonImpl::_cloneNode(aValue, *_allocator);
+    const std::pair<PJSONMAP::iterator, bool> inserted =
+        object.insert(std::make_pair(aKey, static_cast<pjson*>(nullptr)));
+    if (!inserted.second) {
+        inserted.first->second->copyFrom(aValue);
+        return *this;
+    }
+    inserted.first->second = child.release();
     return *this;
 }
 pjson& pjson::insertOrAssign(const std::string& aKey, pjson&& aValue) {
-    if (_eType != jsonType::jsonObject)
-        resetTo(jsonType::jsonObject);
-    pjson& slot = (*this)[aKey];
-    slot = std::move(aValue);
+    if (pjsonImpl::_containsNode(aValue, this)) {
+        pjson sourceCopy(aValue, *_allocator);
+        return insertOrAssign(aKey, std::move(sourceCopy));
+    }
+    if (_eType != jsonType::jsonObject) {
+        pjson replacement(*_allocator);
+        replacement.resetTo(jsonType::jsonObject);
+        replacement.insertOrAssign(aKey, std::move(aValue));
+        pjsonImpl::_swapStorage(*this, replacement);
+        return *this;
+    }
+    PJSONMAP& object = *_uValue._pValueMap;
+    PJSONMAP::iterator existing = object.find(aKey);
+    if (existing != object.end()) {
+        *existing->second = std::move(aValue);
+        return *this;
+    }
+    pjsonImpl::OwnedNode child = pjsonImpl::_makeNode(*_allocator);
+    const std::pair<PJSONMAP::iterator, bool> inserted =
+        object.insert(std::make_pair(aKey, child.get()));
+    if (!inserted.second) {
+        *inserted.first->second = std::move(aValue);
+        return *this;
+    }
+    pjson* attached = child.release();
+    if (attached->_allocator == aValue._allocator) {
+        pjsonImpl::_swapStorage(*attached, aValue);
+    } else {
+        // Clone before consuming a cross-allocator source. If copying throws,
+        // erase the newly attached null node and preserve both input values.
+        try {
+            pjsonImpl::_copyContentsInto(*attached, aValue);
+        } catch (...) {
+            pjsonImpl::_destroyNode(attached);
+            object.erase(inserted.first);
+            throw;
+        }
+        aValue.reset();
+    }
     return *this;
 }
 // Reserves array capacity. Promotes a non-array to an empty array first so the
@@ -3023,7 +3116,7 @@ pjson& pjson::operator[](const std::string& aString) {
             std::make_pair(aString, static_cast<pjson*>(nullptr)));
         pjson* result = child.release();
         inserted.first->second = result;
-        swap(replacement);
+        pjsonImpl::_swapStorage(*this, replacement);
         return *result;
     }
     PJSONMAP::iterator it = _uValue._pValueMap->find(aString);
@@ -3068,7 +3161,7 @@ pjson& pjson::operator[](size_t index) {
         replacement.resetTo(jsonType::jsonArray);
         pjson& result = replacement[index];
         pjson* resultPtr = &result;
-        swap(replacement);
+        pjsonImpl::_swapStorage(*this, replacement);
         return *resultPtr;
     }
     PJSONARRAY& array = *_uValue._pValueArray;
@@ -3865,7 +3958,7 @@ namespace {
             if (!measureClone(aPatch, aBudget, aError))
                 return false;
             pjson replacement(aPatch, aTarget.getAllocator());
-            aTarget.swap(replacement);
+            pjsonImpl::_swapStorage(aTarget, replacement);
             return true;
         }
 
@@ -4806,7 +4899,7 @@ bool pjson::applyPatch(const pjson& aPatch, PatchError& aError,
         }
 
         // This is the sole publication point; all earlier exits leave *this intact.
-        swap(scratch);
+        pjsonImpl::_swapStorage(*this, scratch);
         resetPatchError(aError);
         return true;
     } catch (const std::bad_alloc&) {
@@ -4843,7 +4936,7 @@ bool pjson::applyMergePatch(const pjson& aPatch, PatchError& aError,
             return failPatch(aError, PatchError::InternalError,
                              "JSON Merge Patch could not update an object member");
         }
-        swap(scratch);
+        pjsonImpl::_swapStorage(*this, scratch);
         resetPatchError(aError);
         return true;
     } catch (const std::bad_alloc&) {

@@ -36,7 +36,7 @@ and behavior sources; this guide describes how to adapt RapidJSON code to them.
 | `Pointer::Get` | `findPointer(...)` | Non-vivifying RFC 6901 lookup. |
 | Pointer mutation | normal building or `applyPatch(...[, options])` | RFC 6902 patching is atomic and bounded. |
 | Merge Patch helper code | `applyMergePatch(...[, options])` | Atomic RFC 7396 with the same limits. |
-| `SchemaDocument` + `SchemaValidator` | `pJsonSchemaValidator v(schema); v.validate(value, ...)` | Compile a schema once into the standalone validator; only the documented subset is enforced. |
+| `SchemaDocument` + `SchemaValidator` | `pJsonSchemaValidator v(schema[, options]); v.validate(value, ...)` | Compile once into the standalone validator; subset by default, required Draft 2020-12 vocabularies via `Options::draft2020()`. |
 
 ## Values, ownership, and allocators
 
@@ -263,9 +263,8 @@ UTF-8 output, ascending keys, and a 64 MiB output limit. Zero explicitly makes
 `maxOutputBytes` unlimited. Object insertion order is not retained. A stored
 non-finite double fails serialization by default (`SerializeOptions::nonFinite`
 selects `RejectNonFinite`, `NonFiniteToNull`, or `NonFiniteToString`). Finite
-doubles use locale-independent formatting with the shortest tested precision
-from `digits10` through `max_digits10`, whose upper bound guarantees stable
-round-tripping; globally shortest spelling is not part of the contract.
+doubles use pinned Ryu shortest-round-trip conversion followed by pjson's
+documented fixed/scientific spelling policy.
 
 Invalid UTF-8 in any stored string or object key is a serialization failure,
 regardless of `escapeNonAscii`: `toString()` throws `std::invalid_argument`.
@@ -285,13 +284,17 @@ API. The error overload appends `pJsonSchemaValidator::Error` values; clear a
 reused vector first. Error paths are RFC 6901 pointers, with `""` denoting the
 root.
 
-The validator implements pjson's explicitly named subset dialect, not the
-official Draft 4 or 2020-12 dialect. An unsupported root `$schema` or required
-`$vocabulary` makes `isSchemaValid()` false; inspect `schemaErrors()` before
-trusting validation. Unknown optional vocabularies are accepted as annotations.
+Default construction implements pjson's explicitly named subset dialect, not
+RapidJSON's Draft 4 behavior. `Options::draft2020()` selects the official Draft
+2020-12 URI, bundled standard meta-schema validation, modern `$ref` behavior,
+and per-resource vocabulary activation. Custom meta-schema URIs and external
+resources are loaded only through the explicit resolver. An unsupported root
+`$schema` or required `$vocabulary` makes `isSchemaValid()` false; inspect
+`schemaErrors()` before trusting validation. Unknown optional vocabularies are
+accepted as annotations.
 
-The documented pjson subset is the complete enforced vocabulary; it is not a
-complete JSON Schema draft implementation:
+The following keywords form the default subset and the required Draft 2020-12
+vocabularies implemented by the opt-in mode:
 
 | Area | Supported keywords/forms |
 |---|---|
@@ -304,11 +307,12 @@ complete JSON Schema draft implementation:
 | Composition | `allOf`, `anyOf`, `oneOf`, `not`, `if`, `then`, `else` |
 | Schema values | Boolean schemas |
 
-Unknown or unsupported schema keywords are ignored and therefore are not
-enforced. Treat this as a warning, not forward-compatible validation: typos and
-unsupported security constraints can silently weaken a schema. Audit every
-schema against this table and retain RapidJSON or another validator when the
-application depends on any other vocabulary. URI resources, anchors, dynamic
+Unknown or unsupported schema keywords are ignored in permissive subset mode
+and therefore are not constraints. `Options::strict()` rejects unsupported
+standard keywords; `Options::draft2020()` applies the implemented official
+dialect and per-resource vocabulary policy. The complete optional
+format-assertion vocabulary, arbitrary-precision numbers, and other drafts
+remain out of scope. URI resources, anchors, dynamic
 references, and `unevaluated*` are available through the modern subset option.
 External documents require an explicit resolver callback; pjson never performs
 network I/O.
@@ -334,9 +338,9 @@ default; unknown format names are ignored.
    only for construction and intentional mutation.
 5. Replace member/array container iteration with `keys()`/`find(key)` and
    `size()`/`find(index)`.
-6. Normalize numeric interfaces to `int64_t` and `double`, including SAX
-   callbacks and vectors.
+6. Normalize numeric interfaces to `int64_t`, `uint64_t`, and `double`, including
+   SAX callbacks and vectors.
 7. Replace Writer and pretty-boolean configuration with `SerializeOptions`, and
    handle invalid-UTF-8 output failure.
-8. Verify every schema keyword is in pjson's documented subset and add
-   accepted/rejected tests for every relied-upon constraint.
+8. Choose the default/strict subset or `Options::draft2020()` deliberately and
+   add accepted/rejected tests for every relied-upon constraint.

@@ -22,8 +22,10 @@
 // focused private translation units so it can later become an independently
 // linked optional component without changing the DOM API.
 //
-// This is a documented JSON Schema subset, not a complete draft implementation.
-// See the supported-keyword list in the class comment.
+// Default options preserve pjson's documented subset dialect. The explicit
+// Options::draft2020() mode implements the required Draft 2020-12 vocabularies
+// and meta-schema compilation; optional format-assertion, arbitrary-precision,
+// and cross-draft behavior remains outside the contract.
 //
 // Author: Praveen Babu J D
 // License: Apache 2.0

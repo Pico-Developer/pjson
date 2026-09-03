@@ -150,6 +150,10 @@ python3 scripts/compare-benchmarks.py baseline.json candidate.json \
   --threshold-percent 10 --fail-on-regression
 ```
 
+The comparator rejects environment mismatches, duplicate result identities,
+invalid medians, and missing/extra cases. This prevents a partial candidate
+report from silently hiding a workload regression.
+
 The first form is advisory. Use `--fail-on-regression` only on a controlled
 runner after the environment label, OS, architecture, CPU, allocator, compiler,
 build type, and flags are stable. `--allow-environment-mismatch` is intended for

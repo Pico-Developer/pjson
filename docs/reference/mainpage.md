@@ -27,8 +27,10 @@ types are intentionally excluded.
   (itself a pjson value); its nested @ref ByteDance::pJsonSchemaValidator::Options
   and @ref ByteDance::pJsonSchemaValidator::Error configure and report schema
   validation. It is a standalone helper in `<pjson_schema.h>` that consumes only
-  pjson's public API. Its named subset dialect rejects unsupported `$schema`
-  declarations and required `$vocabulary` entries during compilation.
+  pjson's public API. Default options use its named subset dialect;
+  `Options::draft2020()` selects the required Draft 2020-12 vocabularies,
+  bundled meta-schemas, and per-resource vocabulary activation. Unsupported
+  dialects and required vocabularies fail compilation.
 
 Use the navigation tree to browse classes, nested option/error types, enums,
 typedefs, and every public overload. Each entry is generated from the current
@@ -41,7 +43,7 @@ installed header, so the reference follows the API as it evolves.
 - @subpage migration-rapidjson
 
 The two migration guides call out behavioral differences that a mechanical API
-rename would miss: ownership, vivifying access, signed numeric storage,
+rename would miss: ownership, vivifying access, signed/unsigned numeric storage,
 duplicate-key policy, allocator provenance and lifetime, streaming, schema
 coverage, and pjson's status-based error model.
 

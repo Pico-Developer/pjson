@@ -898,9 +898,10 @@ and MSVC standard libraries this follows the implementation's correctly rounded
 decimal-to-binary conversion under the active floating-point rounding mode.
 pjson does not change that process/thread rounding mode. The CI matrix verifies
 halfway cases and binary64 extremes on GCC/libstdc++, Clang/libstdc++,
-AppleClang/libc++, and MSVC. Serialization uses `max_digits10`, whose C++
-round-trip guarantee is independent of whether `double` is IEEE binary64; the
-bit-pattern property suite is enabled when the platform reports IEEE binary64.
+AppleClang/libc++, and MSVC. Serialization uses pinned Ryu
+shortest-round-trip conversion, then applies pjson's documented
+fixed/scientific spelling policy. The bit-pattern property suite is enabled
+when the platform reports IEEE binary64.
 
 ---
 
@@ -913,9 +914,10 @@ JSON. Validation is performed by a standalone helper class,
 pure consumer of pjson's public API — the core `pjson` class carries no schema
 or regex machinery, while the schema implementation remains isolated in focused
 private translation units within the current library target. Compile a schema
-into a validator once, then reuse it for many instances. The documented
-vocabulary is a deliberately limited subset of
-[JSON Schema](https://json-schema.org), not a complete draft implementation.
+into a validator once, then reuse it for many instances. Default options retain
+pjson's deliberately limited subset dialect; `Options::draft2020()` selects
+the implemented required vocabularies of
+[JSON Schema Draft 2020-12](https://json-schema.org/draft/2020-12/).
 `validate()` is `noexcept` and normally collects every applicable failure (a
 resource-budget failure stops traversal), each reported as a
 `pJsonSchemaValidator::Error` with a stable `code`, separate
@@ -1014,7 +1016,7 @@ bool ok = pJsonSchemaValidator(schema).validate(data);
 
 Notes:
 - `type: "integer"` matches whole numbers (including `2.0`); `type: "number"`
-  matches either numeric storage kind (`int64_t` or `double`).
+  matches every numeric storage kind (`int64_t`, `uint64_t`, or `double`).
 - `enum` / `const` use pjson's deep equality, so they work for arrays and
   objects too.
 - A boolean schema is allowed: `true` accepts every value, `false` rejects all.
@@ -1040,7 +1042,9 @@ Notes:
   configured values are clamped to 64. `trustedRegex()` removes only the regex
   limits/safety screen; reserve it for trusted schemas and data.
 
-This is the documented pjson subset, not a complete JSON Schema draft. See
+The default is pjson's documented subset dialect. Draft 2020-12 mode covers its
+required vocabularies, but not the complete optional format-assertion vocabulary,
+arbitrary-precision numbers, or other drafts. See
 [the schema tutorial](docs/06-schema-validation.md) and the
 [generated API reference](https://pico-developer.github.io/pjson/) for details.
 
@@ -1112,11 +1116,13 @@ scratch space still use the standard allocator.
 
 Ordinary copy construction inherits the source allocator;
 `pjson(source, allocator)` explicitly deep-copies into another one. Copy and
-move assignment preserve the destination allocator. Same-allocator moves are
-constant-time, while cross-allocator moves deep-transfer and may allocate.
-`swap()` is constant-time only when `canSwap()` is true; a cross-allocator swap
-is a safe no-op. SAX parsing has no allocator overload because it creates no
-persistent DOM.
+move assignment preserve the destination allocator. Same-allocator moves
+transfer storage after an ancestry-safety check, while cross-allocator moves
+deep-transfer and may allocate. `swap()` performs the same safety check before
+its constant-time exchange; cross-allocator and ancestor/descendant swaps are
+safe no-ops. Rvalue insertion snapshots an ancestor when the destination lies
+inside it. SAX parsing has no allocator overload because it creates no persistent
+DOM.
 
 ---
 
@@ -1137,7 +1143,7 @@ persistent DOM.
 | JSON Patch | `applyPatch(patch[, PatchError][, PatchOptions])`, `applyMergePatch(patch[, PatchError][, PatchOptions])` |
 | Container ops | `size()`, `empty()`, `clear()`, `erase(key)`, `erase(index)` |
 | Compare | `operator==`, `operator!=` (deep, structural) |
-| Validate | `pJsonSchemaValidator v(schema[, Options]); v.validate(value[, errors])` — standalone validator (`<pjson_schema.h>`), documented JSON Schema subset; `Options::strict()` fails closed |
+| Validate | `pJsonSchemaValidator v(schema[, Options]); v.validate(value[, errors])` — standalone validator (`<pjson_schema.h>`); subset by default, required Draft 2020-12 vocabularies via `Options::draft2020()` |
 | Build | `operator[](key\|index)` — **vivifying** |
 | Factories | `null()`, `object()`, `array()`; `operator=(nullptr)` |
 | Insert | `pushBack(pjson[&&])`, `insertOrAssign(key, pjson[&&])`, `reserve(n)` |
@@ -1376,16 +1382,18 @@ public API families fail validation.
   values, and 64 MiB of input; tune `maxDepth`, `maxNodes`, and `maxInputBytes`.
   A configured `maxDepth` is clamped to a stack-safe hard ceiling (1024) that
   cannot be raised.
-- Schema validation implements a documented subset, not a complete draft. It is
+- Schema validation uses a documented subset by default and implements the
+  required Draft 2020-12 vocabularies through `Options::draft2020()`. It is
   provided by the standalone `pJsonSchemaValidator` (in `<pjson_schema.h>`),
-  which consumes only pjson's public API. It ignores unknown keywords by default
-  (use `pJsonSchemaValidator::Options::strict()` to fail closed on unsupported
-  standard keywords), so unsupported rules and misspellings are otherwise not
-  enforced. It supports URI resources, anchors, dynamic references,
+  which consumes only pjson's public API. Permissive subset mode ignores unknown
+  keywords (`Options::strict()` fails closed on unsupported standard keywords),
+  while Draft 2020-12 applies vocabulary policy per schema resource and compiles
+  schemas against bundled or explicitly resolved meta-schemas. It supports URI
+  resources, anchors, dynamic references,
   `unevaluated*`, conditionals, `prefixItems`, `contains` bounds, and
-  `dependentSchemas`. External references require an application resolver and
-  never perform implicit I/O. It does not validate during SAX parsing or load
-  standard meta-schemas. Tuple-form `items`/`prefixItems`
+  `dependentSchemas`. External references and custom meta-schemas require an
+  application resolver and never perform implicit I/O. It does not validate
+  during SAX parsing. Tuple-form `items`/`prefixItems`
   validates corresponding positions. String lengths count Unicode code points.
   Regex matching uses the policy-limited default unless trusted mode is
   requested.

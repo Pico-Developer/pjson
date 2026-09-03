@@ -84,8 +84,9 @@ if (a.canSwap(b))
     a.swap(b);   // exchange the two sub-trees in place
 ```
 
-Sibling nodes in the same document are compatible. Check `canSwap()` when the
-values come from different sources.
+Sibling nodes in the same document are compatible. Ancestor/descendant pairs
+are rejected to prevent ownership cycles. Check `canSwap()` whenever the
+relationship is not obvious.
 
 ## Editing a path atomically
 
@@ -209,6 +210,9 @@ safe:
 if (const pjson* user = j.find("user"))
     j = *user; // replacing a root from its own child is safe
 ```
+
+Rvalue `pushBack` and `insertOrAssign` likewise snapshot an aliased ancestor or
+sibling rather than consuming storage that the destination still owns.
 
 ## What you learned
 

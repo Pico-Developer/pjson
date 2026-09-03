@@ -17,6 +17,7 @@
 // License: Apache 2.0
 //
 #include "pjson_internal.h"
+#include "ryu/ryu.h"
 
 #include <algorithm>
 #include <cerrno>
@@ -1853,8 +1854,7 @@ bool pjsonImpl::_decodeStringBody(ParseCtx& c, std::string& aOut, bool bStopAtQu
     }
     return true;
 }
-// Formats a finite double with the shortest precision between digits10 and
-// max_digits10 that round-trips through the same classic-locale conversion.
+// Formats a finite double with Ryu's proven shortest-round-trip conversion.
 // A '.0' suffix is appended when the result would otherwise look like an
 // integer, so the value re-parses into the double representation (type-stable).
 /*static*/
@@ -1863,17 +1863,34 @@ std::string pjsonImpl::_formatDouble(double aValue) {
         // JSON has no representation for NaN/Infinity.
         return "null";
     }
-    std::string result;
-    for (int precision = std::numeric_limits<double>::digits10;
-         precision <= std::numeric_limits<double>::max_digits10; ++precision) {
-        std::ostringstream out;
-        out.imbue(std::locale::classic());
-        out << std::setprecision(precision) << aValue;
-        result = out.str();
-        double parsed = 0.0;
-        if (_parseDouble(result, parsed) && parsed == aValue &&
-            (parsed != 0.0 || std::signbit(parsed) == std::signbit(aValue)))
-            break;
+    char buffer[32];
+    const int length = d2s_buffered_n(aValue, buffer);
+    std::string result(buffer, static_cast<size_t>(length));
+    for (size_t i = 0; i < result.size(); ++i) {
+        if (result[i] == 'E')
+            result[i] = 'e';
+    }
+    const size_t exponent = result.find('e');
+    if (exponent != std::string::npos) {
+        const int exponentValue = std::atoi(result.c_str() + exponent + 1);
+        if (exponentValue >= -4 && exponentValue < std::numeric_limits<double>::digits10) {
+            const bool negative = !result.empty() && result[0] == '-';
+            const size_t mantissaBegin = negative ? 1 : 0;
+            std::string digits = result.substr(mantissaBegin, exponent - mantissaBegin);
+            const size_t dot = digits.find('.');
+            if (dot != std::string::npos)
+                digits.erase(dot, 1);
+            const int decimalPosition = 1 + exponentValue;
+            if (decimalPosition <= 0) {
+                digits.insert(0, static_cast<size_t>(-decimalPosition), '0');
+                digits.insert(0, "0.");
+            } else if (static_cast<size_t>(decimalPosition) >= digits.size()) {
+                digits.append(static_cast<size_t>(decimalPosition) - digits.size(), '0');
+            } else {
+                digits.insert(static_cast<size_t>(decimalPosition), 1, '.');
+            }
+            result = negative ? "-" + digits : digits;
+        }
     }
     if (result.find_first_of(".eE") == std::string::npos) {
         result += ".0";

@@ -151,10 +151,10 @@ and doubles without first rounding integers through `double`; `1`, explicit `1u`
 `1.0` compare equal. NaN is unequal and unordered. Arrays compare in order and
 objects by key/value, independent of any construction history.
 
-Finite double output is locale-independent and chooses the shortest tested precision
-between `digits10` and `max_digits10` that reparses to the same value. Integral-looking
-doubles retain a decimal marker so their storage kind survives a round trip. Exact
-lexical spelling is not otherwise guaranteed.
+Finite double output is locale-independent and uses Ryu shortest-round-trip
+conversion. pjson retains fixed notation for ordinary decimal exponents and a
+decimal marker for integral-looking doubles so their storage kind survives a round
+trip. Exact lexical spelling is not otherwise guaranteed.
 
 ## 6. Serialization contract
 

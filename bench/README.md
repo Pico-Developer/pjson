@@ -142,6 +142,18 @@ GitHub Actions retains baseline and comparison JSON reports for 30 days. Those
 jobs use shared hosted runners, so their values are diagnostic artifacts rather
 than pass/fail gates. A downstream controlled-runner job can compare
 `median_ns` against a release artifact and report an agreed per-case threshold.
+The repository comparator enforces environment compatibility by default:
+
+```bash
+python3 scripts/compare-benchmarks.py baseline.json candidate.json
+python3 scripts/compare-benchmarks.py baseline.json candidate.json \
+  --threshold-percent 10 --fail-on-regression
+```
+
+The first form is advisory. Use `--fail-on-regression` only on a controlled
+runner after the environment label, OS, architecture, CPU, allocator, compiler,
+build type, and flags are stable. `--allow-environment-mismatch` is intended for
+exploratory reports and should not gate a release.
 
 ### Output
 
@@ -202,3 +214,17 @@ into this timing table: moving a `pjson` mostly transfers its small implementati
 handle and is timer-overhead-sensitive, while the other metrics require allocator,
 OS, or build-system instrumentation. Report them separately when a controlled
 runner and measurement protocol are available.
+
+Portable artifact sizes can be captured separately while preserving the same
+source/build/environment metadata:
+
+```bash
+python3 scripts/benchmark-aux-metrics.py out/benchmark.json \
+  --artifact out/release/lib/libpjson.a \
+  --artifact out/release/bin/pjsonbench \
+  --output out/benchmark-aux.json
+```
+
+Peak RSS, allocation counts, clean build time, and incremental build time remain
+platform-specific measurements. A controlled runner should collect and publish
+them beside this auxiliary report with its exact command and tool versions.

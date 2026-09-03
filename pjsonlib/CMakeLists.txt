@@ -14,7 +14,9 @@ ${SRC_DIR}/pjson_schema_format.cpp
 ${SRC_DIR}/pjson_schema_regex.cpp
 ${SRC_DIR}/pjson_schema_uri.cpp
 ${SRC_DIR}/pjson_schema_value.cpp
+${SRC_DIR}/third_party/ryu/ryu/d2s.c
 )
+set_source_files_properties(${SRC_DIR}/third_party/ryu/ryu/d2s.c PROPERTIES LANGUAGE CXX)
 
 set(PJSON_META_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/src/third_party/json-schema-2020-12")
 file(READ "${PJSON_META_ROOT}/schema.json" PJSON_META_SCHEMA)
@@ -46,6 +48,7 @@ add_library(pjson::pjson ALIAS ${TARGET_NAME})
 target_compile_features(${TARGET_NAME} PUBLIC cxx_std_11)
 target_compile_options(${TARGET_NAME} PRIVATE ${PJSON_WARN_FLAGS})
 target_include_directories(${TARGET_NAME} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
+target_include_directories(${TARGET_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/third_party/ryu)
 set_target_properties(${TARGET_NAME} PROPERTIES
     VERSION "${PROJECT_VERSION}"
     SOVERSION "${PROJECT_VERSION_MAJOR}"
@@ -137,3 +140,7 @@ install(FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/third_party/json-schema-2020-12/LICENSE.txt"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/pjson"
     RENAME "LICENSE-JSON-SCHEMA")
+install(FILES
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/third_party/ryu/LICENSE.txt"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/pjson"
+    RENAME "LICENSE-RYU")

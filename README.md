@@ -869,10 +869,9 @@ JSON null.
   (`SerializeOptions::RejectNonFinite`): `toString()` throws and `write()` sets
   `failbit`. Use `NonFiniteToNull` to emit `null` (the pre-2.0 behavior) or
   `NonFiniteToString` to emit `"NaN"`/`"Infinity"`/`"-Infinity"`.
-- Double serialization is locale-independent and chooses the shortest tested
-  precision from `digits10` through `max_digits10`; the upper bound guarantees
-  bit-exact serialize/parse recovery for every finite `double` on conforming
-  standard-library implementations. Integral-looking doubles
+- Double serialization is locale-independent and uses the Ryu
+  shortest-round-trip algorithm, providing bit-exact serialize/parse recovery
+  for every finite binary64 `double`. Integral-looking doubles
   retain a decimal marker (for example, `1.0`) so reparsing preserves the double
   storage kind; the spelling is not promised to be the shortest possible.
 

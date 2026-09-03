@@ -82,6 +82,13 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases follow
 - Replaced schema `std::regex` use with private, pinned SRELL 2026.06, adding
   Unicode ECMAScript property/non-BMP support, bounded backend work, and the
   asserted `regex` format without changing the public dependency surface.
+- Replaced repeated locale-stream double formatting with pinned Ryu shortest
+  conversion while preserving pjson's fixed/scientific spelling policy. On the
+  controlled local shape benchmark, floating-heavy serialization improved by
+  approximately 88%, with all bit-round-trip tests unchanged.
+- Added an environment-checking benchmark report comparator and separate
+  artifact-size metadata tool. Threshold failures remain opt-in for controlled
+  runners.
 - Moved pJsonSchemaValidator storage behind a private implementation pointer;
   schemas are copied to the default allocator, removing dependence on the
   caller's schema allocator lifetime.

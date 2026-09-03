@@ -133,6 +133,11 @@ controlled runner, stable release baseline, and agreed per-case reporting
 thresholds. Allocation counts, peak RSS, binary/object size, and build-time
 measurements need separate platform/tooling protocols. Do not add them to the
 latency table or treat a near-zero move operation as a useful microbenchmark.
+The repository now provides `scripts/compare-benchmarks.py`, which rejects
+environment mismatches by default and supports opt-in advisory or failing
+thresholds, plus `scripts/benchmark-aux-metrics.py` for artifact sizes. Ryu
+shortest conversion reduced same-machine floating-heavy serialization median by
+about 88% while preserving all serialization and randomized bit-round-trip tests.
 
 ## Medium Priority
 

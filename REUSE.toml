@@ -46,3 +46,12 @@ path = [
 precedence = "override"
 SPDX-FileCopyrightText = "2022 JSON Schema Specification Authors"
 SPDX-License-Identifier = "BSD-3-Clause OR AFL-3.0"
+
+[[annotations]]
+path = [
+    "pjsonlib/src/third_party/ryu/LICENSE.txt",
+    "pjsonlib/src/third_party/ryu/ryu/**",
+]
+precedence = "override"
+SPDX-FileCopyrightText = "2018 Ulf Adams"
+SPDX-License-Identifier = "Apache-2.0"

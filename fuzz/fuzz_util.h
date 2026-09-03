@@ -15,6 +15,7 @@
 #define PJSON_FUZZ_UTIL_H
 
 #include "pjson.h"
+#include "pjson_parser.h"
 #include "pjson_schema.h"
 
 #include <cstddef>
@@ -44,18 +45,18 @@ namespace pjson_fuzz {
 
     // Builds a parser configuration while varying duplicate-key
     // policy and resource budgets across inputs.
-    inline ByteDance::pjson::ParseOptions parseOptionsVariant(const uint8_t* data, size_t size,
-                                                              size_t offset = 0) {
-        ByteDance::pjson::ParseOptions options;
+    inline ByteDance::pJsonParser::Options parseOptionsVariant(const uint8_t* data, size_t size,
+                                                               size_t offset = 0) {
+        ByteDance::pJsonParser::Options options;
         switch (pickByte(data, size, offset, 0) % 3U) {
             case 0:
-                options.duplicateKeys = ByteDance::pjson::ParseOptions::RejectDuplicateKeys;
+                options.duplicateKeys = ByteDance::pJsonParser::Options::RejectDuplicateKeys;
                 break;
             case 1:
-                options.duplicateKeys = ByteDance::pjson::ParseOptions::KeepFirstDuplicate;
+                options.duplicateKeys = ByteDance::pJsonParser::Options::KeepFirstDuplicate;
                 break;
             default:
-                options.duplicateKeys = ByteDance::pjson::ParseOptions::KeepLastDuplicate;
+                options.duplicateKeys = ByteDance::pJsonParser::Options::KeepLastDuplicate;
                 break;
         }
 

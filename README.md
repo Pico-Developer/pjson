@@ -63,7 +63,9 @@ Resulting layout:
 
 ```text
 out/
-  include/pjson.h              public header
+  include/pjson.h              DOM public header
+  include/pjson_parser.h       parser public header
+  include/pjson_schema.h       schema-validator public header
   release/lib/libpjson.a       Release library
   release/bin/pjsontest        Release test runner
   release/bin/pjsonbench       Release benchmark runner
@@ -78,11 +80,13 @@ including both pinned test corpora and benchmark dependencies under
 
 ### Option 1 : Direct source integration
 
-Add the canonical library sources directly to your project and put
-`pjsonlib/include` on its include path. There are no third-party dependencies:
+Direct source integration must include every translation unit used by the
+selected features and the private Ryu include path for serialization. The
+single CMake target below is preferred for the full library. Public headers are:
 
-- Public header: [`pjsonlib/include/pjson.h`](pjsonlib/include/pjson.h)
-- Implementation: [`pjsonlib/src/pjson.cpp`](pjsonlib/src/pjson.cpp)
+- [`pjson.h`](pjsonlib/include/pjson.h) for the DOM
+- [`pjson_parser.h`](pjsonlib/include/pjson_parser.h) for parsing
+- [`pjson_schema.h`](pjsonlib/include/pjson_schema.h) for schema validation
 
 ### Option 2 : Build with CMake directly
 
@@ -136,6 +140,7 @@ For a standalone first program and its exact compile command, see the
 
 ```cpp
 #include "pjson.h"
+#include "pjson_parser.h"
 #include <cstdint>
 #include <iostream>
 using namespace ByteDance;
@@ -155,9 +160,9 @@ int main() {
         pjson::SerializeOptions::prettyPrinted();
     std::cout << person.toString(pretty) << "\n";
 
-    // Every DOM parse returns a pjson value; pass a ParseError to detect failure.
-    pjson::ParseError error;
-    pjson parsed = pjson::parse(person.toString(), error);
+    // Every DOM parse returns a pjson value; pass a pJsonParser::Error to detect failure.
+    pJsonParser::Error error;
+    pjson parsed = pJsonParser().parse(person.toString(), error);
     if (error.ok) {
         std::string name;
         int64_t age = 0;
@@ -329,12 +334,12 @@ stream/I/O failure can leave a partial prefix.
 ### `parse()` — the recommended API
 Every DOM-parsing overload returns a `pjson` **by value** — no smart pointer, no
 manual `delete`. The value owns its subtree and frees it on destruction. The
-terse overloads return a JSON `null` value on failure; pass a `ParseError` when
+terse overloads return a JSON `null` value on failure; pass a `pJsonParser::Error` when
 you need to tell failure apart from a successfully parsed literal `null`.
 
 ```cpp
-pjson::ParseError err;
-pjson p = pjson::parse(R"({ "a": 1, "b": [true, null, "x"] })", err);
+pJsonParser::Error err;
+pjson p = pJsonParser().parse(R"({ "a": 1, "b": [true, null, "x"] })", err);
 if (err.ok) {
     int64_t a = 0;
     if (p.tryGet("a", a))
@@ -345,36 +350,36 @@ if (err.ok) {
 A `(const char*, size_t)` overload handles buffers that are not
 NUL-terminated or that contain embedded NUL bytes:
 ```cpp
-pjson p = pjson::parse(buffer, length, err);
+pjson p = pJsonParser().parse(buffer, length, err);
 ```
 
-**Parse options** — `parse()` accepts an optional `ParseOptions`:
+**Parse options** — `parse()` accepts an optional `pJsonParser::Options`:
 ```cpp
-pjson::ParseOptions opt;
+pJsonParser::Options opt;
 opt.maxDepth = 64;     // reject nesting deeper than this (default 512, hard cap 1024)
 opt.maxNodes = 100000; // cap materialized values (default 1,000,000)
 opt.maxInputBytes = 8 * 1024 * 1024; // cap input (default 64 MiB)
-opt.duplicateKeys = pjson::ParseOptions::RejectDuplicateKeys; // default
-opt.numberPolicy = pjson::ParseOptions::RejectUnrepresentableNumbers; // default
-pjson p = pjson::parse(text, opt);
+opt.duplicateKeys = pJsonParser::Options::RejectDuplicateKeys; // default
+opt.numberPolicy = pJsonParser::Options::RejectUnrepresentableNumbers; // default
+pjson p = pJsonParser(opt).parse(text);
 ```
 
-**Error reporting** — pass a `ParseError` to learn *why*/*where* parsing failed
+**Error reporting** — pass a `pJsonParser::Error` to learn *why*/*where* parsing failed
 (no exceptions):
 ```cpp
-pjson::ParseError err;
-pjson p = pjson::parse("[1, 2, ]", err);
+pJsonParser::Error err;
+pjson p = pJsonParser().parse("[1, 2, ]", err);
 if (!err.ok) {
     std::cerr << "parse failed at " << err.line << ':' << err.column
               << " (byte " << err.offset << "): " << err.message
               << " [code " << err.code << "]\n";
 }
 ```
-The parser resets the supplied `ParseError` at the start of every call. Success
+The parser resets the supplied `pJsonParser::Error` at the start of every call. Success
 leaves `ok == true`, `code == None`, offset `0`, line `1`, column `1`, and an
 empty message; failure sets `ok == false`, a stable `code`, and records the
 first failure. Because a failed parse returns a `null` value, prefer the
-`ParseError` overload whenever the input might legitimately be the literal
+`pJsonParser::Error` overload whenever the input might legitimately be the literal
 `null`.
 
 ### Strict parsing and duplicate keys
@@ -394,17 +399,17 @@ parse options; none relaxes the JSON grammar or UTF-8 validation.
 ### Reading from a stream
 ```cpp
 std::ifstream file("data.json");
-pjson::ParseError err;
-pjson doc = pjson::parseStream(file, err);
+pJsonParser::Error err;
+pjson doc = pJsonParser().parseStream(file, err);
 if (err.ok) { /* ... */ }
 ```
 
 `parseStream()` builds a normal DOM. For very large documents, derive from
-`pjson::SaxHandler` and use `parseSaxStream()` to receive values incrementally
+`pJsonParser::SaxHandler` and use `parseSaxStream()` to receive values incrementally
 without buffering the full file or allocating a DOM:
 
 ```cpp
-struct Counter : pjson::SaxHandler {
+struct Counter : pJsonParser::SaxHandler {
     size_t numbers = 0;
     bool onInt(int64_t) override { ++numbers; return true; }
     bool onUInt(uint64_t) override { ++numbers; return true; }
@@ -412,9 +417,9 @@ struct Counter : pjson::SaxHandler {
 };
 
 Counter counter;
-pjson::ParseError err;
+pJsonParser::Error err;
 std::ifstream input("huge.json", std::ios::binary);
-if (!pjson::parseSaxStream(input, counter, err)) {
+if (!pJsonParser().parseSaxStream(input, counter, err)) {
     std::cerr << err.line << ':' << err.column << ": " << err.message << '\n';
 }
 ```
@@ -449,7 +454,7 @@ Given this document:
 ```
 
 ```cpp
-pjson j = pjson::parse(
+pjson j = pJsonParser().parse(
     R"({ "name": "Ada", "age": 36, "ratio": 0.5, "active": true })");
 
 std::string name;
@@ -497,7 +502,7 @@ Given this document (shown formatted so you can see exactly what is being read):
 ```
 
 ```cpp
-pjson j = pjson::parse(
+pjson j = pJsonParser().parse(
     R"({ "scores": [90, 82, 77], "tags": ["a", "b", "c"],
          "friends": [ {"name":"Bob"}, {"name":"Cid"} ] })");
 ```
@@ -544,7 +549,7 @@ when you only want some elements. Given:
 ```
 ```cpp
 // Sum only the integer elements -> 1 + 3 + 4 = 8
-pjson mixed = pjson::parse(R"({ "mixed": [1, "two", 3, true, 4] })");
+pjson mixed = pJsonParser().parse(R"({ "mixed": [1, "two", 3, true, 4] })");
 if (const pjson* node = mixed.find("mixed")) {
     for (size_t i = 0; i < node->size(); ++i) {
         int64_t value = 0;
@@ -573,7 +578,7 @@ Given this document:
 }
 ```
 ```cpp
-pjson j = pjson::parse(
+pjson j = pJsonParser().parse(
     R"({ "name": "Ada", "address": { "city": "London", "zip": "N1" } })");
 
 // Iterate top-level keys in sorted order -> "address", then "name"
@@ -637,7 +642,7 @@ For **non-mutating reads**, use these instead. Given:
 ```
 
 ```cpp
-pjson j = pjson::parse(
+pjson j = pJsonParser().parse(
     R"({ "age": 36, "name": "Ada", "scores": [90, 82, 77] })");
 
 // hasKey / find never create anything
@@ -695,7 +700,7 @@ same as building one. Starting from:
 }
 ```
 ```cpp
-pjson p = pjson::parse(
+pjson p = pJsonParser().parse(
     R"({ "user": { "scores": [10, 20, 30] }, "status": "active" })");
 
 // Change values in place
@@ -733,7 +738,7 @@ produces:
 
 **Type predicates and container queries** answer common questions directly:
 ```cpp
-pjson j = pjson::parse(R"({ "scores": [90, 82, 77] })");
+pjson j = pJsonParser().parse(R"({ "scores": [90, 82, 77] })");
 
 j.isObject();              // true
 const pjson* scores = j.find("scores");
@@ -779,9 +784,9 @@ j.clear();                 // empty the object (stays an object)
 **Compare** — deep, structural equality. Numbers compare across integer/double
 (`1 == 1.0`), objects compare regardless of key order, arrays compare in order:
 ```cpp
-auto a = pjson::parse(R"({"x":1,"y":[2,3]})");
-auto b = pjson::parse(R"({"y":[2,3],"x":1.0})");
-bool same = (*a == *b);    // true
+auto a = pJsonParser().parse(R"({"x":1,"y":[2,3]})");
+auto b = pJsonParser().parse(R"({"y":[2,3],"x":1.0})");
+bool same = (a == b);      // true
 ```
 
 ---
@@ -811,7 +816,7 @@ successful RFC 6902 `remove` at the empty root path leaves the target as JSON
 `null`:
 
 ```cpp
-pjson patch = pjson::parse(R"([
+pjson patch = pJsonParser().parse(R"([
     {"op":"replace","path":"/status","value":"ready"},
     {"op":"add","path":"/tags/-","value":"new"}
 ])");
@@ -822,7 +827,7 @@ if (!document.applyPatch(patch, patchError, patchLimits)) {
     std::cerr << patchError.opIndex << ": " << patchError.message << '\n';
 }
 
-pjson merge = pjson::parse(R"({"obsolete":null,"enabled":true})");
+pjson merge = pJsonParser().parse(R"({"obsolete":null,"enabled":true})");
 document.applyMergePatch(merge, patchError, patchLimits);
 ```
 
@@ -856,8 +861,8 @@ JSON null.
   above 2^53.
 - Integer tokens outside `[INT64_MIN, UINT64_MAX]`, and floating tokens outside
   finite `double` range, are **rejected by default**
-  (`ParseOptions::RejectUnrepresentableNumbers`). Set
-  `ParseOptions::AllowLossyNumbers` to store the nearest finite `double` instead.
+  (`pJsonParser::Options::RejectUnrepresentableNumbers`). Set
+  `pJsonParser::Options::AllowLossyNumbers` to store the nearest finite `double` instead.
 - Nonzero floating tokens that round all the way to zero are also rejected by
   default and require `AllowLossyNumbers`. Other finite decimal tokens are
   converted by the platform's classic-locale C++ iostream implementation; on
@@ -928,7 +933,7 @@ human-readable `message`, and optional nested `causes`. `category` distinguishes
 ```cpp
 #include "pjson_schema.h"
 
-pjson schema = pjson::parse(R"({
+pjson schema = pJsonParser().parse(R"({
     "type": "object",
     "required": ["name", "age"],
     "properties": {
@@ -939,7 +944,7 @@ pjson schema = pjson::parse(R"({
     "additionalProperties": false
 })");
 
-pjson data = pjson::parse(R"({ "name": "Ada", "age": 36, "tags": ["x","y"] })");
+pjson data = pJsonParser().parse(R"({ "name": "Ada", "age": 36, "tags": ["x","y"] })");
 
 // Compile the schema once, then reuse the validator.
 pJsonSchemaValidator validator(schema);
@@ -1055,17 +1060,17 @@ arbitrary-precision numbers, or other drafts. See
 - Every `parse()` / `parseStream()` overload returns a `pjson` **by value** that
   owns its subtree and frees it on destruction — no smart pointer, no manual
   `delete`. The terse overloads return a JSON `null` value on failure; pass a
-  `ParseError` to distinguish failure from a successfully parsed literal `null`.
+  `pJsonParser::Error` to distinguish failure from a successfully parsed literal `null`.
   An exception-enabled input stream can still throw while `parseStream()` buffers
   input.
-- A supplied `ParseError` is reset for each attempt. Success leaves its success
+- A supplied `pJsonParser::Error` is reset for each attempt. Success leaves its success
   state (`ok`, `code == None`, offset 0, line 1, column 1, empty message);
   failure records the first error with a stable `code`, a byte `offset`,
   one-based `line` and byte `column`, and a human-readable `message`.
 - The parser rejects trailing garbage, trailing/leading/doubled commas,
   unterminated strings/containers, malformed numbers (`1.`, `.5`, `1e`, `+1`),
   out-of-range numbers (`1e400`), and input nested deeper than
-  `ParseOptions::maxDepth` (itself clamped to a stack-safe hard ceiling).
+  `pJsonParser::Options::maxDepth` (itself clamped to a stack-safe hard ceiling).
 - Strings are correctly escaped on output and unescaped on input, including
   `\uXXXX` (decoded to UTF-8) and surrogate pairs.
 - Invalid UTF-8 in a programmatically stored string makes `toString()` throw
@@ -1083,10 +1088,10 @@ arbitrary-precision numbers, or other drafts. See
   allocation failure through the normal C++ mechanism unless their signature
   is explicitly `noexcept`.
 
-The default constructors and parse overloads use pjson's default allocator.
+The default `pjson` and `pJsonParser` constructors use pjson's default allocator.
 Applications that need to route persistent DOM storage can derive from
 `pjson::Allocator`, bind a root during construction, or pass it to an
-allocator-aware parse:
+allocator-configured parser:
 
 ```cpp
 class Arena : public pjson::Allocator {
@@ -1098,8 +1103,8 @@ public:
 
 Arena arena;
 pjson value(arena);
-pjson::ParseError error;
-pjson parsed = pjson::parse(text, error, arena); // bound to arena
+pJsonParser::Error error;
+pjson parsed = pJsonParser(arena).parse(text, error); // bound to arena
 ```
 
 `allocate` must return non-null storage satisfying `bytes` and `alignment` or
@@ -1130,9 +1135,9 @@ DOM.
 
 | Category | Members |
 |----------|---------|
-| Parse | `parse(str \| ptr,size [, ParseError&] [, Allocator&] [, ParseOptions])`, `parseStream(std::istream&, ...)` → `pjson` by value |
-| Streaming parse | `parseSax(str \| ptr,size, handler, ...)`, `parseSaxStream(std::istream&, handler, ...)`, `SaxHandler` callbacks |
-| Parse options | `ParseOptions{ maxDepth, maxNodes, maxInputBytes, duplicateKeys, numberPolicy }`, `ParseError{ ok, code, offset, line, column, message }` |
+| Parse | `pJsonParser([allocator,] options).parse(str \| ptr,size [, Error&])`, `parseStream(std::istream&[, Error&])` → `pjson` by value |
+| Streaming parse | `pJsonParser::parseSax(...)`, `parseSaxStream(...)`, `pJsonParser::SaxHandler` callbacks |
+| Parse options | `pJsonParser::Options{ maxDepth, maxNodes, maxInputBytes, duplicateKeys, numberPolicy }`, `pJsonParser::Error{ ok, code, offset, line, column, message }` |
 | Serialize | `toString([SerializeOptions])`, `write(std::ostream&[, SerializeOptions])`; options include `maxOutputBytes`, `nonFinite` |
 | Type | `getType()`, `isNull/isString/isNumber/isInt/isUInt/isInteger/isDouble/isBool/isArray/isObject()` |
 | Typed read | node/key/index `tryGet(out&)` for `int64_t`, `uint64_t`, `double`, `bool`, `std::string`, or `StringView`; untouched on failure |
@@ -1366,13 +1371,13 @@ public API families fail validation.
   current tokens, nesting state, and duplicate-key tracking still use memory.
 - Object insertion order is not preserved; keys are stored in `std::map` and
   serialize in selectable ascending or descending bytewise order.
-- Duplicate object keys are rejected by default; `ParseOptions` can explicitly
+- Duplicate object keys are rejected by default; `pJsonParser::Options` can explicitly
   keep the first or last value.
 - Signed integers use `int64_t`; unsigned integers above `INT64_MAX` use a
   distinct `uint64_t` kind, so the full 64-bit range round-trips exactly.
   Integer tokens outside `[INT64_MIN, UINT64_MAX]`, floating overflow, and
   nonzero floating tokens that underflow to zero are rejected by default; opt
-  in with `ParseOptions::AllowLossyNumbers` to store the nearest finite
+  in with `pJsonParser::Options::AllowLossyNumbers` to store the nearest finite
   `double`. A stored
   non-finite `double` fails serialization by default; choose `NonFiniteToNull`
   or `NonFiniteToString` to emit it.

@@ -16,11 +16,11 @@
 // pjson — Praveen's JSON: an ultra-simple JSON value type for C++.
 //
 // A single class, ByteDance::pjson, represents any JSON value and offers an
-// ergonomic obj["key"][i] = value building style plus parsing, serialization,
-// lookup, mutation, and equality. All method bodies live in pjson.cpp; this
-// header only declares the interface. JSON Schema validation lives in
-// the separate ByteDance::pJsonSchemaValidator helper in <pjson_schema.h>,
-// which consumes only this public API.
+// ergonomic obj["key"][i] = value building style plus serialization, lookup,
+// mutation, and equality. Parsing lives in the separate ByteDance::pJsonParser
+// helper declared by <pjson_parser.h>; the DOM does not depend on that parser.
+// JSON Schema validation similarly lives in ByteDance::pJsonSchemaValidator in
+// <pjson_schema.h>, which consumes only the public DOM API.
 //
 // Author: Praveen Babu J D
 // License: Apache 2.0
@@ -40,9 +40,7 @@
 #include <cstdint>
 #include <iosfwd>
 #include <map>
-#include <memory>
 #include <string>
-#include <type_traits>
 #include <vector>
 
 namespace ByteDance {
@@ -104,68 +102,6 @@ namespace ByteDance {
             /// Releases a non-null allocation using its original size, alignment, and kind.
             virtual void deallocate(void* aPtr, size_t aSize, size_t aAlignment,
                                     AllocationKind aKind) noexcept = 0;
-        };
-
-        // Bounds how much work a parse may do. Parsing always enforces RFC 8259
-        // conformance and rejects:
-        //   - unknown escapes (e.g. "\q")
-        //   - lone/unpaired \u surrogates
-        //   - upper/mixed-case keywords (NULL, True, FALSE)
-        //   - raw control characters inside strings
-        //   - malformed UTF-8 bytes
-        struct ParseOptions {
-            enum DuplicateKeyPolicy { RejectDuplicateKeys, KeepFirstDuplicate, KeepLastDuplicate };
-
-            // Governs numeric tokens that cannot be represented exactly. By
-            // default an integer token outside [INT64_MIN, UINT64_MAX] or a
-            // floating token that overflows binary64 or rounds from nonzero to
-            // zero is rejected with a structured numeric-range error.
-            // AllowLossyNumbers opts in to storing the nearest finite double
-            // for out-of-range integers and nonzero-to-zero underflow.
-            enum NumberPolicy { RejectUnrepresentableNumbers, AllowLossyNumbers };
-
-            int maxDepth;         // nesting limit; values <= 0 enforce a one-level limit
-            size_t maxNodes;      // max JSON values created (0 = unlimited)
-            size_t maxInputBytes; // max input length in bytes (0 = unlimited)
-            DuplicateKeyPolicy duplicateKeys;
-            NumberPolicy numberPolicy;
-            /// Selects duplicate rejection, exact-number rejection, depth 512,
-            /// one million nodes, and a 64 MiB input limit.
-            ParseOptions();
-        };
-
-        // Filled in by the error-reporting parse() overloads. `ok` is true when
-        // parsing succeeded; otherwise `offset` is the zero-based byte position,
-        // `line` is one-based, `column` is a one-based byte column, `code` is a
-        // stable machine-facing category, and `message` describes the first
-        // failure. Reporting parse APIs reset all fields on entry and leave this
-        // success state after a successful parse.
-        struct ParseError {
-            // Stable error categories for programmatic handling. The exact
-            // `message` text may change between releases; `code` is the contract.
-            enum Code {
-                None = 0,          // no error (ok == true)
-                Syntax,            // malformed JSON grammar
-                InvalidEncoding,   // invalid UTF-8 or invalid \u escape/surrogate
-                DuplicateKey,      // duplicate object name under RejectDuplicateKeys
-                NumberRange,       // numeric overflow/underflow or unrepresentable exact number
-                DepthLimit,        // nesting exceeded the (clamped) depth budget
-                InputLimit,        // input exceeded maxInputBytes
-                NodeLimit,         // materialized values exceeded maxNodes
-                AllocationFailure, // out of memory during parsing
-                StreamError,       // underlying stream read failure
-                CallbackError,     // a SAX callback cancelled or threw
-                InvalidArgument    // invalid API argument (e.g. null input pointer)
-            };
-
-            bool ok;
-            Code code;
-            size_t offset;
-            size_t line;
-            size_t column;
-            std::string message;
-            /// Constructs a success state at the beginning of an input.
-            ParseError();
         };
 
         // Structured JSON Pointer (RFC 6901) lookup failure. `tokenIndex` is
@@ -304,45 +240,6 @@ namespace ByteDance {
             void reset() noexcept;
         };
 
-        // Event sink for non-owning SAX parsing. Return false from any callback
-        // to cancel parsing; public parseSax* APIs return false for cancellation
-        // or thrown exceptions and populate ParseError when one is supplied.
-        //
-        // Callbacks are delivered in source order. Duplicate-key policy still
-        // applies: RejectDuplicateKeys fails on the duplicate key,
-        // KeepFirstDuplicate suppresses later duplicate-value subtrees, and
-        // KeepLastDuplicate accepts duplicates while still reporting both
-        // occurrences because a streaming SAX walk cannot retract prior events.
-        // String and key references are borrowed and remain valid only for the
-        // duration of their callback. The handler itself need only outlive the
-        // parseSax* call. Default callbacks accept the event and do nothing.
-        struct SaxHandler {
-            /// Enables destruction through a SaxHandler base pointer.
-            virtual ~SaxHandler();
-            /// Receives a JSON null value; return false to cancel parsing.
-            virtual bool onNull();
-            /// Receives a JSON boolean value; return false to cancel parsing.
-            virtual bool onBool(bool aValue);
-            /// Receives an integer-valued JSON number; return false to cancel parsing.
-            virtual bool onInt(int64_t aValue);
-            /// Receives an unsigned integer above INT64_MAX; return false to cancel parsing.
-            virtual bool onUInt(uint64_t aValue);
-            /// Receives a floating-point JSON number; return false to cancel parsing.
-            virtual bool onDouble(double aValue);
-            /// Receives borrowed decoded string bytes; return false to cancel parsing.
-            virtual bool onString(const std::string& aValue);
-            /// Marks the beginning of an array; return false to cancel parsing.
-            virtual bool onStartArray();
-            /// Marks the end of an array; return false to cancel parsing.
-            virtual bool onEndArray();
-            /// Marks the beginning of an object; return false to cancel parsing.
-            virtual bool onStartObject();
-            /// Receives a borrowed decoded object key; return false to cancel parsing.
-            virtual bool onKey(const std::string& aKey);
-            /// Marks the end of an object; return false to cancel parsing.
-            virtual bool onEndObject();
-        };
-
         //== Construction / lifetime =========================================
         /// Constructs null using the process-lifetime default allocator.
         pjson();
@@ -379,87 +276,6 @@ namespace ByteDance {
         Allocator& getAllocator() const noexcept;
         /// Returns whether swap(aOther) can exchange contents safely.
         bool canSwap(const pjson& aOther) const noexcept;
-
-        //== DOM parsing with the default allocator ==========================
-        // Each parse accepts exactly one JSON value followed only by whitespace
-        // and returns the parsed document by value; the tree owns its subtree and
-        // frees it on destruction. A byte span may contain embedded NUL bytes,
-        // but a null aSrc is always an error.
-        //
-        // The terse overloads (no ParseError) return a JSON null value on
-        // failure. Because a successfully parsed literal `null` is also a null
-        // value, they cannot distinguish failure from a real null; pass a
-        // ParseError when that distinction matters. The diagnostic overloads
-        // reset aError and set aError.ok/code plus the first failure location.
-        /// Parses aStr using the default allocator; returns null on failure.
-        static pjson parse(const std::string& aStr, const ParseOptions& aOpts = ParseOptions());
-        /// Parses the aSize-byte span at aSrc using the default allocator.
-        static pjson parse(const char* aSrc, size_t aSize,
-                           const ParseOptions& aOpts = ParseOptions());
-        /// Parses aStr and reports the first failure in aError.
-        static pjson parse(const std::string& aStr, ParseError& aError,
-                           const ParseOptions& aOpts = ParseOptions());
-        /// Parses the aSize-byte span and reports the first failure in aError.
-        static pjson parse(const char* aSrc, size_t aSize, ParseError& aError,
-                           const ParseOptions& aOpts = ParseOptions());
-
-        // parseStream() buffers the document in chunks while enforcing
-        // maxInputBytes. Stream or temporary-buffer exceptions may propagate.
-        /// Buffers and parses one document from aIn using the default allocator.
-        static pjson parseStream(std::istream& aIn, const ParseOptions& aOpts = ParseOptions());
-        /// Buffers and parses aIn, reporting ordinary parse/read failures in aError.
-        static pjson parseStream(std::istream& aIn, ParseError& aError,
-                                 const ParseOptions& aOpts = ParseOptions());
-
-        //== DOM parsing with a custom allocator =============================
-        // Allocator-aware DOM parsing routes root/child nodes and string/array/
-        // object wrapper objects through borrowed aAlloc. Standard-container
-        // backing buffers still use their standard allocators, as described by
-        // Allocator above. aAlloc must outlive the returned tree. The returned
-        // value is bound to aAlloc.
-        /// Parses aStr with allocator-backed nodes and wrapper objects.
-        static pjson parse(const std::string& aStr, Allocator& aAlloc,
-                           const ParseOptions& aOpts = ParseOptions());
-        /// Parses a byte span with allocator-backed nodes and wrapper objects.
-        static pjson parse(const char* aSrc, size_t aSize, Allocator& aAlloc,
-                           const ParseOptions& aOpts = ParseOptions());
-        /// Parses aStr with aAlloc and reports the first failure in aError.
-        static pjson parse(const std::string& aStr, ParseError& aError, Allocator& aAlloc,
-                           const ParseOptions& aOpts = ParseOptions());
-        /// Parses a byte span with aAlloc and reports the first failure in aError.
-        static pjson parse(const char* aSrc, size_t aSize, ParseError& aError, Allocator& aAlloc,
-                           const ParseOptions& aOpts = ParseOptions());
-        /// Buffers aIn, then parses with allocator-backed nodes and wrappers.
-        static pjson parseStream(std::istream& aIn, Allocator& aAlloc,
-                                 const ParseOptions& aOpts = ParseOptions());
-        /// Buffers and parses aIn with aAlloc, reporting ordinary failures in aError.
-        static pjson parseStream(std::istream& aIn, ParseError& aError, Allocator& aAlloc,
-                                 const ParseOptions& aOpts = ParseOptions());
-
-        //== SAX parsing =====================================================
-        // SAX parsing retains neither aHandler nor callback arguments. It returns
-        // false for invalid input, cancellation, stream failure, or a handler
-        // exception; callbacks already delivered before failure are not undone.
-        /// Parses aStr and emits its events to aHandler without building a DOM.
-        static bool parseSax(const std::string& aStr, SaxHandler& aHandler,
-                             const ParseOptions& aOpts = ParseOptions());
-        /// Parses the aSize-byte span and emits its events to aHandler.
-        static bool parseSax(const char* aSrc, size_t aSize, SaxHandler& aHandler,
-                             const ParseOptions& aOpts = ParseOptions());
-        /// SAX-parses aStr and reports failure or cancellation in aError.
-        static bool parseSax(const std::string& aStr, SaxHandler& aHandler, ParseError& aError,
-                             const ParseOptions& aOpts = ParseOptions());
-        /// SAX-parses a byte span and reports failure or cancellation in aError.
-        static bool parseSax(const char* aSrc, size_t aSize, SaxHandler& aHandler,
-                             ParseError& aError, const ParseOptions& aOpts = ParseOptions());
-        // True streaming SAX parse: reads the istream incrementally and never
-        // buffers the full document in memory.
-        /// Incrementally parses aIn and emits events to aHandler.
-        static bool parseSaxStream(std::istream& aIn, SaxHandler& aHandler,
-                                   const ParseOptions& aOpts = ParseOptions());
-        /// Incrementally SAX-parses aIn and reports failure or cancellation in aError.
-        static bool parseSaxStream(std::istream& aIn, SaxHandler& aHandler, ParseError& aError,
-                                   const ParseOptions& aOpts = ParseOptions());
 
         //== Serialization ===================================================
         // Invalid UTF-8 and rejected non-finite doubles are serialization
@@ -858,8 +674,8 @@ namespace ByteDance {
 
     private:
         //== Internal helpers ================================================
-        // Parser, encoding, ownership, and other DOM operations that need to
-        // touch the data members below live behind the pjsonImpl helper. Schema
+        // Encoding, ownership, and other DOM operations that need to touch the
+        // data members below live behind the pjsonImpl helper. Schema
         // validation is deliberately separate and uses only the public API.
         // pjsonImpl is a friend so it can reach the storage union directly; no
         // instance helper methods are declared here.

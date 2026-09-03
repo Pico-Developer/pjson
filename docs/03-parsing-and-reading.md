@@ -6,11 +6,17 @@ it into a `pjson` you can read. Follow along with
 
 ## Parsing with `parse()`
 
-`pjson::parse()` takes JSON text and returns a `pjson` value:
+Include the parser separately from the DOM, then construct a parser and call
+`parse()`. The dependency is one-way: `pJsonParser` uses `pjson`; `pjson` does
+not depend on the parser.
 
 ```cpp
-pjson::ParseError err;
-pjson doc = pjson::parse(R"({ "name": "Ada", "age": 36 })", err);
+#include "pjson.h"
+#include "pjson_parser.h"
+
+pJsonParser parser;
+pJsonParser::Error err;
+pjson doc = parser.parse(R"({ "name": "Ada", "age": 36 })", err);
 if (!err.ok) {
     // parsing failed — the text was not valid JSON
 }
@@ -23,7 +29,7 @@ Two things to understand:
   pointer in the API. Use `doc.method()` directly. To move the result into
   another document, `dest["k"] = std::move(doc);`.
 - On a JSON failure the terse `parse(text)` returns a JSON `null` value; pass a
-  `ParseError` (as above) to tell failure apart from a successfully parsed
+  `pJsonParser::Error` (as above) to tell failure apart from a successfully parsed
   literal `null`. Malformed input does not escape as an exception. Stream
   objects configured to throw can still propagate I/O exceptions from
   `parseStream()`. (Chapter 05 shows how to find out why JSON parsing failed.)
@@ -243,7 +249,7 @@ for (const std::string& key : j.keys()) {
 
 ## What you learned
 
-- `parse()` returns a `pjson` value and reports failures through a `ParseError`
+- `parse()` returns a `pjson` value and reports failures through a `pJsonParser::Error`
   out-param (the terse overload yields a JSON `null` on failure).
 - `tryGet()` provides exact-type node/key/index reads and leaves outputs unchanged
   on failure; `StringView` offers a mutation-sensitive, copy-free string view.

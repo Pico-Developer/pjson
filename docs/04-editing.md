@@ -9,8 +9,8 @@ Follow along with [`examples/src/04_editing.cpp`](../examples/src/04_editing.cpp
 Index to the value and assign a new one:
 
 ```cpp
-pjson::ParseError err;
-pjson j = pjson::parse(R"({ "user": { "name": "Ada" }, "count": 2 })", err);
+pJsonParser::Error err;
+pjson j = pJsonParser().parse(R"({ "user": { "name": "Ada" }, "count": 2 })", err);
 
 j["user"]["name"] = "Ada Lovelace";   // change a string
 j["count"] = int64_t(3);               // change a number
@@ -95,7 +95,7 @@ For a sequence of path-based edits, `applyPatch()` implements JSON Patch (RFC
 `test` operations:
 
 ```cpp
-pjson patch = pjson::parse(R"([
+pjson patch = pJsonParser().parse(R"([
     { "op": "replace", "path": "/user/name", "value": "Ada Byron" },
     { "op": "add", "path": "/user/roles/-", "value": "reviewer" }
 ])",
@@ -113,7 +113,7 @@ Patch paths use JSON Pointer syntax. An empty path addresses the whole document;
 in particular, removing the root succeeds and leaves the target as JSON null:
 
 ```cpp
-pjson removeRoot = pjson::parse(R"([{"op":"remove","path":""}])", err);
+pjson removeRoot = pJsonParser().parse(R"([{"op":"remove","path":""}])", err);
 if (err.ok && j.applyPatch(removeRoot, error, limits)) {
     // j.isNull() is now true
 }
@@ -127,7 +127,7 @@ For object-shaped updates, `applyMergePatch()` implements JSON Merge Patch
 (RFC 7396):
 
 ```cpp
-pjson merge = pjson::parse(R"({
+pjson merge = pJsonParser().parse(R"({
     "user": { "email": "ada@example.com", "nickname": null }
 })",
                            err);

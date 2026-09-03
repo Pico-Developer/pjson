@@ -10,6 +10,7 @@
 #include <string>
 
 using ByteDance::pjson;
+using ByteDance::pJsonParser;
 
 namespace {
     void exercise(const pjson& value, const uint8_t* data, size_t size, size_t offset) {
@@ -41,8 +42,8 @@ namespace {
         pjson_fuzz::require(value.write(stream, streamError, options));
         pjson_fuzz::require(streamError.code == pjson::SerializeError::None);
         pjson_fuzz::require(stream.str() == output);
-        pjson::ParseError parseError;
-        pjson roundTrip = pjson::parse(output, parseError);
+        pJsonParser::Error parseError;
+        pjson roundTrip = pJsonParser().parse(output, parseError);
         pjson_fuzz::require(parseError.ok);
         if (value.isDouble()) {
             double number = 0.0;
@@ -58,8 +59,8 @@ namespace {
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     if (size > pjson_fuzz::kMaxInputBytes)
         return 0;
-    pjson::ParseError parseError;
-    pjson parsed = pjson::parse(pjson_fuzz::bytes(data, size), size, parseError);
+    pJsonParser::Error parseError;
+    pjson parsed = pJsonParser().parse(pjson_fuzz::bytes(data, size), size, parseError);
     if (parseError.ok)
         exercise(parsed, data, size, 0);
 

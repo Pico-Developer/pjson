@@ -11,6 +11,16 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases follow
 
 ### Changed
 
+- **BREAKING (API):** parsing is now provided by the standalone
+  `ByteDance::pJsonParser` class in `<pjson_parser.h>`. Parser `Options`,
+  `Error`, and `SaxHandler` are nested under that class; `pjson` no longer
+  declares parsing members and has no dependency on the parser. Configure the
+  allocator and options when constructing a reusable parser, then call
+  `parse`, `parseStream`, `parseSax`, or `parseSaxStream`. DOM parse results
+  remain ordinary `pjson` values.
+- Split the implementation into focused DOM, parser, serializer, JSON Pointer,
+  JSON Patch/Merge Patch, and existing schema translation units while retaining
+  one `pjson::pjson` library target.
 - **BREAKING (behavior):** mutable array subscripting no longer clamps a
   negative index before the beginning to element zero. It now throws
   `std::out_of_range` without mutation; valid negative indexes still count from
@@ -83,7 +93,7 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases follow
   integer-heavy, and floating-heavy workloads. Added versioned JSON reports with
   source/build/environment/methodology metadata and advisory CI artifacts.
 - Aligned SAX null-span diagnostics with DOM parsing by reporting
-  `ParseError::InvalidArgument`.
+  `pJsonParser::Error::InvalidArgument`.
 - Replaced schema `std::regex` use with private, pinned SRELL 2026.06, adding
   Unicode ECMAScript property/non-BMP support, bounded backend work, and the
   asserted `regex` format without changing the public dependency surface.

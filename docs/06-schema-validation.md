@@ -34,10 +34,11 @@ flowchart LR
 ## A first schema
 
 ```cpp
+#include "pjson_parser.h"
 #include "pjson_schema.h"
 
-pjson::ParseError err;
-pjson schema = pjson::parse(R"({
+pJsonParser::Error err;
+pjson schema = pJsonParser().parse(R"({
     "type": "object",
     "required": ["name", "age"],
     "properties": {
@@ -62,7 +63,7 @@ if (!validator.isSchemaValid()) {
         std::cerr << "invalid schema at " << e.schemaLocation << ": " << e.message << "\n";
 }
 
-pjson data = pjson::parse(R"({ "name": "Ada", "age": 36 })", err);
+pjson data = pJsonParser().parse(R"({ "name": "Ada", "age": 36 })", err);
 
 // Simple yes/no:
 bool ok = validator.validate(data);

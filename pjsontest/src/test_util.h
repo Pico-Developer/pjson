@@ -15,7 +15,7 @@
 //===----------------------------------------------------------------------===//
 // Shared helpers for the pjson test suite.
 //
-// The public parse() API returns a pjson value plus a ParseError (no smart
+// The public parse() API returns a pjson value plus a pJsonParser::Error (no smart
 // pointer). Parsed is a TEST-ONLY owning wrapper that adapts that value+error
 // pair to a pointer-like handle so the many existing cases can keep reading as
 // `if (p)`, `p->`, `*p`, and `p == nullptr` where those meant "parse
@@ -25,6 +25,7 @@
 #define PJSON_TEST_UTIL_H
 
 #include "pjson.h"
+#include "pjson_parser.h"
 #include "pjson_schema.h"
 #include "test_harness.h"
 
@@ -37,6 +38,7 @@
 namespace pjson_test {
 
     using ByteDance::pjson;
+    using ByteDance::pJsonParser;
     using ByteDance::pJsonSchemaValidator;
 
     // Short aliases for the validator's vocabulary types. Schema validation is
@@ -73,11 +75,11 @@ namespace pjson_test {
     }
 
     // Owning, pointer-like parse result. `ok()` (and the bool/nullptr operators)
-    // reflect ParseError::ok, so a successfully parsed literal `null` is truthy,
+    // reflect pJsonParser::Error::ok, so a successfully parsed literal `null` is truthy,
     // while only an actual failure compares equal to nullptr.
     struct Parsed {
         pjson value;
-        pjson::ParseError error;
+        pJsonParser::Error error;
 
         Parsed() {} // error defaults to ok == true
         // Wraps an already-built value (e.g. a hand-constructed document) as a
@@ -109,84 +111,84 @@ namespace pjson_test {
 
     //== Default-allocator parse helpers =====================================
     inline Parsed parse(const std::string& s,
-                        const pjson::ParseOptions& o = pjson::ParseOptions()) {
+                        const pJsonParser::Options& o = pJsonParser::Options()) {
         Parsed r;
-        r.value = pjson::parse(s, r.error, o);
+        r.value = pJsonParser(o).parse(s, r.error);
         return r;
     }
-    inline Parsed parse(const std::string& s, pjson::ParseError& e,
-                        const pjson::ParseOptions& o = pjson::ParseOptions()) {
+    inline Parsed parse(const std::string& s, pJsonParser::Error& e,
+                        const pJsonParser::Options& o = pJsonParser::Options()) {
         Parsed r;
-        r.value = pjson::parse(s, e, o);
+        r.value = pJsonParser(o).parse(s, e);
         r.error = e;
         return r;
     }
     inline Parsed parse(const char* s, size_t n,
-                        const pjson::ParseOptions& o = pjson::ParseOptions()) {
+                        const pJsonParser::Options& o = pJsonParser::Options()) {
         Parsed r;
-        r.value = pjson::parse(s, n, r.error, o);
+        r.value = pJsonParser(o).parse(s, n, r.error);
         return r;
     }
-    inline Parsed parse(const char* s, size_t n, pjson::ParseError& e,
-                        const pjson::ParseOptions& o = pjson::ParseOptions()) {
+    inline Parsed parse(const char* s, size_t n, pJsonParser::Error& e,
+                        const pJsonParser::Options& o = pJsonParser::Options()) {
         Parsed r;
-        r.value = pjson::parse(s, n, e, o);
+        r.value = pJsonParser(o).parse(s, n, e);
         r.error = e;
         return r;
     }
 
     //== Allocator-aware parse helpers (preserve provenance) =================
     inline Parsed parse(const std::string& s, pjson::Allocator& a,
-                        const pjson::ParseOptions& o = pjson::ParseOptions()) {
+                        const pJsonParser::Options& o = pJsonParser::Options()) {
         Parsed r(a);
-        r.value = pjson::parse(s, r.error, a, o);
+        r.value = pJsonParser(a, o).parse(s, r.error);
         return r;
     }
-    inline Parsed parse(const std::string& s, pjson::ParseError& e, pjson::Allocator& a,
-                        const pjson::ParseOptions& o = pjson::ParseOptions()) {
+    inline Parsed parse(const std::string& s, pJsonParser::Error& e, pjson::Allocator& a,
+                        const pJsonParser::Options& o = pJsonParser::Options()) {
         Parsed r(a);
-        r.value = pjson::parse(s, e, a, o);
+        r.value = pJsonParser(a, o).parse(s, e);
         r.error = e;
         return r;
     }
     inline Parsed parse(const char* s, size_t n, pjson::Allocator& a,
-                        const pjson::ParseOptions& o = pjson::ParseOptions()) {
+                        const pJsonParser::Options& o = pJsonParser::Options()) {
         Parsed r(a);
-        r.value = pjson::parse(s, n, r.error, a, o);
+        r.value = pJsonParser(a, o).parse(s, n, r.error);
         return r;
     }
-    inline Parsed parse(const char* s, size_t n, pjson::ParseError& e, pjson::Allocator& a,
-                        const pjson::ParseOptions& o = pjson::ParseOptions()) {
+    inline Parsed parse(const char* s, size_t n, pJsonParser::Error& e, pjson::Allocator& a,
+                        const pJsonParser::Options& o = pJsonParser::Options()) {
         Parsed r(a);
-        r.value = pjson::parse(s, n, e, a, o);
+        r.value = pJsonParser(a, o).parse(s, n, e);
         r.error = e;
         return r;
     }
 
     //== Stream parse helpers ================================================
     inline Parsed parseStream(std::istream& in,
-                              const pjson::ParseOptions& o = pjson::ParseOptions()) {
+                              const pJsonParser::Options& o = pJsonParser::Options()) {
         Parsed r;
-        r.value = pjson::parseStream(in, r.error, o);
+        r.value = pJsonParser(o).parseStream(in, r.error);
         return r;
     }
-    inline Parsed parseStream(std::istream& in, pjson::ParseError& e,
-                              const pjson::ParseOptions& o = pjson::ParseOptions()) {
+    inline Parsed parseStream(std::istream& in, pJsonParser::Error& e,
+                              const pJsonParser::Options& o = pJsonParser::Options()) {
         Parsed r;
-        r.value = pjson::parseStream(in, e, o);
+        r.value = pJsonParser(o).parseStream(in, e);
         r.error = e;
         return r;
     }
     inline Parsed parseStream(std::istream& in, pjson::Allocator& a,
-                              const pjson::ParseOptions& o = pjson::ParseOptions()) {
+                              const pJsonParser::Options& o = pJsonParser::Options()) {
         Parsed r(a);
-        r.value = pjson::parseStream(in, r.error, a, o);
+        r.value = pJsonParser(a, o).parseStream(in, r.error);
         return r;
     }
-    inline Parsed parseStream(std::istream& in, pjson::ParseError& e, pjson::Allocator& a,
-                              const pjson::ParseOptions& o = pjson::ParseOptions()) {
+    inline Parsed parseStream(std::istream& in, pJsonParser::Error& e, pjson::Allocator& a,
+                              const pJsonParser::Options& o = pJsonParser::Options()) {
         Parsed r(a);
-        r.value = pjson::parseStream(in, e, a, o);
+        r.value = pJsonParser(a, o).parseStream(in, e);
         r.error = e;
         return r;
     }

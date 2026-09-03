@@ -8,6 +8,7 @@
 #include <string>
 
 using ByteDance::pjson;
+using ByteDance::pJsonParser;
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     if (size > pjson_fuzz::kMaxInputBytes)
@@ -18,10 +19,10 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     std::string patchInput;
     pjson_fuzz::splitOnNewlineOrMidpoint(input, documentInput, patchInput);
 
-    pjson::ParseError documentError;
-    pjson::ParseError patchError;
-    pjson document = pjson::parse(documentInput, documentError);
-    pjson patch = pjson::parse(patchInput, patchError);
+    pJsonParser::Error documentError;
+    pJsonParser::Error patchError;
+    pjson document = pJsonParser().parse(documentInput, documentError);
+    pjson patch = pJsonParser().parse(patchInput, patchError);
     if (!documentError.ok || !patchError.ok)
         return 0;
 
@@ -40,8 +41,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
         if (!detailedOk)
             pjson_fuzz::require(detailed == document);
         else {
-            pjson::ParseError roundTripError;
-            pjson roundTrip = pjson::parse(detailed.toString(), roundTripError);
+            pJsonParser::Error roundTripError;
+            pjson roundTrip = pJsonParser().parse(detailed.toString(), roundTripError);
             pjson_fuzz::require(roundTripError.ok);
             pjson_fuzz::require(roundTrip == detailed);
         }

@@ -18,6 +18,7 @@
 // output, parse ownership, and deep equality/copy behavior.
 //
 #include "pjson.h"
+#include "pjson_parser.h"
 #include "test_harness.h"
 #include "test_util.h"
 
@@ -409,7 +410,7 @@ TEST(api_parse_stream_success_and_failure) {
     }
 
     std::istringstream bad("{not valid");
-    pjson::ParseError err;
+    pJsonParser::Error err;
     pjson_test::Parsed q = pjson_test::parseStream(bad, err);
     CHECK(q == nullptr);
     CHECK(!err.ok);
@@ -430,15 +431,15 @@ TEST(api_parse_ptr_size_edges) {
 }
 
 TEST(api_parse_resource_budgets) {
-    const pjson::ParseOptions defaults;
+    const pJsonParser::Options defaults;
     CHECK_EQ(defaults.maxDepth, 512);
     CHECK_EQ(defaults.maxNodes, size_t(1000000));
     CHECK_EQ(defaults.maxInputBytes, size_t(64) * 1024U * 1024U);
-    CHECK_EQ(defaults.duplicateKeys, pjson::ParseOptions::RejectDuplicateKeys);
+    CHECK_EQ(defaults.duplicateKeys, pJsonParser::Options::RejectDuplicateKeys);
 
-    pjson::ParseOptions nodes;
+    pJsonParser::Options nodes;
     nodes.maxNodes = 3;
-    pjson::ParseError err;
+    pJsonParser::Error err;
     CHECK(pjson_test::parse("[1,2]", err, nodes) != nullptr);
     CHECK(err.ok);
 
@@ -446,7 +447,7 @@ TEST(api_parse_resource_budgets) {
     CHECK(!err.ok);
     CHECK(err.message.find("node budget") != std::string::npos);
 
-    pjson::ParseOptions bytes;
+    pJsonParser::Options bytes;
     bytes.maxInputBytes = 4;
     CHECK(pjson_test::parse("null", err, bytes) != nullptr);
     CHECK(pjson_test::parse("false", err, bytes) == nullptr);

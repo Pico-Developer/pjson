@@ -7,6 +7,7 @@
 // Referenced by docs/12-custom-allocators.md.
 //
 #include "pjson.h"
+#include "pjson_parser.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -15,6 +16,7 @@
 #include <utility>
 
 using ByteDance::pjson;
+using ByteDance::pJsonParser;
 
 // Minimal instrumentation allocator for the example. It delegates storage to
 // global new/delete while counting pjson's four persistent allocation kinds.
@@ -74,8 +76,8 @@ private:
 int main() {
     // --- Default allocation ------------------------------------------------
     // Every parse overload returns a pjson value bound to the default allocator.
-    pjson::ParseError ordinaryError;
-    pjson ordinary = pjson::parse(R"({"storage":"default"})", ordinaryError);
+    pJsonParser::Error ordinaryError;
+    pjson ordinary = pJsonParser().parse(R"({"storage":"default"})", ordinaryError);
     if (!ordinaryError.ok)
         return 1;
 
@@ -92,10 +94,10 @@ int main() {
         direct["values"] += int64_t(1);
         direct["values"] += int64_t(2);
 
-        pjson::ParseError error;
+        pJsonParser::Error error;
         // Allocator-aware parsing returns a pjson value bound to `first`; its
         // storage is released through `first` when the value is destroyed.
-        pjson parsed = pjson::parse(R"({"kind":"parsed root","values":[3,4]})", error, first);
+        pjson parsed = pJsonParser(first).parse(R"({"kind":"parsed root","values":[3,4]})", error);
         if (!error.ok) {
             std::cerr << error.message << '\n';
             return 1;

@@ -44,6 +44,7 @@ WARN_NO_PARAMDOC       = NO
 WARN_AS_ERROR          = YES
 
 INPUT                  = "@PJSON_PUBLIC_HEADER@" \
+                         "@PJSON_PARSER_PUBLIC_HEADER@" \
                          "@PJSON_SCHEMA_PUBLIC_HEADER@" \
                          "@PJSON_DOCS_MAINPAGE@" \
                          "@PJSON_DOCS_API_NOTES@" \

@@ -90,6 +90,7 @@ warnings and missing public API families fail the build.
 
 ```cpp
 #include "pjson.h"
+#include "pjson_parser.h"
 #include <cstdint>
 #include <iostream>
 using namespace ByteDance;
@@ -104,8 +105,8 @@ int main() {
     pjson::SerializeOptions pretty = pjson::SerializeOptions::prettyPrinted();
     std::cout << person.toString(pretty) << "\n";
 
-    pjson::ParseError error;
-    pjson parsed = pjson::parse(person.toString(pretty), error);
+    pJsonParser::Error error;
+    pjson parsed = pJsonParser().parse(person.toString(pretty), error);
     std::string name;
     if (error.ok && parsed.tryGet("name", name))
         std::cout << name << "\n"; // Ada

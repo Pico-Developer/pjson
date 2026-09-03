@@ -86,8 +86,8 @@ TEST(schema_type_mismatch_reports_path_and_message) {
 
 TEST(schema_diagnostics_support_first_error_and_nested_combinator_causes) {
     pjson schema =
-        pjson::parse(R"({"anyOf":[{"type":"string"},{"type":"integer"},{"type":"array"}]})");
-    pjson instance = pjson::parse(R"({})");
+        pJsonParser().parse(R"({"anyOf":[{"type":"string"},{"type":"integer"},{"type":"array"}]})");
+    pjson instance = pJsonParser().parse(R"({})");
 
     pJsonSchemaValidator::Options first;
     first.stopAfterFirstError = true;
@@ -122,7 +122,7 @@ TEST(schema_diagnostics_support_first_error_and_nested_combinator_causes) {
 }
 
 TEST(schema_diagnostic_options_share_one_bounded_contract) {
-    pjson malformed = pjson::parse(R"({"$schema":7,"$vocabulary":false})");
+    pjson malformed = pJsonParser().parse(R"({"$schema":7,"$vocabulary":false})");
     pJsonSchemaValidator::Options first;
     first.stopAfterFirstError = true;
     pJsonSchemaValidator compileValidator(malformed, first);
@@ -130,7 +130,7 @@ TEST(schema_diagnostic_options_share_one_bounded_contract) {
     CHECK_EQ(compileValidator.schemaErrors().size(), size_t(1));
 
     pjson schema =
-        pjson::parse(R"({"anyOf":[{"type":"string"},{"type":"integer"},{"type":"array"}]})");
+        pJsonParser().parse(R"({"anyOf":[{"type":"string"},{"type":"integer"},{"type":"array"}]})");
     pjson instance;
     instance = true;
     pJsonSchemaValidator::Options bounded;
@@ -266,8 +266,8 @@ TEST(schema_pattern_unicode_ecmascript_semantics) {
     CHECK(!validates(R"({"pattern":"^🐲*$"})", R"("🐉")"));
 
     pjson_test::SchemaOptions trusted = pjson_test::SchemaOptions::trustedRegex();
-    pjson schema = pjson::parse(R"({"pattern":"(?<=a+)b"})");
-    pjson value = pjson::parse(R"("aaab")");
+    pjson schema = pJsonParser().parse(R"({"pattern":"(?<=a+)b"})");
+    pjson value = pJsonParser().parse(R"("aaab")");
     std::vector<pjson_test::SchemaError> errors;
     CHECK(pjson_test::schemaValidate(value, schema, errors, trusted));
 }
@@ -275,7 +275,7 @@ TEST(schema_pattern_unicode_ecmascript_semantics) {
 TEST(schema_regex_format_uses_ecmascript_syntax) {
     pjson_test::SchemaOptions options;
     options.validateFormats = true;
-    pjson schema = pjson::parse(R"({"format":"regex"})");
+    pjson schema = pJsonParser().parse(R"({"format":"regex"})");
     const char* valid[] = {"([abc])+\\s+$", "(?<name>x)", "(?<=a+)b", "[]", "[^]", "\\cA"};
     const char* invalid[] = {"^(abc]", "\\a", "(?P<name>x)", "(?#comment)a", "(?i)abc"};
     for (size_t i = 0; i < sizeof(valid) / sizeof(valid[0]); ++i) {
@@ -339,7 +339,7 @@ TEST(schema_pattern_size_limits_and_trusted_opt_in) {
 }
 
 TEST(schema_trusted_regex_still_has_backend_work_limit) {
-    pjson schema = pjson::parse(R"({"pattern":"^(a|aa)+$"})");
+    pjson schema = pJsonParser().parse(R"({"pattern":"^(a|aa)+$"})");
     pjson value;
     value = std::string(64, 'a') + "!";
     pjson_test::SchemaOptions trusted = pjson_test::SchemaOptions::trustedRegex();

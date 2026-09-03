@@ -8,6 +8,7 @@
 #include <string>
 
 using ByteDance::pjson;
+using ByteDance::pJsonParser;
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     if (size > pjson_fuzz::kMaxInputBytes)
@@ -17,8 +18,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     std::string documentInput;
     std::string pointer;
     pjson_fuzz::splitOnNewlineOrMidpoint(input, documentInput, pointer);
-    pjson::ParseError parseError;
-    pjson document = pjson::parse(documentInput, parseError);
+    pJsonParser::Error parseError;
+    pjson document = pJsonParser().parse(documentInput, parseError);
     if (!parseError.ok)
         return 0;
 

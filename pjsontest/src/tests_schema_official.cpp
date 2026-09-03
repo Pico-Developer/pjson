@@ -18,6 +18,7 @@
 // unsupported files or groups cannot disappear through ad-hoc filtering.
 //
 #include "pjson.h"
+#include "pjson_parser.h"
 #include "test_harness.h"
 #include "test_util.h"
 
@@ -46,11 +47,11 @@ using namespace ByteDance;
 
 namespace {
 
-    pjson_test::Parsed parseJson(const std::string& text, pjson::ParseError* error = NULL) {
+    pjson_test::Parsed parseJson(const std::string& text, pJsonParser::Error* error = NULL) {
         if (error != NULL) {
-            return pjson_test::parse(text, *error, pjson::ParseOptions());
+            return pjson_test::parse(text, *error, pJsonParser::Options());
         }
-        return pjson_test::parse(text, pjson::ParseOptions());
+        return pjson_test::parse(text, pJsonParser::Options());
     }
 
     // Every upstream file is either fully run, fully skipped, or filtered by named groups.
@@ -206,8 +207,8 @@ namespace {
         const std::string path = joinPath(context.remoteRoot, relative);
         if (!isRegularFile(path))
             return false;
-        pjson::ParseError error;
-        output = pjson::parse(readFile(path), error);
+        pJsonParser::Error error;
+        output = pJsonParser().parse(readFile(path), error);
         return error.ok;
     }
 
@@ -1134,7 +1135,7 @@ static void runOfficialSuite(const std::string& suiteDir, const std::vector<File
             continue;
         }
 
-        pjson::ParseError parseError;
+        pJsonParser::Error parseError;
         pjson_test::Parsed suite = parseJson(readFile(path), &parseError);
         if (!suite) {
             std::ostringstream os;

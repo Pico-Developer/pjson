@@ -7,13 +7,14 @@ limited schema vocabulary.
 
 ```cpp
 #include "pjson.h"
+#include "pjson_parser.h"
 using ByteDance::pjson;
+using ByteDance::pJsonParser;
 ```
 
-pjson requires C++11 or newer and is a compiled library. Link `pjson::pjson` or
-compile `pjsonlib/src/pjson.cpp` with the application.
-`pjsonlib/include/pjson.h` and `pjsonlib/src/pjson.cpp` are the canonical API
-and behavior sources; this guide describes how to adapt RapidJSON code to them.
+pjson requires C++11 or newer and is a compiled library. Link `pjson::pjson`,
+which contains the decomposed implementation. Include `pjson_parser.h` only in
+translation units that parse input.
 
 ## Migration map
 
@@ -29,7 +30,7 @@ and behavior sources; this guide describes how to adapt RapidJSON code to them.
 | `operator[]` for lookup | `find` / `tryGet` | pjson subscripting is builder-only and may mutate. |
 | member iteration | `keys()` + `find(key)` | No public raw object container. |
 | array iteration | `size()` + `find(index)` | No public raw array container. |
-| `Document::Parse(...)` | `pjson::parse(...)` | Every DOM overload returns a `pjson` value; pass a `ParseError` for status. |
+| `Document::Parse(...)` | `pJsonParser().parse(...)` | Every DOM overload returns a `pjson` value; pass a `pJsonParser::Error` for status. |
 | `Reader` + handler | `parseSax(...)` / `parseSaxStream(...)` | SAX callbacks return `bool` to continue. |
 | `Writer` / `PrettyWriter` | `write(out[, options])` | Configure `SerializeOptions`; inspect stream state. |
 | `StringBuffer` + Writer | `toString([options])` | Returns the serialized string. |
@@ -74,12 +75,12 @@ array[static_cast<int>(array.size())] = child;
 Every DOM `parse` and `parseStream` overload returns a `pjson` **by value**, for
 both default and custom allocation. There is no smart pointer and no manual
 `delete`; the value owns its subtree and frees it on destruction. The terse
-overloads return JSON `null` on failure; pass a `ParseError` to distinguish
+overloads return JSON `null` on failure; pass a `pJsonParser::Error` to distinguish
 failure from a successfully parsed literal `null`.
 
 ```cpp
-pjson::ParseError error;
-pjson document = pjson::parse(jsonBytes, byteCount, error);
+pJsonParser::Error error;
+pjson document = pJsonParser().parse(jsonBytes, byteCount, error);
 if (!error.ok) {
     std::cerr << error.line << ':' << error.column
               << ": " << error.message << '\n';
@@ -87,7 +88,7 @@ if (!error.ok) {
 }
 ```
 
-An allocator passed to a constructor or parse overload is borrowed and must
+An allocator passed to a `pjson` or `pJsonParser` constructor is borrowed and must
 outlive the complete tree. The returned value is bound to that allocator.
 Persistent nodes and wrapper objects use it; backing storage inside standard
 containers and parser scratch space use their normal standard allocators.
@@ -97,7 +98,7 @@ true.
 
 ### Parse diagnostics have a reusable lifecycle
 
-Reporting parse and SAX overloads reset `ParseError` on entry. Success leaves
+Reporting parse and SAX overloads reset `pJsonParser::Error` on entry. Success leaves
 `ok == true`, `code == None`, offset zero, line one, column one, and an empty
 message. Failure sets `ok == false`, a stable `code`, and reports the first
 problem. Offset is a zero-based byte position; line and byte-column are
@@ -111,16 +112,16 @@ All DOM and SAX entry points reject malformed UTF-8, invalid escapes, lone
 surrogates, raw string controls, non-lowercase literals, comments, trailing
 commas, invalid numbers, `NaN`, `Infinity`, and trailing non-whitespace data.
 
-`ParseOptions` controls only work budgets and duplicate names:
+`pJsonParser::Options` controls only work budgets and duplicate names:
 
 ```cpp
-pjson::ParseOptions options;
+pJsonParser::Options options;
 options.maxDepth = 512;
 options.maxNodes = 1000000;
 options.maxInputBytes = size_t(64) * 1024 * 1024;
-options.duplicateKeys = pjson::ParseOptions::RejectDuplicateKeys;
+options.duplicateKeys = pJsonParser::Options::RejectDuplicateKeys;
 
-pjson document = pjson::parse(json, error, options);
+pjson document = pJsonParser(options).parse(json, error);
 ```
 
 Zero means unlimited for node and input-byte budgets. A non-positive depth
@@ -189,7 +190,7 @@ is not an implicit `tryGet` conversion.
 `SetUint64`, `GetUint64`, and `IsUint64` map directly onto
 `operator=(uint64_t)`, `tryGet(uint64_t&)`, and `isUInt()`; the full `uint64_t`
 range round-trips exactly. Values above `UINT64_MAX`, and non-finite floats, are
-rejected by default (`ParseOptions::AllowLossyNumbers` and
+rejected by default (`pJsonParser::Options::AllowLossyNumbers` and
 `SerializeOptions::NonFinitePolicy` opt out). Use explicit `int64_t`,
 `uint64_t`, and `double` at all API boundaries rather than relying on C++
 overload selection.
@@ -204,7 +205,7 @@ unsigned decimal indices, and `-` is not a lookup index. Use
 For general pointer mutation, apply an RFC 6902 patch:
 
 ```cpp
-pjson patch = pjson::parse(R"([
+pjson patch = pJsonParser().parse(R"([
   {"op":"replace", "path":"/address/city", "value":"Paris"},
   {"op":"add", "path":"/tags/-", "value":"new"}
 ])",
@@ -235,7 +236,7 @@ Moving the document root beneath itself reports
 
 ## SAX input and serialized output
 
-Derive from `pjson::SaxHandler` and override the callbacks of interest. Integer
+Derive from `pJsonParser::SaxHandler` and override the callbacks of interest. Integer
 events use `int64_t`; floating events use `double`. Returning `false` cancels
 the parse. Callback string and key references are borrowed only for the
 callback duration.
@@ -328,9 +329,9 @@ default; unknown format names are ignored.
 
 ## Practical migration sequence
 
-1. Change every DOM parse result to a `pjson` value plus a `ParseError`, and
+1. Change every DOM parse result to a `pjson` value plus a `pJsonParser::Error`, and
    check `error.ok` before use.
-2. Replace parse-error inspection and exceptions with `ParseError`; account for
+2. Replace parse-error inspection and exceptions with `pJsonParser::Error`; account for
    its reset-on-entry lifecycle.
 3. Remove permissive syntax flags and choose explicit budgets and duplicate-key
    policy.

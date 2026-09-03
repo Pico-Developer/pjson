@@ -18,6 +18,7 @@
 // behavior, erase, and stream I/O.
 //
 #include "pjson.h"
+#include "pjson_parser.h"
 #include "test_harness.h"
 #include "test_util.h"
 
@@ -84,7 +85,7 @@ TEST(depth_guard_allows_reasonable_nesting) {
 TEST(depth_guard_boundary_is_configurable) {
     // maxDepth counts array/object frames. With maxDepth = 3, three nested
     // arrays are OK but four are not.
-    pjson::ParseOptions opt;
+    pJsonParser::Options opt;
     opt.maxDepth = 3;
     CHECK(pjson_test::parse("[[[1]]]", opt) != nullptr);
     CHECK(pjson_test::parse("[[[[1]]]]", opt) == nullptr);
@@ -104,8 +105,8 @@ TEST(number_underflow_is_zero) {
     // A nonzero token rounded to zero is rejected unless lossy conversion was requested.
     CHECK(parse("1e-400") == nullptr);
     CHECK(parse("-1e-400") == nullptr);
-    pjson::ParseOptions lossy;
-    lossy.numberPolicy = pjson::ParseOptions::AllowLossyNumbers;
+    pJsonParser::Options lossy;
+    lossy.numberPolicy = pJsonParser::Options::AllowLossyNumbers;
     auto positive = pjson_test::parse("1e-400", lossy);
     auto negative = pjson_test::parse("-1e-400", lossy);
     CHECK(positive != nullptr);
@@ -185,7 +186,7 @@ TEST(strict_still_parses_normal_documents) {
 }
 
 //===----------------------------------------------------------------------===//
-// Value-returning parse API with ParseError-based success detection.
+// Value-returning parse API with pJsonParser::Error-based success detection.
 //===----------------------------------------------------------------------===//
 TEST(parse_returns_value) {
     pjson_test::Parsed p = pjson_test::parse(R"({"k":42})");
@@ -198,7 +199,7 @@ TEST(parse_returns_value) {
     }
 
     pjson_test::Parsed bad = pjson_test::parse("{not json");
-    CHECK(!bad); // reports failure via ParseError
+    CHECK(!bad); // reports failure via pJsonParser::Error
 }
 
 TEST(parse_ptr_size_overload) {
@@ -213,7 +214,7 @@ TEST(parse_ptr_size_overload) {
 // Parse errors expose a byte offset plus one-based line/byte-column coordinates.
 //===----------------------------------------------------------------------===//
 TEST(parse_error_reports_success) {
-    pjson::ParseError err;
+    pJsonParser::Error err;
     auto p = pjson_test::parse(R"({"a":1})", err);
     CHECK(static_cast<bool>(p));
     CHECK(err.ok);
@@ -222,7 +223,7 @@ TEST(parse_error_reports_success) {
 }
 
 TEST(parse_error_reports_offset_and_message) {
-    pjson::ParseError err;
+    pJsonParser::Error err;
     auto p = pjson_test::parse("[1, 2, ]", err); // trailing comma at index 7
     CHECK(!p);
     CHECK(!err.ok);
@@ -233,7 +234,7 @@ TEST(parse_error_reports_offset_and_message) {
 }
 
 TEST(parse_error_reports_line_and_column) {
-    pjson::ParseError err;
+    pJsonParser::Error err;
     CHECK(!pjson_test::parse("{\r\n  \"a\": 1,\r\n  \"b\": [2, ]\r\n}", err));
     CHECK_EQ(err.line, size_t(3));
     CHECK_EQ(err.column, size_t(12));
@@ -251,7 +252,7 @@ TEST(parse_error_reports_line_and_column) {
 }
 
 TEST(parse_error_trailing_garbage) {
-    pjson::ParseError err;
+    pJsonParser::Error err;
     auto p = pjson_test::parse("42 abc", err);
     CHECK(!p);
     CHECK(!err.ok);
@@ -261,9 +262,9 @@ TEST(parse_error_trailing_garbage) {
 }
 
 TEST(parse_error_depth_message) {
-    pjson::ParseOptions opt;
+    pJsonParser::Options opt;
     opt.maxDepth = 2;
-    pjson::ParseError err;
+    pJsonParser::Error err;
     auto p = pjson_test::parse("[[[1]]]", err, opt);
     CHECK(!p);
     CHECK(!err.ok);
@@ -518,7 +519,7 @@ TEST(parse_from_stream) {
 
 TEST(parse_from_stream_with_error) {
     std::istringstream is("{bad");
-    pjson::ParseError err;
+    pJsonParser::Error err;
     auto p = pjson_test::parseStream(is, err);
     CHECK(!p);
     CHECK(!err.ok);

@@ -9,6 +9,7 @@
 #include <vector>
 
 using ByteDance::pjson;
+using ByteDance::pJsonParser;
 
 // Schema-validation consistency.
 
@@ -24,11 +25,11 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     pjson_fuzz::splitOnNewlineOrMidpoint(input, schemaInput, documentInput);
 
     // Only pairs that are both valid strict JSON values can exercise schema validation.
-    const pjson::ParseOptions options = pjson_fuzz::parseOptionsVariant(data, size, 0U);
-    pjson::ParseError schemaError;
-    pjson::ParseError documentError;
-    pjson schema = pjson::parse(schemaInput, schemaError, options);
-    pjson document = pjson::parse(documentInput, documentError, options);
+    const pJsonParser::Options options = pjson_fuzz::parseOptionsVariant(data, size, 0U);
+    pJsonParser::Error schemaError;
+    pJsonParser::Error documentError;
+    pjson schema = pJsonParser(options).parse(schemaInput, schemaError);
+    pjson document = pJsonParser(options).parse(documentInput, documentError);
     if (!schemaError.ok || !documentError.ok)
         return 0;
 

@@ -10,7 +10,7 @@
 #   out/
 #     release/{lib,bin,bin/examples}   Release library, tests, examples
 #     debug/{lib,bin,bin/examples}     Debug   library, tests, examples
-#     include/pjson.h                  public header
+#     include/{pjson,pjson_parser,pjson_schema}.h  public headers
 #     build-release/ build-debug/      CMake build trees
 #
 # Usage:
@@ -589,7 +589,10 @@ build_one() {
     find "${bdir}/examples" -maxdepth 2 -type f \
         \( -perm -u+x -o -name '*.exe' \) ! -name '*.o' ! -name '*.obj' \
         -exec cp {} "${dest}/bin/examples/" \; 2>/dev/null || true
-    cp "${SCRIPT_DIR}/pjsonlib/include/pjson.h" "${OUT_DIR}/include/"
+    cp "${SCRIPT_DIR}/pjsonlib/include/pjson.h" \
+        "${SCRIPT_DIR}/pjsonlib/include/pjson_parser.h" \
+        "${SCRIPT_DIR}/pjsonlib/include/pjson_schema.h" \
+        "${OUT_DIR}/include/"
 
     LAST_BUILD_DIR="${bdir}"
 }

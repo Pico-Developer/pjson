@@ -8,8 +8,14 @@ coding style, and the checks your change should pass.
 ```
 pjson/
   pjsonlib/
-    include/pjson.h     the public header (declarations only)
-    src/pjson.cpp       the implementation
+    include/pjson.h          DOM public header
+    include/pjson_parser.h   parser public header
+    include/pjson_schema.h   schema-validator public header
+    src/pjson.cpp            DOM/value/storage implementation
+    src/pjson_parser.cpp     JSON parser implementation
+    src/pjson_serialize.cpp  serializer implementation
+    src/pjson_pointer.cpp    JSON Pointer implementation
+    src/pjson_patch.cpp      JSON Patch/Merge Patch implementation
   pjsontest/src/        the test suite (tests_*.cpp + harness)
   examples/src/         runnable examples used by the docs
   docs/                 this tutorial series
@@ -22,10 +28,9 @@ pjson/
   .clang-tidy           static-analysis rules
 ```
 
-A design principle: **the header stays small**. All implementation — including
-the parser, schema validator, and serialization helpers — lives in `pjson.cpp`
-(inside the `pjsonImpl` helper). Please keep new internal helpers out of the
-header.
+A design principle: **public headers stay declaration-focused**. The DOM must
+not depend on `pJsonParser`; dependencies flow from parser to core. Keep new
+internal helpers in the relevant private header/translation unit.
 
 ## The one command to run before submitting
 
@@ -113,7 +118,8 @@ Naming conventions used in the codebase:
 - Public methods are `camelCase` (`findPointer`, `parseStream`).
 - Parameters are prefixed `a` (`aKey`, `aValue`); members with `_`
   (`_eType`, `_pValueMap`).
-- Internal helpers in `pjson.cpp` are `_leadingUnderscore`.
+- Internal DOM helpers in `pjsonImpl` retain `_leadingUnderscore`; focused
+  component-private helpers follow their translation unit's local convention.
 
 ## Adding a test
 

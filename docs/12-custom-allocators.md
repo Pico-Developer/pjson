@@ -11,8 +11,8 @@ Without an allocator argument, a value uses pjson's built-in allocator:
 
 ```cpp
 pjson value;
-pjson::ParseError error;
-pjson parsed = pjson::parse(R"({"answer":42})", error);
+pJsonParser::Error error;
+pjson parsed = pJsonParser().parse(R"({"answer":42})", error);
 ```
 
 The direct value is owned by its C++ scope. The parse result is a plain `pjson`
@@ -82,9 +82,9 @@ Parsing must allocate the root's descendants dynamically, but every overload
 returns the document **by value**, bound to the supplied allocator:
 
 ```cpp
-pjson::ParseError error;
-pjson::ParseOptions options;
-pjson document = pjson::parse(text, error, pool, options);
+pJsonParser::Error error;
+pJsonParser::Options options;
+pjson document = pJsonParser(pool, options).parse(text, error);
 if (!error.ok) {
     std::cerr << error.line << ':' << error.column << ": "
               << error.message << '\n';
@@ -96,11 +96,11 @@ obtained from `pool`, and its destructor returns them through `pool`. There is
 no smart pointer and no manual `delete`. Moving the value transfers the tree but
 does not own or extend the allocator's lifetime.
 
-Allocator-aware overloads exist for `std::string`, `(const char*, size_t)`, and
-`std::istream`, with optional `ParseError` and `ParseOptions`. `parseStream()`
-uses standard allocation for its temporary input buffer but uses the supplied
-allocator for the persistent DOM. SAX parsing builds no persistent DOM and has
-no allocator overload.
+An allocator-configured parser accepts `std::string`, `(const char*, size_t)`,
+and `std::istream`, with optional `pJsonParser::Error`. Its `Options` are fixed
+at construction. `parseStream()` uses standard allocation for its temporary
+input buffer but uses the supplied allocator for the persistent DOM. SAX
+parsing builds no persistent DOM; the parser's allocator is unused by SAX calls.
 
 ## Copy, move, assignment, and swap
 
@@ -134,7 +134,7 @@ source is JSON null but remains bound to its original allocator.
 ## Failure behavior
 
 Allocator-aware in-memory parsing catches failures during DOM construction,
-destroys partial trees, returns a JSON `null` value, and fills `ParseError` when
+destroys partial trees, returns a JSON `null` value, and fills `pJsonParser::Error` when
 supplied. `parseStream()` first fills a standard-allocated input buffer, so an
 exception-enabled stream or failure in that buffer can still throw before DOM
 construction.
@@ -162,10 +162,9 @@ CountingAllocator storage;
     pjson direct(storage);
     direct["kind"] = "direct root";
 
-    pjson::ParseError error;
-    pjson parsed =
-        pjson::parse(R"({"kind":"parsed root","values":[1,2,3]})",
-                     error, storage);
+    pJsonParser::Error error;
+    pjson parsed = pJsonParser(storage).parse(
+        R"({"kind":"parsed root","values":[1,2,3]})", error);
     if (!error.ok)
         return 1;
 

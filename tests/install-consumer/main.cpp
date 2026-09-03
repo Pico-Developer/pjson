@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <pjson.h>
+#include <pjson_parser.h>
 #include <pjson_schema.h>
 
 #include <cstring>
@@ -14,6 +15,7 @@
 // metadata, linkage, parsing, typed access, and compact serialization.
 int main() {
     using ByteDance::pjson;
+    using ByteDance::pJsonParser;
     using ByteDance::pJsonSchemaValidator;
 
     // The public macro and linked library function must identify the same
@@ -26,8 +28,8 @@ int main() {
 
     // A compact round trip covers the main installed API without relying on
     // any source-tree-only headers or test helpers.
-    pjson::ParseError error;
-    pjson document = pjson::parse("{\"answer\":42}", error);
+    pJsonParser::Error error;
+    pjson document = pJsonParser().parse("{\"answer\":42}", error);
     int64_t answer = 0;
     if (!error.ok || !document.tryGet("answer", answer) || answer != 42 ||
         document.toString() != "{\"answer\":42}") {
@@ -38,8 +40,9 @@ int main() {
     // The standalone schema validator ships in its own installed header and
     // consumes only the public API; confirm an external consumer can compile a
     // schema and validate against it.
-    pjson::ParseError schemaError;
-    pjson schema = pjson::parse("{\"type\":\"object\",\"required\":[\"answer\"]}", schemaError);
+    pJsonParser::Error schemaError;
+    pjson schema =
+        pJsonParser().parse("{\"type\":\"object\",\"required\":[\"answer\"]}", schemaError);
     if (!schemaError.ok) {
         std::cerr << "installed pjson_schema failed to parse its schema" << std::endl;
         return 1;
@@ -51,7 +54,7 @@ int main() {
         return 1;
     }
     std::vector<pJsonSchemaValidator::Error> schemaErrors;
-    pjson missing = pjson::parse("{}", schemaError);
+    pjson missing = pJsonParser().parse("{}", schemaError);
     if (!validator.validate(document) || validator.validate(missing, schemaErrors) ||
         schemaErrors.empty()) {
         std::cerr << "installed pjson_schema failed its consumer smoke test" << std::endl;

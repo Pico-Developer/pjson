@@ -9,6 +9,7 @@
 // elements, and re-serialize. Referenced by docs/04-editing.md.
 //
 #include "pjson.h"
+#include "pjson_parser.h"
 
 #include <iostream>
 #include <vector>
@@ -18,13 +19,13 @@ using namespace ByteDance;
 // Parses a seed document, mutates it through several APIs, and prints the result.
 int main() {
     // --- Parse a mutable document -----------------------------------------
-    pjson::ParseError parseError;
-    pjson j = pjson::parse(R"({
+    pJsonParser::Error parseError;
+    pjson j = pJsonParser().parse(R"({
         "user": { "name": "Ada", "roles": ["admin", "dev"] },
         "count": 2,
         "deprecated": true
     })",
-                           parseError);
+                                  parseError);
     if (!parseError.ok) {
         std::cerr << "parse failed\n";
         return 1;
@@ -50,11 +51,11 @@ int main() {
     // --- Standards-based transformations ---------------------------------
     // Apply a sequence of JSON Pointer edits atomically (RFC 6902): the test
     // must succeed before the reviewer role is appended.
-    pjson patch = pjson::parse(R"([
+    pjson patch = pJsonParser().parse(R"([
         {"op":"test", "path":"/count", "value":"two"},
         {"op":"add", "path":"/user/roles/-", "value":"reviewer"}
     ])",
-                               parseError);
+                                      parseError);
     if (!parseError.ok) {
         std::cerr << "could not parse patch: " << parseError.message << "\n";
         return 1;
@@ -68,7 +69,7 @@ int main() {
 
     // Merge Patch recursively updates objects; null removes an object member.
     // Removing a missing member, as here, is a successful no-op.
-    pjson merge = pjson::parse(R"({"user":{"nickname":null}})", parseError);
+    pjson merge = pJsonParser().parse(R"({"user":{"nickname":null}})", parseError);
     if (!parseError.ok) {
         std::cerr << "could not parse merge patch: " << parseError.message << "\n";
         return 1;

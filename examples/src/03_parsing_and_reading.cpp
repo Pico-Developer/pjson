@@ -9,6 +9,7 @@
 // Referenced by docs/03-parsing-and-reading.md.
 //
 #include "pjson.h"
+#include "pjson_parser.h"
 
 #include <iostream>
 
@@ -25,10 +26,10 @@ int main() {
         "friends": [ {"name":"Bob"}, {"name":"Cid"} ]
     })";
 
-    // Every DOM parse overload returns a pjson value; pass a ParseError to
+    // Every DOM parse overload returns a pjson value; pass a pJsonParser::Error to
     // learn whether parsing succeeded.
-    pjson::ParseError parseError;
-    pjson doc = pjson::parse(text, parseError);
+    pJsonParser::Error parseError;
+    pjson doc = pJsonParser().parse(text, parseError);
     if (!parseError.ok) {
         std::cerr << parseError.line << ':' << parseError.column << ": " << parseError.message
                   << "\n";

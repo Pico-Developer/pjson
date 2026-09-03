@@ -11,6 +11,7 @@
 #include <string>
 
 using ByteDance::pjson;
+using ByteDance::pJsonParser;
 
 namespace {
 
@@ -66,7 +67,7 @@ namespace {
     // Records both event count and content so buffered and streamed SAX traces can be compared.
     // The small methods below all fold a distinct event tag plus any payload
     // into the same order-sensitive digest and always continue parsing.
-    struct DigestHandler : pjson::SaxHandler {
+    struct DigestHandler : pJsonParser::SaxHandler {
         DigestHandler()
                 : digest(1469598103934665603ULL)
                 , events(0) {}
@@ -145,34 +146,34 @@ namespace {
     // option variant.
     void exerciseStreams(const uint8_t* data, size_t size, const std::string& input,
                          size_t chunkSize, size_t variantOffset) {
-        const pjson::ParseOptions options =
+        const pJsonParser::Options options =
             pjson_fuzz::parseOptionsVariant(data, size, variantOffset);
 
         // Contiguous DOM parsing provides the baseline status and value.
-        pjson::ParseError bufferError;
-        pjson buffered = pjson::parse(input.c_str(), input.size(), bufferError, options);
+        pJsonParser::Error bufferError;
+        pjson buffered = pJsonParser(options).parse(input.c_str(), input.size(), bufferError);
 
         // Chunk boundaries must not affect DOM acceptance or serialized output.
         ChunkedStream domInput(input, chunkSize);
-        pjson::ParseError streamError;
-        pjson streamed = pjson::parseStream(domInput, streamError, options);
+        pJsonParser::Error streamError;
+        pjson streamed = pJsonParser(options).parseStream(domInput, streamError);
         pjson_fuzz::require(bufferError.ok == streamError.ok);
         if (bufferError.ok)
             pjson_fuzz::require(buffered.toString() == streamed.toString());
 
         // Capture the SAX trace from the same contiguous baseline input.
         DigestHandler bufferHandler;
-        pjson::ParseError saxBufferError;
-        const bool saxBuffer =
-            pjson::parseSax(input.c_str(), input.size(), bufferHandler, saxBufferError, options);
+        pJsonParser::Error saxBufferError;
+        const bool saxBuffer = pJsonParser(options).parseSax(input.c_str(), input.size(),
+                                                             bufferHandler, saxBufferError);
         pjson_fuzz::require(saxBuffer == saxBufferError.ok);
 
         // Streamed SAX parsing must agree on status, event count, order, and payloads.
         ChunkedStream saxInput(input, chunkSize);
         DigestHandler streamHandler;
-        pjson::ParseError saxStreamError;
+        pJsonParser::Error saxStreamError;
         const bool saxStream =
-            pjson::parseSaxStream(saxInput, streamHandler, saxStreamError, options);
+            pJsonParser(options).parseSaxStream(saxInput, streamHandler, saxStreamError);
         pjson_fuzz::require(saxStream == saxStreamError.ok);
         pjson_fuzz::require(saxBuffer == saxStream);
         pjson_fuzz::require(bufferError.ok == saxBuffer);

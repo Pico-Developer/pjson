@@ -33,6 +33,13 @@ Current implementation commits on branch `featurerequest`:
 
 Important invariants now enforced:
 
+- `pJsonParser` is a separate public helper in `<pjson_parser.h>`. Dependency
+  direction is strictly parser to DOM core: `pjson.h`, `pjson.cpp`, and
+  `pjson_internal.h` must not include or name parser types. Parser options,
+  errors, SAX callbacks, and implementation state remain parser-owned.
+- The implementation is decomposed into focused DOM, parser, serializer, JSON
+  Pointer, JSON Patch/Merge Patch, and schema translation units while retaining
+  the single installed `pjson::pjson` target.
 - `pJsonSchemaValidator` is a pure consumer of pjson's public API;
   `pjson_schema.cpp` must not include `pjson_internal.h` or access pjson storage.
 - The public class uses a private `Impl*`; the root schema and all resolved
@@ -64,7 +71,7 @@ PJSON_JSON_SCHEMA_TEST_SUITE_DIR="$PWD/.test-corpora/JSON-Schema-Test-Suite" \
 ```
 
 The last complete contributor gate built Release and ASan/UBSan Debug, then
-passed all 533 CTest checks in sanitized Debug (532 compiled C++ cases plus the
+passed all 535 CTest checks in sanitized Debug (534 compiled C++ cases plus the
 benchmark-tool regression suite). The current
 Draft 2020-12 manifest explicitly accounts for all 80 files in the pinned
 corpus. It executes 1,773 official cases across 437 groups with no selected-group
@@ -73,7 +80,7 @@ big-number/cross-draft behavior and unimplemented format families.
 Also verified: clang-format, clang-tidy, 20,000 schema-fuzzer runs, seven-target
 libFuzzer smoke coverage with inputs above 4 KiB, Doxygen API
 validation, relocatable static/shared CMake and pkg-config consumers, REUSE
-licensing (203/203 files), GCC, and a direct ThreadSanitizer concurrency probe.
+licensing (210/210 files), GCC, and a direct ThreadSanitizer concurrency probe.
 The 2026-09-03 full-churn audit also hardened move assignment and generic
 insertion against ancestor/descendant aliasing, made `canSwap()` accurately
 reject overlapping nodes without violating its `noexcept` contract, fixed

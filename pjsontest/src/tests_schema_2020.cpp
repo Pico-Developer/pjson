@@ -18,6 +18,7 @@
 // contains/minContains/maxContains, dependentSchemas).
 //
 #include "pjson.h"
+#include "pjson_parser.h"
 #include "test_harness.h"
 #include "test_util.h"
 
@@ -207,7 +208,7 @@ TEST(schema_unsupported_declared_dialect_fails_compilation) {
 }
 
 TEST(schema_draft2020_preset_accepts_official_dialect) {
-    pjson schema = pjson::parse(
+    pjson schema = pJsonParser().parse(
         R"({"$schema":"https://json-schema.org/draft/2020-12/schema","type":"integer"})");
     pJsonSchemaValidator validator(schema, pJsonSchemaValidator::Options::draft2020());
     CHECK(validator.isSchemaValid());
@@ -221,7 +222,7 @@ TEST(schema_draft2020_preset_accepts_official_dialect) {
 }
 
 TEST(schema_draft2020_preset_rejects_meta_schema_violation) {
-    pjson schema = pjson::parse(
+    pjson schema = pJsonParser().parse(
         R"({"$schema":"https://json-schema.org/draft/2020-12/schema","$defs":{"bad":{"type":1}}})");
     pJsonSchemaValidator validator(schema, pJsonSchemaValidator::Options::draft2020());
     CHECK(!validator.isSchemaValid());
@@ -233,9 +234,9 @@ TEST(schema_draft2020_preset_rejects_meta_schema_violation) {
 TEST(schema_custom_dialect_controls_validation_vocabulary) {
     const std::string dialect = "https://example.test/meta/no-validation";
     ResolverFixture fixture;
-    fixture.documents[dialect] = pjson::parse(
+    fixture.documents[dialect] = pJsonParser().parse(
         R"({"$id":"https://example.test/meta/no-validation","$vocabulary":{"https://json-schema.org/draft/2020-12/vocab/core":true,"https://json-schema.org/draft/2020-12/vocab/applicator":true}})");
-    pjson schema = pjson::parse(
+    pjson schema = pJsonParser().parse(
         R"({"$schema":"https://example.test/meta/no-validation","properties":{"blocked":false,"number":{"minimum":10}}})");
     pJsonSchemaValidator::Options options = pJsonSchemaValidator::Options::draft2020();
     options.resolver = resolveFixture;
@@ -243,17 +244,17 @@ TEST(schema_custom_dialect_controls_validation_vocabulary) {
     pJsonSchemaValidator validator(schema, options);
     CHECK(validator.isSchemaValid());
     CHECK_EQ(fixture.calls, size_t(1));
-    CHECK(!validator.validate(pjson::parse(R"({"blocked":1})")));
-    CHECK(validator.validate(pjson::parse(R"({"number":1})")));
+    CHECK(!validator.validate(pJsonParser().parse(R"({"blocked":1})")));
+    CHECK(validator.validate(pJsonParser().parse(R"({"number":1})")));
 }
 
 TEST(schema_custom_dialect_is_charged_once_as_a_resolved_document) {
     const std::string dialect = "https://example.test/meta/small";
     ResolverFixture fixture;
-    fixture.documents[dialect] = pjson::parse(
+    fixture.documents[dialect] = pJsonParser().parse(
         R"({"$id":"https://example.test/meta/small","$vocabulary":{"https://json-schema.org/draft/2020-12/vocab/core":true,"https://json-schema.org/draft/2020-12/vocab/validation":true},"type":["object","boolean"]})");
     pjson schema =
-        pjson::parse(R"({"$schema":"https://example.test/meta/small","type":"integer"})");
+        pJsonParser().parse(R"({"$schema":"https://example.test/meta/small","type":"integer"})");
     pJsonSchemaValidator::Options options = pJsonSchemaValidator::Options::draft2020();
     options.resolver = resolveFixture;
     options.resolverContext = &fixture;
@@ -268,8 +269,8 @@ TEST(schema_custom_dialect_is_charged_once_as_a_resolved_document) {
 
 TEST(schema_invalid_root_dialect_does_not_invoke_resolver) {
     ResolverFixture fixture;
-    pjson schema =
-        pjson::parse(R"({"$schema":"urn:unsupported","$ref":"https://example.test/remote.json"})");
+    pjson schema = pJsonParser().parse(
+        R"({"$schema":"urn:unsupported","$ref":"https://example.test/remote.json"})");
     pJsonSchemaValidator::Options options;
     options.resolver = resolveFixture;
     options.resolverContext = &fixture;
@@ -361,14 +362,14 @@ TEST(schema_reference_and_anchor_shapes_fail_validation_safely) {
     pjson value;
     for (const char* schemaText : {R"({"$ref":1})", R"({"$dynamicRef":false})", R"({"$id":[]})",
                                    R"({"$anchor":"bad/name"})", R"({"$dynamicAnchor":""})"}) {
-        pjson schema = pjson::parse(schemaText);
+        pjson schema = pJsonParser().parse(schemaText);
         pJsonSchemaValidator validator(schema);
         std::vector<pJsonSchemaValidator::Error> errors;
         CHECK(!validator.validate(value, errors));
         CHECK(!errors.empty());
     }
 
-    pjson nonSchemaTarget = pjson::parse(R"({"$ref":"#/$defs/value","$defs":{"value":7}})");
+    pjson nonSchemaTarget = pJsonParser().parse(R"({"$ref":"#/$defs/value","$defs":{"value":7}})");
     pJsonSchemaValidator::Options strict = pJsonSchemaValidator::Options::strict();
     pJsonSchemaValidator targetValidator(nonSchemaTarget, strict);
     CHECK(!targetValidator.isSchemaValid());
@@ -426,7 +427,7 @@ TEST(schema_strict_mode_rejects_every_supported_keyword_shape) {
 
     const pJsonSchemaValidator::Options strict = pJsonSchemaValidator::Options::strict();
     for (const ShapeCase& test : cases) {
-        const pjson schema = pjson::parse(test.schema);
+        const pjson schema = pJsonParser().parse(test.schema);
         const pJsonSchemaValidator validator(schema, strict);
         CHECK(!validator.isSchemaValid());
         CHECK(!validator.schemaErrors().empty());
@@ -439,7 +440,7 @@ TEST(schema_strict_mode_rejects_every_supported_keyword_shape) {
 }
 
 TEST(schema_permissive_mode_still_ignores_malformed_keyword_shapes) {
-    pjson schema = pjson::parse(
+    pjson schema = pJsonParser().parse(
         R"({"type":7,"required":false,"properties":[],"allOf":false,"minimum":"zero"})");
     pJsonSchemaValidator validator(schema);
     CHECK(validator.isSchemaValid());
@@ -449,10 +450,11 @@ TEST(schema_permissive_mode_still_ignores_malformed_keyword_shapes) {
 }
 
 TEST(schema_ids_inside_instance_valued_keywords_are_not_indexed) {
-    pjson schema = pjson::parse(
+    pjson schema = pJsonParser().parse(
         R"({"const":{"$id":"https://example.test/not-a-schema","value":1},"$defs":{"actual":{"$id":"https://example.test/not-a-schema","type":"integer"}}})");
     pJsonSchemaValidator validator(schema);
-    pjson equalValue = pjson::parse(R"({"$id":"https://example.test/not-a-schema","value":1})");
+    pjson equalValue =
+        pJsonParser().parse(R"({"$id":"https://example.test/not-a-schema","value":1})");
     CHECK(validator.validate(equalValue));
 }
 
@@ -468,17 +470,17 @@ TEST(schema_compilation_depth_is_bounded_for_programmatic_schemas) {
 }
 
 TEST(schema_duplicate_resource_ids_and_anchors_are_rejected) {
-    pjson duplicateId = pjson::parse(
+    pjson duplicateId = pJsonParser().parse(
         R"({"$id":"https://example.test/root","$defs":{"a":{"$id":"child"},"b":{"$id":"child"}}})");
     pJsonSchemaValidator idValidator(duplicateId);
     CHECK(!idValidator.isSchemaValid());
 
     pjson duplicateAnchor =
-        pjson::parse(R"({"$defs":{"a":{"$anchor":"same"},"b":{"$anchor":"same"}}})");
+        pJsonParser().parse(R"({"$defs":{"a":{"$anchor":"same"},"b":{"$anchor":"same"}}})");
     pJsonSchemaValidator anchorValidator(duplicateAnchor);
     CHECK(!anchorValidator.isSchemaValid());
 
-    pjson malformedAnchor = pjson::parse(R"({"$defs":{"a":{"$anchor":7}}})");
+    pjson malformedAnchor = pJsonParser().parse(R"({"$defs":{"a":{"$anchor":7}}})");
     pJsonSchemaValidator malformedAnchorValidator(malformedAnchor);
     CHECK(!malformedAnchorValidator.isSchemaValid());
 }
@@ -507,10 +509,11 @@ TEST(schema_anchor_and_nested_id_resolution) {
 
 TEST(schema_external_resolver_and_fragment) {
     ResolverFixture fixture;
-    fixture.documents["https://example.test/remote.json"] = pjson::parse(
+    fixture.documents["https://example.test/remote.json"] = pJsonParser().parse(
         R"({"$id":"https://example.test/remote.json","$defs":{"value":{"type":"integer"}}})");
 
-    pjson schema = pjson::parse(R"({"$ref":"https://example.test/remote.json#/$defs/value"})");
+    pjson schema =
+        pJsonParser().parse(R"({"$ref":"https://example.test/remote.json#/$defs/value"})");
     pJsonSchemaValidator::Options options;
     options.resolver = resolveFixture;
     options.resolverContext = &fixture;
@@ -538,8 +541,8 @@ TEST(schema_external_resolver_and_fragment) {
 TEST(schema_retrieval_uri_resolves_relative_root_reference) {
     ResolverFixture fixture;
     fixture.documents["https://example.test/schemas/remote.json"] =
-        pjson::parse(R"({"type":"integer"})");
-    pjson schema = pjson::parse(R"({"$ref":"remote.json"})");
+        pJsonParser().parse(R"({"type":"integer"})");
+    pjson schema = pJsonParser().parse(R"({"$ref":"remote.json"})");
     pJsonSchemaValidator::Options options;
     options.retrievalUri = "https://example.test/schemas/root.json";
     options.resolver = resolveFixture;
@@ -551,7 +554,7 @@ TEST(schema_retrieval_uri_resolves_relative_root_reference) {
     integerValue = int64_t(1);
     CHECK(validator.validate(integerValue));
 
-    pjson noBaseSchema = pjson::parse(R"({"$ref":"remote.json"})");
+    pjson noBaseSchema = pJsonParser().parse(R"({"$ref":"remote.json"})");
     pJsonSchemaValidator noBase(noBaseSchema, options);
     // `options` supplies retrievalUri here, so this remains valid.
     CHECK(noBase.isSchemaValid());
@@ -565,8 +568,8 @@ TEST(schema_retrieval_uri_resolves_relative_root_reference) {
 TEST(schema_reference_resolution_normalizes_dot_segments) {
     ResolverFixture fixture;
     fixture.documents["https://example.test/schemas/remote.json"] =
-        pjson::parse(R"({"type":"integer"})");
-    pjson schema = pjson::parse(R"({"$ref":"./defs/../remote.json"})");
+        pJsonParser().parse(R"({"type":"integer"})");
+    pjson schema = pJsonParser().parse(R"({"$ref":"./defs/../remote.json"})");
     pJsonSchemaValidator::Options options;
     options.retrievalUri = "https://example.test/schemas/root.json";
     options.resolver = resolveFixture;
@@ -580,7 +583,7 @@ TEST(schema_reference_resolution_normalizes_dot_segments) {
 }
 
 TEST(schema_retrieval_uri_applies_relative_root_id_once) {
-    pjson schema = pjson::parse(
+    pjson schema = pJsonParser().parse(
         R"({"$id":"sub/root.json","$ref":"#value","$defs":{"v":{"$anchor":"value","type":"string"}}})");
     pJsonSchemaValidator::Options options;
     options.retrievalUri = "https://example.test/schemas/source.json";
@@ -592,7 +595,7 @@ TEST(schema_retrieval_uri_applies_relative_root_id_once) {
 }
 
 TEST(schema_external_resolution_is_explicit_and_budgeted) {
-    pjson schema = pjson::parse(R"({"$ref":"https://example.test/remote.json"})");
+    pjson schema = pJsonParser().parse(R"({"$ref":"https://example.test/remote.json"})");
     pJsonSchemaValidator noResolver(schema);
     pjson value;
     std::vector<pJsonSchemaValidator::Error> errors;
@@ -602,7 +605,8 @@ TEST(schema_external_resolution_is_explicit_and_budgeted) {
     CHECK(errors[0].message.find("no resolver") != std::string::npos);
 
     ResolverFixture fixture;
-    fixture.documents["https://example.test/remote.json"] = pjson::parse(R"({"type":"null"})");
+    fixture.documents["https://example.test/remote.json"] =
+        pJsonParser().parse(R"({"type":"null"})");
     pJsonSchemaValidator::Options options;
     options.resolver = resolveFixture;
     options.resolverContext = &fixture;
@@ -615,10 +619,10 @@ TEST(schema_external_resolution_is_explicit_and_budgeted) {
 
     options.maxResolvedBytes = size_t(16) * 1024 * 1024;
     options.maxResolvedDocuments = 1;
-    pjson twoDocuments = pjson::parse(
+    pjson twoDocuments = pJsonParser().parse(
         R"({"allOf":[{"$ref":"https://example.test/one.json"},{"$ref":"https://example.test/two.json"}]})");
-    fixture.documents["https://example.test/one.json"] = pjson::parse("true");
-    fixture.documents["https://example.test/two.json"] = pjson::parse("true");
+    fixture.documents["https://example.test/one.json"] = pJsonParser().parse("true");
+    fixture.documents["https://example.test/two.json"] = pJsonParser().parse("true");
     pJsonSchemaValidator documentLimited(twoDocuments, options);
     CHECK(!documentLimited.isSchemaValid());
     CHECK(documentLimited.schemaErrors()[0].message.find("resolved-document budget") !=
@@ -626,7 +630,7 @@ TEST(schema_external_resolution_is_explicit_and_budgeted) {
 }
 
 TEST(schema_external_resolver_exception_becomes_compilation_error) {
-    pjson schema = pjson::parse(R"({"$ref":"https://example.test/remote.json"})");
+    pjson schema = pJsonParser().parse(R"({"$ref":"https://example.test/remote.json"})");
     pJsonSchemaValidator::Options options;
     options.resolver = throwingResolver;
     bool caught = false;
@@ -641,9 +645,9 @@ TEST(schema_external_resolver_exception_becomes_compilation_error) {
 
 TEST(schema_external_resource_with_unsupported_dialect_fails_compilation) {
     ResolverFixture fixture;
-    fixture.documents["https://example.test/remote.json"] = pjson::parse(
+    fixture.documents["https://example.test/remote.json"] = pJsonParser().parse(
         R"({"$schema":"https://json-schema.org/draft/2020-12/schema","type":"integer"})");
-    pjson schema = pjson::parse(R"({"$ref":"https://example.test/remote.json"})");
+    pjson schema = pJsonParser().parse(R"({"$ref":"https://example.test/remote.json"})");
     pJsonSchemaValidator::Options options;
     options.resolver = resolveFixture;
     options.resolverContext = &fixture;
@@ -654,7 +658,7 @@ TEST(schema_external_resource_with_unsupported_dialect_fails_compilation) {
              std::string("https://example.test/remote.json#/$schema"));
 
     fixture.documents["https://example.test/remote.json"] =
-        pjson::parse(R"({"$vocabulary":{"urn:example:required":true}})");
+        pJsonParser().parse(R"({"$vocabulary":{"urn:example:required":true}})");
     pJsonSchemaValidator vocabularyValidator(schema, options);
     CHECK(!vocabularyValidator.isSchemaValid());
 }
@@ -663,8 +667,8 @@ TEST(schema_validator_owns_schema_beyond_caller_allocator_lifetime) {
     pJsonSchemaValidator* validator = nullptr;
     {
         CountingAllocator allocator;
-        pjson::ParseError error;
-        pjson schema = pjson::parse(R"({"type":"integer"})", error, allocator);
+        pJsonParser::Error error;
+        pjson schema = pJsonParser(allocator).parse(R"({"type":"integer"})", error);
         CHECK(error.ok);
         validator = new pJsonSchemaValidator(schema);
         CHECK(&validator->schema().getAllocator() != &allocator);
@@ -676,7 +680,7 @@ TEST(schema_validator_owns_schema_beyond_caller_allocator_lifetime) {
 }
 
 TEST(schema_compiled_validator_supports_concurrent_read_only_validation) {
-    pjson schema = pjson::parse(
+    pjson schema = pJsonParser().parse(
         R"({"type":"object","properties":{"value":{"type":"integer"}},"required":["value"],"unevaluatedProperties":false})");
     const pJsonSchemaValidator validator(schema, pJsonSchemaValidator::Options::modernSubset());
     bool results[8] = {false, false, false, false, false, false, false, false};

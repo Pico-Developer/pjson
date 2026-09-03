@@ -4,17 +4,23 @@ There are several ways to use pjson in your project, from compiling its
 canonical sources directly to consuming an installed package. Pick whichever
 fits.
 
-## Option 1 — Compile the canonical sources directly
+## Option 1 — Compile sources directly
 
-pjson has **no dependencies** beyond the C++ standard library. For a vendored
-copy that needs only the DOM/parser/serializer, use the canonical core header
-and implementation from the repository:
+pjson has **no public dependencies** beyond the C++ standard library. The
+implementation is intentionally split by responsibility. A DOM-only build needs:
 
 - `pjsonlib/include/pjson.h`
 - `pjsonlib/src/pjson.cpp`
 
-Compile `pjsonlib/src/pjson.cpp` alongside your own sources and add
-`pjsonlib/include` to the include path:
+Parsing additionally needs `pjsonlib/include/pjson_parser.h` and
+`pjsonlib/src/pjson_parser.cpp`; serialization needs `pjson_serialize.cpp`; JSON
+Pointer and Patch need `pjson_pointer.cpp` and `pjson_patch.cpp`. Serialization
+also requires the vendored Ryu source and its private include paths. Because
+these details are easy to omit, the single `pjson::pjson` CMake target is the
+recommended integration whenever more than the DOM-only core is used.
+
+For a DOM-only program, compile `pjson.cpp` alongside your source and add the
+public include directory:
 
 ```sh
 c++ -std=c++11 -I path/to/pjson/pjsonlib/include \
@@ -28,10 +34,9 @@ In code:
 using namespace ByteDance;
 ```
 
-This is the recommended path for small projects and for trying pjson out.
-Applications that use `pJsonSchemaValidator` should compile all
-`pjsonlib/src/pjson_schema*.cpp` files as well, or consume the CMake target,
-which already includes them.
+Applications that parse, serialize, apply Pointer/Patch operations, or use
+`pJsonSchemaValidator` should consume the CMake target, which already includes
+all required translation units and private dependencies.
 
 ```mermaid
 flowchart LR
@@ -61,7 +66,9 @@ Resulting layout:
 
 ```
 out/
-  include/pjson.h              public header
+  include/pjson.h              DOM public header
+  include/pjson_parser.h       parser public header
+  include/pjson_schema.h       schema-validator public header
   release/lib/libpjson.a       Release static library
   release/bin/pjsontest        Release test runner
   release/bin/pjsonbench       Release benchmark runner
@@ -104,7 +111,7 @@ cmake --build build --config Release
 cmake --install build --config Release --prefix /path/to/pjson-prefix
 ```
 
-The install contains `pjson.h`, the library, `pjsonConfig.cmake`,
+The install contains `pjson.h`, `pjson_parser.h`, `pjson_schema.h`, the library, `pjsonConfig.cmake`,
 `pjsonConfigVersion.cmake`, and `pjsonTargets.cmake`. The CMake package files
 normally live under `<prefix>/<libdir>/cmake/pjson`; the exact `<libdir>` follows
 the platform's GNU install-directory convention. Consume them with a versioned
@@ -200,8 +207,9 @@ developer components default to `OFF` automatically.
 
 ## What you learned
 
-- The simplest integration is to compile `pjsonlib/src/pjson.cpp` with your app
-  and point `-I` at `pjsonlib/include` — no build system required.
+- The simplest full-featured integration is the `pjson::pjson` CMake target;
+  direct source compilation is practical only when its complete feature-specific
+  source list and private include paths are maintained by the embedding project.
 - `build.sh` builds everything into `out/`; CMake integration exposes the
   `pjson::pjson` target.
 - Installed CMake and pkg-config metadata are relocatable, and Conan 2 and an

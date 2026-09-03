@@ -22,20 +22,18 @@
  *
  * A pjson owns its complete subtree. Copies are deep, and pointers returned by
  * find() or findPointer(), along with string views returned by tryGet(), remain
- * borrowed from their owning tree. In-memory parsing and validation report
- * data-domain failures through return values and error objects;
- * exception-enabled input streams can still propagate stream exceptions while
- * parseStream() buffers input.
+ * borrowed from their owning tree. Parsing is provided by the independent
+ * ByteDance::pJsonParser class rather than by pjson members.
  *
  * Every value is bound to a runtime allocator. Default construction uses the
- * built-in allocator; allocator-aware construction and parsing use a borrowed
- * pjson::Allocator that must outlive the complete tree. Copy and move assignment
+ * built-in allocator; allocator-aware construction and pJsonParser use a
+ * borrowed pjson::Allocator that must outlive the complete tree. Copy and move assignment
  * preserve the destination allocator. Storage transfer and swap are O(1) only
  * between values with the same allocator; use canSwap() when allocator
- * provenance may differ. Every DOM parse() and parseStream() overload returns
- * the parsed document by value, bound to the chosen allocator and freed on
- * destruction; pass a pjson::ParseError to distinguish failure from a
- * successfully parsed literal null.
+ * provenance may differ. Every pJsonParser DOM operation returns the parsed
+ * document by value, bound to the chosen allocator and freed on destruction;
+ * pass a pJsonParser::Error to distinguish failure from a successfully parsed
+ * literal null.
  *
  * operator[] is the auto-vivifying builder API. For observation without
  * mutation, use find(), findPointer(), hasKey(), hasIndex(), at(), contains(),
@@ -58,6 +56,23 @@
  * @see https://github.com/Pico-Developer/pjson/tree/main/docs Tutorials
  * @see migration-nlohmann-json
  * @see migration-rapidjson
+ */
+
+/**
+ * @class ByteDance::pJsonParser
+ * @brief Configured parser that produces pjson values or SAX events.
+ *
+ * pJsonParser is declared in <pjson_parser.h>. It owns parser options and
+ * borrows the selected pjson::Allocator, which must outlive the parser and all
+ * DOM values it creates. Parsing returns pjson by value. The parser stores no
+ * per-call mutable state and may be reused; callers must provide separate Error
+ * objects and SAX handlers for concurrent calls. The dependency is one-way:
+ * pJsonParser uses pjson, while the core pjson header and implementation do not
+ * include or call the parser.
+ *
+ * @see ByteDance::pJsonParser::Options
+ * @see ByteDance::pJsonParser::Error
+ * @see ByteDance::pJsonParser::SaxHandler
  */
 
 /**

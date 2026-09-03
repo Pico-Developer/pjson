@@ -7,7 +7,8 @@ end you will have printed a JSON value to the screen.
 
 - A C++ compiler that supports **C++11** or newer (g++, clang, or MSVC).
 - pjson's canonical public header, `pjsonlib/include/pjson.h`.
-- pjson's canonical implementation, `pjsonlib/src/pjson.cpp`.
+- pjson's DOM and serialization sources, `pjsonlib/src/pjson.cpp` and
+  `pjsonlib/src/pjson_serialize.cpp`, plus the vendored Ryu conversion source.
 
 That's it. pjson has **no third-party dependencies**.
 
@@ -56,14 +57,19 @@ The fastest way, compiling the library source directly alongside your program:
 
 ```sh
 c++ -std=c++11 -I pjsonlib/include \
-    pjsonlib/src/pjson.cpp examples/src/01_hello_world.cpp \
+    -I pjsonlib/src/third_party/ryu \
+    pjsonlib/src/pjson.cpp pjsonlib/src/pjson_serialize.cpp \
+    pjsonlib/src/third_party/ryu/ryu/d2s.c \
+    examples/src/01_hello_world.cpp \
     -o hello
 ./hello
 ```
 
 - `-std=c++11` selects the C++ standard.
 - `-I pjsonlib/include` tells the compiler where to find `pjson.h`.
-- We list **both** `.cpp` files so the library code is compiled in.
+- We list the DOM, serializer, and Ryu sources used by this example. The CMake
+  target shown in Chapter 08 is preferable once parsing or other components are
+  needed because it maintains the complete source list.
 
 Expected output:
 
@@ -81,7 +87,7 @@ alphabetical. (Recall from Chapter 00 that pjson keeps object keys sorted.)
 
 ```mermaid
 flowchart LR
-    src["your .cpp + pjson.cpp"] -->|"c++ -std=c++11 -I include"| exe["executable"]
+    src["your .cpp + DOM + serializer + Ryu"] -->|"c++ -std=c++11 -I include"| exe["executable"]
     exe -->|run| out["JSON printed"]
 ```
 
@@ -99,19 +105,19 @@ with the bundled script — covered fully in
 
 - **`fatal error: 'pjson.h' file not found`** — you forgot `-I pjsonlib/include`
   (or the path to wherever you put the header).
-- **`undefined reference to ByteDance::pjson::...`** — you compiled only your
-  `.cpp` and forgot to include `pjsonlib/src/pjson.cpp` in the command.
+- **`undefined reference to ByteDance::pjson::...`** — a required library
+  translation unit was omitted; prefer linking the `pjson::pjson` CMake target.
 - **Lots of syntax errors** — your compiler may be defaulting to an old
   standard; add `-std=c++11` (or newer).
 
 ## What you learned
 
-- pjson's canonical public header and implementation source have no third-party
-  dependencies.
+- pjson has no dependencies that applications must install separately; its Ryu
+  number-conversion dependency is vendored and built by the CMake target.
 - A new `pjson` is `null`; assigning to a key makes it an object.
 - `SerializeOptions` selects compact or pretty JSON serialization.
-- Compile by passing both your file and `pjson.cpp`, with `-I` pointing at the
-  header.
+- Direct compilation must include the component sources used by the program;
+  the CMake target supplies the complete list automatically.
 
 Next: [Chapter 02 — Creating JSON](02-creating-json.md), where you build richer
 objects and arrays.

@@ -18,6 +18,7 @@
 // Number-grammar acceptance/rejection lives here too.
 //
 #include "pjson.h"
+#include "pjson_parser.h"
 #include "test_harness.h"
 #include "test_util.h"
 
@@ -157,7 +158,7 @@ TEST(parse_crlf_document) {
 //===----------------------------------------------------------------------===//
 TEST(parse_duplicate_key_policies) {
     const std::string document = "{\"a\":1,\n\"a\":2}";
-    pjson::ParseError err;
+    pJsonParser::Error err;
     CHECK(pjson_test::parse(document, err) == nullptr);
     CHECK(!err.ok);
     CHECK_EQ(err.offset, size_t(8));
@@ -165,26 +166,26 @@ TEST(parse_duplicate_key_policies) {
     CHECK_EQ(err.column, size_t(1));
     CHECK(err.message.find("duplicate") != std::string::npos);
 
-    pjson::ParseOptions keepLast;
-    keepLast.duplicateKeys = pjson::ParseOptions::KeepLastDuplicate;
+    pJsonParser::Options keepLast;
+    keepLast.duplicateKeys = pJsonParser::Options::KeepLastDuplicate;
     auto last = pjson_test::parse(document, keepLast);
     CHECK(last != nullptr);
     CHECK_EQ(last->size(), size_t(1));
     CHECK_EQ(valueInt((*last)["a"]), int64_t(2));
 
-    pjson::ParseOptions keepFirst;
-    keepFirst.duplicateKeys = pjson::ParseOptions::KeepFirstDuplicate;
+    pJsonParser::Options keepFirst;
+    keepFirst.duplicateKeys = pJsonParser::Options::KeepFirstDuplicate;
     auto first = pjson_test::parse(document, keepFirst);
     CHECK(first != nullptr);
     CHECK_EQ(valueInt((*first)["a"]), int64_t(1));
 
-    pjson::ParseOptions strictLast;
-    strictLast.duplicateKeys = pjson::ParseOptions::KeepLastDuplicate;
+    pJsonParser::Options strictLast;
+    strictLast.duplicateKeys = pJsonParser::Options::KeepLastDuplicate;
     CHECK(pjson_test::parse(document, strictLast) != nullptr);
 }
 
 TEST(parse_error_reuse_across_calls) {
-    pjson::ParseError err;
+    pJsonParser::Error err;
 
     CHECK(pjson_test::parse("{", err) == nullptr);
     CHECK(!err.ok);
@@ -203,6 +204,36 @@ TEST(parse_error_reuse_across_calls) {
     CHECK(!err.ok);
     CHECK_EQ(err.offset, size_t(3));
     CHECK(!err.message.empty());
+}
+
+TEST(parser_retains_configuration_and_is_reusable) {
+    pJsonParser::Options options;
+    options.maxDepth = 7;
+    options.maxNodes = 23;
+    options.maxInputBytes = 4096;
+    options.duplicateKeys = pJsonParser::Options::KeepLastDuplicate;
+    options.numberPolicy = pJsonParser::Options::AllowLossyNumbers;
+    pJsonParser parser(options);
+
+    CHECK_EQ(parser.options().maxDepth, 7);
+    CHECK_EQ(parser.options().maxNodes, size_t(23));
+    CHECK_EQ(parser.options().maxInputBytes, size_t(4096));
+    CHECK_EQ(parser.options().duplicateKeys, pJsonParser::Options::KeepLastDuplicate);
+    CHECK_EQ(parser.options().numberPolicy, pJsonParser::Options::AllowLossyNumbers);
+
+    pJsonParser::Error error;
+    pjson first = parser.parse(R"({"value":1,"value":2})", error);
+    CHECK(error.ok);
+    CHECK_EQ(valueInt(first["value"]), int64_t(2));
+
+    pjson rejected = parser.parse("[1,]", error);
+    CHECK(!error.ok);
+    CHECK(rejected.isNull());
+
+    pjson second = parser.parse("true", error);
+    CHECK(error.ok);
+    CHECK_EQ(valueBool(second), true);
+    CHECK(&second.getAllocator() == &parser.allocator());
 }
 
 //===----------------------------------------------------------------------===//
@@ -352,8 +383,8 @@ TEST(parse_bigint_rejected_by_default) {
 
 TEST(parse_bigint_lossy_opt_in_stores_double) {
     // With the explicit opt-in, the same token stores the nearest double.
-    pjson::ParseOptions opt;
-    opt.numberPolicy = pjson::ParseOptions::AllowLossyNumbers;
+    pJsonParser::Options opt;
+    opt.numberPolicy = pJsonParser::Options::AllowLossyNumbers;
     auto p = pjson_test::parse("100000000000000000000000", opt);
     CHECK(p != nullptr);
     if (p)

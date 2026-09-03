@@ -7,12 +7,15 @@ types are intentionally excluded.
 
 ## Start here
 
-- @ref ByteDance::pjson is the central DOM value and entry point.
+- @ref ByteDance::pjson is the central DOM value.
+- @ref ByteDance::pJsonParser is the separate configured parser. It consumes
+  the public DOM implementation; the DOM does not depend on the parser.
 - @ref ByteDance::pjson::Allocator supports allocator-bound persistent DOM
-  storage; parse returns the document by value, bound to the chosen allocator.
-- @ref ByteDance::pjson::ParseOptions configures duplicate keys and input
+  storage; an allocator-configured parser returns the document by value, bound
+  to the chosen allocator.
+- @ref ByteDance::pJsonParser::Options configures duplicate keys and input
   budgets; every parser enforces RFC 8259 syntax.
-- @ref ByteDance::pjson::ParseError reports non-throwing parse failures.
+- @ref ByteDance::pJsonParser::Error reports non-throwing parse failures.
 - @ref ByteDance::pjson::PointerError and @ref ByteDance::pjson::PatchError
   describe RFC 6901, RFC 6902, and RFC 7396 failures.
 - @ref ByteDance::pjson::PatchOptions bounds transactional patch amplification.
@@ -22,7 +25,7 @@ types are intentionally excluded.
   ByteDance::pjson::findPointer() provide strict, non-vivifying reads.
 - ByteDance::pjson::applyPatch() and ByteDance::pjson::applyMergePatch() apply
   atomic RFC 6902 and RFC 7396 updates.
-- @ref ByteDance::pjson::SaxHandler supports incremental, non-DOM parsing.
+- @ref ByteDance::pJsonParser::SaxHandler supports incremental, non-DOM parsing.
 - @ref ByteDance::pJsonSchemaValidator validates a pjson value against a schema
   (itself a pjson value); its nested @ref ByteDance::pJsonSchemaValidator::Options
   and @ref ByteDance::pJsonSchemaValidator::Error configure and report schema

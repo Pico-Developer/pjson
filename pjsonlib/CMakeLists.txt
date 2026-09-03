@@ -9,12 +9,16 @@ set (INCLUDE_DIR "include")
 
 set (SRC_FILES ${SRC_FILES}
 ${SRC_DIR}/pjson.cpp
+${SRC_DIR}/pjson_parser.cpp
+${SRC_DIR}/pjson_patch.cpp
+${SRC_DIR}/pjson_pointer.cpp
 ${SRC_DIR}/pjson_schema.cpp
 ${SRC_DIR}/pjson_schema_dialect.cpp
 ${SRC_DIR}/pjson_schema_format.cpp
 ${SRC_DIR}/pjson_schema_regex.cpp
 ${SRC_DIR}/pjson_schema_uri.cpp
 ${SRC_DIR}/pjson_schema_value.cpp
+${SRC_DIR}/pjson_serialize.cpp
 ${SRC_DIR}/third_party/ryu/ryu/d2s.c
 )
 set_source_files_properties(${SRC_DIR}/third_party/ryu/ryu/d2s.c PROPERTIES LANGUAGE CXX)
@@ -80,6 +84,7 @@ install(TARGETS ${TARGET_NAME}
 
 install(FILES
     ${INCLUDE_DIR}/pjson.h
+    ${INCLUDE_DIR}/pjson_parser.h
     ${INCLUDE_DIR}/pjson_schema.h
     DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
 )

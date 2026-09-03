@@ -11,10 +11,11 @@ serializes the whole thing.
 ## 1. Define what a valid contact looks like
 
 ```cpp
+#include "pjson_parser.h"
 #include "pjson_schema.h"
 
-pjson::ParseError err;
-pjson schema = pjson::parse(R"({
+pJsonParser::Error err;
+pjson schema = pJsonParser().parse(R"({
     "type": "object",
     "required": ["id", "name", "emails"],
     "properties": {
@@ -89,7 +90,7 @@ addContact(book, validator, ada);
 **From a JSON payload** (e.g. arriving over a network):
 
 ```cpp
-pjson incoming = pjson::parse(R"({
+pjson incoming = pJsonParser().parse(R"({
     "id": 2, "name": "Bob", "emails": ["bob@example.com", "b@work.com"]
 })",
                               err);
@@ -100,7 +101,7 @@ if (err.ok)
 **An invalid one is rejected** with precise messages:
 
 ```cpp
-pjson invalid = pjson::parse(R"({ "id": 0, "name": "", "emails": [] })", err);
+pjson invalid = pJsonParser().parse(R"({ "id": 0, "name": "", "emails": [] })", err);
 if (err.ok)
     addContact(book, validator, invalid);
 // /emails: array has 0 items, below minItems 1

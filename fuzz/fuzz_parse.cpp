@@ -8,6 +8,7 @@
 #include <string>
 
 using ByteDance::pjson;
+using ByteDance::pJsonParser;
 
 namespace {
 
@@ -16,29 +17,29 @@ namespace {
     // Exercises one parser configuration and checks successful
     // values across both compact and pretty serialization modes.
     void exerciseParser(const uint8_t* data, size_t size, size_t variantOffset) {
-        const pjson::ParseOptions options =
+        const pJsonParser::Options options =
             pjson_fuzz::parseOptionsVariant(data, size, variantOffset);
-        pjson::ParseError error;
-        pjson value = pjson::parse(pjson_fuzz::bytes(data, size), size, error, options);
+        pJsonParser::Error error;
+        pjson value = pJsonParser(options).parse(pjson_fuzz::bytes(data, size), size, error);
         if (!error.ok)
             return;
 
         // Compact output must be a stable, value-preserving representation.
         const std::string compact = value.toString();
-        pjson::ParseOptions compactOptions = options;
+        pJsonParser::Options compactOptions = options;
         compactOptions.maxInputBytes = compact.size();
-        pjson::ParseError compactError;
-        pjson reparsed = pjson::parse(compact, compactError, compactOptions);
+        pJsonParser::Error compactError;
+        pjson reparsed = pJsonParser(compactOptions).parse(compact, compactError);
         pjson_fuzz::require(compactError.ok);
         pjson_fuzz::require(reparsed == value);
         pjson_fuzz::require(reparsed.toString() == compact);
 
         // Pretty printing may change whitespace, but never the represented JSON value.
         const std::string pretty = value.toString(pjson::SerializeOptions::prettyPrinted());
-        pjson::ParseOptions prettyOptions = options;
+        pJsonParser::Options prettyOptions = options;
         prettyOptions.maxInputBytes = pretty.size();
-        pjson::ParseError prettyError;
-        pjson prettyParsed = pjson::parse(pretty, prettyError, prettyOptions);
+        pJsonParser::Error prettyError;
+        pjson prettyParsed = pJsonParser(prettyOptions).parse(pretty, prettyError);
         pjson_fuzz::require(prettyError.ok);
         pjson_fuzz::require(prettyParsed == value);
     }

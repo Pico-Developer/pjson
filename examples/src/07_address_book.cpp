@@ -10,6 +10,7 @@
 // result. Referenced by docs/07-capstone-address-book.md.
 //
 #include "pjson.h"
+#include "pjson_parser.h"
 #include "pjson_schema.h"
 
 #include <cstdint>
@@ -23,7 +24,7 @@ namespace {
     // Builds the schema every contact must satisfy. The embedded literal is
     // fixed application data, so parsing it is expected to succeed.
     pjson contactSchema() {
-        return pjson::parse(R"({
+        return pJsonParser().parse(R"({
         "type": "object",
         "required": ["id", "name", "emails"],
         "properties": {
@@ -87,11 +88,11 @@ int main() {
 
     // 2) Accept a contact that arrives as a JSON payload.
     std::cout << "adding incoming payload...\n";
-    pjson::ParseError incomingError;
-    pjson incoming = pjson::parse(R"({
+    pJsonParser::Error incomingError;
+    pjson incoming = pJsonParser().parse(R"({
         "id": 2, "name": "Bob", "emails": ["bob@example.com", "b@work.com"]
     })",
-                                  incomingError);
+                                         incomingError);
     if (!incomingError.ok) {
         std::cerr << "could not parse incoming contact\n";
         return 1;
@@ -100,8 +101,8 @@ int main() {
 
     // 3) Reject an invalid contact.
     std::cout << "adding invalid contact...\n";
-    pjson::ParseError invalidError;
-    pjson invalid = pjson::parse(R"({ "id": 0, "name": "", "emails": [] })", invalidError);
+    pJsonParser::Error invalidError;
+    pjson invalid = pJsonParser().parse(R"({ "id": 0, "name": "", "emails": [] })", invalidError);
     if (!invalidError.ok) {
         std::cerr << "could not parse invalid-contact fixture\n";
         return 1;

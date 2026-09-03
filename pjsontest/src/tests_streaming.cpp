@@ -16,6 +16,7 @@
 // Streaming SAX parsing and direct ostream serialization tests.
 //
 #include "pjson.h"
+#include "pjson_parser.h"
 #include "test_harness.h"
 #include "test_util.h"
 
@@ -34,7 +35,7 @@ using pjson_test::valueInt;
 namespace {
 
     // Captures the SAX callback stream in a compact form suitable for exact ordering checks.
-    struct RecordingHandler : pjson::SaxHandler {
+    struct RecordingHandler : pJsonParser::SaxHandler {
         std::vector<std::string> events;
 
         bool onNull() override {
@@ -149,7 +150,7 @@ namespace {
         bool onString(const std::string&) override { throw std::bad_alloc(); }
     };
 
-    struct NumberHandler : pjson::SaxHandler {
+    struct NumberHandler : pJsonParser::SaxHandler {
         bool sawDouble = false;
         double value = 1.0;
 
@@ -255,7 +256,7 @@ namespace {
 
 TEST(streaming_sax_scalar_events) {
     RecordingHandler h;
-    CHECK(pjson::parseSax(" [null,true,false,1,2.5,\"x\"] ", h));
+    CHECK(pJsonParser().parseSax(" [null,true,false,1,2.5,\"x\"] ", h));
     CHECK_EQ(h.events.size(), size_t(8));
     CHECK_EQ(h.events[0], std::string("start-array"));
     CHECK_EQ(h.events[1], std::string("null"));
@@ -269,7 +270,7 @@ TEST(streaming_sax_scalar_events) {
 
 TEST(streaming_sax_object_order_and_empty_containers) {
     RecordingHandler h;
-    CHECK(pjson::parseSax("{\"a\":{},\"b\":[],\"c\":{\"d\":[1]}}", h));
+    CHECK(pJsonParser().parseSax("{\"a\":{},\"b\":[],\"c\":{\"d\":[1]}}", h));
     const std::vector<std::string> want = {
         "start-object", "key:a",     "start-object", "end-object",   "key:b",
         "start-array",  "end-array", "key:c",        "start-object", "key:d",
@@ -283,8 +284,8 @@ TEST(streaming_sax_chunked_stream_boundaries) {
     const std::string doc = "{\"msg\":\"hello\",\"arr\":[1,2,3],\"nested\":{\"ok\":true}}";
     ChunkedIStream in(doc, 1);
     RecordingHandler h;
-    pjson::ParseError err;
-    CHECK(pjson::parseSaxStream(in, h, err));
+    pJsonParser::Error err;
+    CHECK(pJsonParser().parseSaxStream(in, h, err));
     CHECK(err.ok);
     CHECK_EQ(h.events.front(), std::string("start-object"));
     CHECK_EQ(h.events.back(), std::string("end-object"));
@@ -299,8 +300,8 @@ TEST(streaming_sax_utf8_escape_and_number_chunk_boundaries) {
     for (size_t chunk = 1; chunk <= 4; ++chunk) {
         ChunkedIStream in(doc, chunk);
         RecordingHandler h;
-        pjson::ParseError err;
-        CHECK(pjson::parseSaxStream(in, h, err));
+        pJsonParser::Error err;
+        CHECK(pJsonParser().parseSaxStream(in, h, err));
         CHECK(err.ok);
         CHECK(std::find(h.events.begin(), h.events.end(), std::string("string:\xC3\xA9")) !=
               h.events.end());
@@ -315,8 +316,8 @@ TEST(streaming_sax_crlf_split_reports_coordinates) {
     const std::string doc = "{\r\n\"a\": [1,\r\n]}";
     ChunkedIStream in(doc, 1);
     RecordingHandler h;
-    pjson::ParseError err;
-    CHECK(!pjson::parseSaxStream(in, h, err));
+    pJsonParser::Error err;
+    CHECK(!pJsonParser().parseSaxStream(in, h, err));
     CHECK_EQ(err.line, size_t(3));
     CHECK_EQ(err.column, size_t(1));
 }
@@ -325,18 +326,18 @@ TEST(streaming_sax_duplicate_key_policies) {
     const std::string doc = "{\"a\":1,\"a\":2}";
 
     RecordingHandler keepFirst;
-    pjson::ParseOptions first;
-    first.duplicateKeys = pjson::ParseOptions::KeepFirstDuplicate;
-    CHECK(pjson::parseSax(doc, keepFirst, first));
+    pJsonParser::Options first;
+    first.duplicateKeys = pJsonParser::Options::KeepFirstDuplicate;
+    CHECK(pJsonParser(first).parseSax(doc, keepFirst));
     const std::vector<std::string> wantFirst = {"start-object", "key:a", "int:1", "end-object"};
     CHECK_EQ(keepFirst.events.size(), wantFirst.size());
     for (size_t i = 0; i < wantFirst.size(); ++i)
         CHECK_EQ(keepFirst.events[i], wantFirst[i]);
 
     RecordingHandler keepLast;
-    pjson::ParseOptions last;
-    last.duplicateKeys = pjson::ParseOptions::KeepLastDuplicate;
-    CHECK(pjson::parseSax(doc, keepLast, last));
+    pJsonParser::Options last;
+    last.duplicateKeys = pJsonParser::Options::KeepLastDuplicate;
+    CHECK(pJsonParser(last).parseSax(doc, keepLast));
     CHECK_EQ(keepLast.events.size(), size_t(6));
     CHECK_EQ(keepLast.events[1], std::string("key:a"));
     CHECK_EQ(keepLast.events[2], std::string("int:1"));
@@ -344,14 +345,14 @@ TEST(streaming_sax_duplicate_key_policies) {
     CHECK_EQ(keepLast.events[4], std::string("int:2"));
 
     RecordingHandler reject;
-    pjson::ParseError err;
-    CHECK(!pjson::parseSax(doc, reject, err));
+    pJsonParser::Error err;
+    CHECK(!pJsonParser().parseSax(doc, reject, err));
     CHECK(!err.ok);
     CHECK(err.message.find("duplicate") != std::string::npos);
 
     ChunkedIStream streamed(doc, 1);
     RecordingHandler streamReject;
-    CHECK(!pjson::parseSaxStream(streamed, streamReject, err));
+    CHECK(!pJsonParser().parseSaxStream(streamed, streamReject, err));
     CHECK_EQ(err.offset, size_t(7));
     CHECK_EQ(err.line, size_t(1));
     CHECK_EQ(err.column, size_t(8));
@@ -359,8 +360,8 @@ TEST(streaming_sax_duplicate_key_policies) {
 
 TEST(streaming_sax_errors_report_line_and_column) {
     RecordingHandler h;
-    pjson::ParseError err;
-    CHECK(!pjson::parseSax("{\r\n  \"a\": [1,\r\n}", h, err));
+    pJsonParser::Error err;
+    CHECK(!pJsonParser().parseSax("{\r\n  \"a\": [1,\r\n}", h, err));
     CHECK(!err.ok);
     CHECK_EQ(err.line, size_t(3));
     CHECK_EQ(err.column, size_t(1));
@@ -369,30 +370,30 @@ TEST(streaming_sax_errors_report_line_and_column) {
 
 TEST(streaming_sax_cancel_and_throw_become_parse_error) {
     CancelAfterNHandler cancel(3);
-    pjson::ParseError err;
-    CHECK(!pjson::parseSax("[1,2,3]", cancel, err));
+    pJsonParser::Error err;
+    CHECK(!pJsonParser().parseSax("[1,2,3]", cancel, err));
     CHECK(!err.ok);
     CHECK(err.message.find("aborted") != std::string::npos);
 
     ThrowingHandler throwing;
-    CHECK(!pjson::parseSax("{\"a\":1}", throwing, err));
+    CHECK(!pJsonParser().parseSax("{\"a\":1}", throwing, err));
     CHECK(!err.ok);
     CHECK(err.message.find("exception") != std::string::npos);
 
     ChunkedIStream throwingStream("{\"a\":1}", 1);
     ThrowingHandler streamThrowing;
-    CHECK(!pjson::parseSaxStream(throwingStream, streamThrowing, err));
+    CHECK(!pJsonParser().parseSaxStream(throwingStream, streamThrowing, err));
     CHECK(!err.ok);
     CHECK(err.message.empty() || err.message.find("exception") != std::string::npos);
 
     BadAllocHandler allocationFailure;
-    CHECK(!pjson::parseSax("\"value\"", allocationFailure, err));
+    CHECK(!pJsonParser().parseSax("\"value\"", allocationFailure, err));
     CHECK(!err.ok);
     CHECK(err.message.empty() || err.message.find("memory") != std::string::npos);
 
     ChunkedIStream stream("\"value\"", 1);
     BadAllocHandler streamedAllocationFailure;
-    CHECK(!pjson::parseSaxStream(stream, streamedAllocationFailure, err));
+    CHECK(!pJsonParser().parseSaxStream(stream, streamedAllocationFailure, err));
     CHECK(!err.ok);
     CHECK(err.message.empty() || err.message.find("memory") != std::string::npos);
 }
@@ -400,9 +401,9 @@ TEST(streaming_sax_cancel_and_throw_become_parse_error) {
 TEST(streaming_sax_null_stream_buffer_reports_read_failure) {
     std::istream input(nullptr);
     RecordingHandler handler;
-    pjson::ParseError error;
+    pJsonParser::Error error;
 
-    CHECK(!pjson::parseSaxStream(input, handler, error));
+    CHECK(!pJsonParser().parseSaxStream(input, handler, error));
     CHECK(!error.ok);
     CHECK(error.message.find("stream read failed") != std::string::npos);
     CHECK(handler.events.empty());
@@ -413,27 +414,27 @@ TEST(streaming_sax_number_range_matches_dom_parser) {
     for (size_t i = 0; i < sizeof(overflows) / sizeof(overflows[0]); ++i) {
         CHECK(pjson_test::parse(overflows[i]) == nullptr);
         NumberHandler handler;
-        pjson::ParseError err;
-        CHECK(!pjson::parseSax(overflows[i], handler, err));
+        pJsonParser::Error err;
+        CHECK(!pJsonParser().parseSax(overflows[i], handler, err));
         CHECK(!err.ok);
         CHECK(!handler.sawDouble);
 
         ChunkedIStream stream(overflows[i], 1);
         NumberHandler streamHandler;
-        CHECK(!pjson::parseSaxStream(stream, streamHandler, err));
+        CHECK(!pJsonParser().parseSaxStream(stream, streamHandler, err));
         CHECK(!err.ok);
         CHECK(!streamHandler.sawDouble);
     }
 
     const char* accepted[] = {"1e-400", "4.9406564584124654e-324"};
-    pjson::ParseOptions lossy;
-    lossy.numberPolicy = pjson::ParseOptions::AllowLossyNumbers;
+    pJsonParser::Options lossy;
+    lossy.numberPolicy = pJsonParser::Options::AllowLossyNumbers;
     for (size_t i = 0; i < sizeof(accepted) / sizeof(accepted[0]); ++i) {
         pjson_test::Parsed dom = pjson_test::parse(accepted[i], lossy);
         CHECK(dom != nullptr);
         NumberHandler handler;
-        pjson::ParseError err;
-        CHECK(pjson::parseSax(accepted[i], handler, err, lossy));
+        pJsonParser::Error err;
+        CHECK(pJsonParser(lossy).parseSax(accepted[i], handler, err));
         CHECK(err.ok);
         CHECK(handler.sawDouble);
         double domValue = 1.0;
@@ -442,7 +443,7 @@ TEST(streaming_sax_number_range_matches_dom_parser) {
 
         ChunkedIStream stream(accepted[i], 1);
         NumberHandler streamHandler;
-        CHECK(pjson::parseSaxStream(stream, streamHandler, err, lossy));
+        CHECK(pJsonParser(lossy).parseSaxStream(stream, streamHandler, err));
         CHECK_EQ(err.message, std::string());
         CHECK(streamHandler.sawDouble);
         CHECK_EQ(streamHandler.value, domValue);
@@ -453,28 +454,28 @@ TEST(streaming_sax_max_input_bytes_and_max_nodes_on_stream) {
     const std::string doc = "[1,2,3,4]";
     ChunkedIStream in1(doc, 2);
     RecordingHandler h1;
-    pjson::ParseOptions bytes;
+    pJsonParser::Options bytes;
     bytes.maxInputBytes = 4;
-    pjson::ParseError err;
-    CHECK(!pjson::parseSaxStream(in1, h1, err, bytes));
+    pJsonParser::Error err;
+    CHECK(!pJsonParser(bytes).parseSaxStream(in1, h1, err));
     CHECK(!err.ok);
     CHECK_EQ(err.offset, size_t(4));
     CHECK(err.message.find("maxInputBytes") != std::string::npos);
 
     ChunkedIStream in2(doc, 2);
     RecordingHandler h2;
-    pjson::ParseOptions nodes;
+    pJsonParser::Options nodes;
     nodes.maxNodes = 3;
-    CHECK(!pjson::parseSaxStream(in2, h2, err, nodes));
+    CHECK(!pJsonParser(nodes).parseSaxStream(in2, h2, err));
     CHECK(!err.ok);
     CHECK(err.message.find("node budget") != std::string::npos);
 
     const std::string nested = "[[1]]";
     ChunkedIStream in3(nested, 1);
     RecordingHandler h3;
-    pjson::ParseOptions depth;
+    pJsonParser::Options depth;
     depth.maxDepth = 0; // same effective minimum limit as the DOM parser
-    CHECK(!pjson::parseSaxStream(in3, h3, err, depth));
+    CHECK(!pJsonParser(depth).parseSaxStream(in3, h3, err));
     CHECK(err.message.find("depth") != std::string::npos);
 }
 
@@ -493,7 +494,7 @@ TEST(streaming_sax_large_stream_does_not_need_full_buffer) {
 
     ChunkedIStream in(doc, 7);
     RecordingHandler h;
-    CHECK(pjson::parseSaxStream(in, h));
+    CHECK(pJsonParser().parseSaxStream(in, h));
     CHECK_EQ(h.events.front(), std::string("start-array"));
     CHECK_EQ(h.events.back(), std::string("end-array"));
     CHECK_EQ(h.events.size(), size_t(2002));

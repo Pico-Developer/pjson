@@ -17,15 +17,16 @@ REQUIRED_COMPOUNDS = {
     "ByteDance",
     "ByteDance::pjson",
     "ByteDance::pjson::Allocator",
-    "ByteDance::pjson::ParseOptions",
-    "ByteDance::pjson::ParseError",
     "ByteDance::pjson::PointerError",
     "ByteDance::pjson::PatchError",
     "ByteDance::pjson::PatchOptions",
     "ByteDance::pjson::SerializeOptions",
     "ByteDance::pjson::SerializeError",
     "ByteDance::pjson::StringView",
-    "ByteDance::pjson::SaxHandler",
+    "ByteDance::pJsonParser",
+    "ByteDance::pJsonParser::Options",
+    "ByteDance::pJsonParser::Error",
+    "ByteDance::pJsonParser::SaxHandler",
     "ByteDance::pJsonSchemaValidator",
     "ByteDance::pJsonSchemaValidator::Error",
     "ByteDance::pJsonSchemaValidator::Options",
@@ -35,10 +36,6 @@ REQUIRED_COMPOUNDS = {
 # shape is part of the breaking-contract check are also listed below by type.
 REQUIRED_MEMBERS = {
     "getVersion": 1,
-    "parse": 8,
-    "parseStream": 4,
-    "parseSax": 4,
-    "parseSaxStream": 2,
     "toString": 3,
     "write": 3,
     "getType": 1,
@@ -84,6 +81,16 @@ REQUIRED_MEMBERS = {
     "operator!=": 1,
 }
 
+REQUIRED_PARSER_MEMBERS = {
+    "pJsonParser": 2,
+    "options": 1,
+    "allocator": 1,
+    "parse": 4,
+    "parseStream": 2,
+    "parseSax": 4,
+    "parseSaxStream": 2,
+}
+
 REQUIRED_SCHEMA_VALIDATOR_MEMBERS = {
     "pJsonSchemaValidator": 1,
     "validate": 2,
@@ -122,6 +129,10 @@ REMOVED_PUBLIC_MEMBERS = {
     "EncodeBase64ForJSON",
     "DecodeFromJSON",
     "DecodeBase64FromJSON",
+    "parse",
+    "parseStream",
+    "parseSax",
+    "parseSaxStream",
 }
 
 EXPECTED_PUBLIC_ENUMS = {
@@ -169,16 +180,16 @@ EXPECTED_PUBLIC_ENUMS = {
         "ArrayAllocation",
         "ObjectAllocation",
     },
-    ("ByteDance::pjson::ParseOptions", "DuplicateKeyPolicy"): {
+    ("ByteDance::pJsonParser::Options", "DuplicateKeyPolicy"): {
         "RejectDuplicateKeys",
         "KeepFirstDuplicate",
         "KeepLastDuplicate",
     },
-    ("ByteDance::pjson::ParseOptions", "NumberPolicy"): {
+    ("ByteDance::pJsonParser::Options", "NumberPolicy"): {
         "RejectUnrepresentableNumbers",
         "AllowLossyNumbers",
     },
-    ("ByteDance::pjson::ParseError", "Code"): {
+    ("ByteDance::pJsonParser::Error", "Code"): {
         "None",
         "Syntax",
         "InvalidEncoding",
@@ -328,6 +339,21 @@ EXPECTED_PARAMETER_TYPES = {
 }
 
 REQUIRED_PUBLIC_FIELDS = {
+    "ByteDance::pJsonParser::Options": {
+        "maxDepth",
+        "maxNodes",
+        "maxInputBytes",
+        "duplicateKeys",
+        "numberPolicy",
+    },
+    "ByteDance::pJsonParser::Error": {
+        "ok",
+        "code",
+        "offset",
+        "line",
+        "column",
+        "message",
+    },
     "ByteDance::pjson::SerializeError": {
         "code",
         "message",
@@ -481,6 +507,19 @@ def main() -> int:
         if members[name] < minimum:
             errors.append(f"{name}: expected at least {minimum} overload(s), found {members[name]}")
 
+    parser_node = compounds.get("ByteDance::pJsonParser")
+    parser_members: collections.Counter[str] = collections.Counter()
+    if parser_node is not None:
+        parser_members.update(
+            node.findtext("name", default="") for node in parser_node.findall("member")
+        )
+    for name, minimum in REQUIRED_PARSER_MEMBERS.items():
+        if parser_members[name] < minimum:
+            errors.append(
+                f"pJsonParser::{name}: expected at least {minimum}, "
+                f"found {parser_members[name]}"
+            )
+
     schema_validator_node = compounds.get("ByteDance::pJsonSchemaValidator")
     schema_validator_members: collections.Counter[str] = collections.Counter()
     if schema_validator_node is not None:
@@ -579,20 +618,6 @@ def main() -> int:
                         f"returns {result_type}, expected bool"
                     )
 
-        dom_parse_members = [
-            member
-            for member in public_members
-            if member.findtext("name", default="") in {"parse", "parseStream"}
-        ]
-        for member in dom_parse_members:
-            result_type = normalized_xml_type(member.find("type"))
-            if result_type != "pjson":
-                name = member.findtext("name", default="")
-                errors.append(
-                    f"{signature(name, parameter_types(member))} returns {result_type}, "
-                    "expected pjson"
-                )
-
         constructors = [
             member.findtext("argsstring", default="")
             for member in pjson_definition.findall(".//memberdef[@prot='public']")
@@ -605,17 +630,24 @@ def main() -> int:
                 f"found {len(allocator_constructors)}"
             )
 
-        parse_signatures = [
-            member.findtext("argsstring", default="")
-            for member in pjson_definition.findall(".//memberdef[@prot='public']")
-            if member.findtext("name", default="") in {"parse", "parseStream"}
-        ]
-        allocator_signatures = [signature for signature in parse_signatures if "Allocator &" in signature]
-        if len(allocator_signatures) < 6:
+
+    parser_definition = compound_definition("ByteDance::pJsonParser")
+    if parser_definition is not None:
+        undocumented = undocumented_public_members(parser_definition)
+        if undocumented:
             errors.append(
-                f"allocator-aware parse APIs: expected six signatures, "
-                f"found {len(allocator_signatures)}"
+                "undocumented pJsonParser members: " + ", ".join(undocumented)
             )
+        parser_public_members = parser_definition.findall(".//memberdef[@prot='public']")
+        for member in parser_public_members:
+            if member.findtext("name", default="") in {"parse", "parseStream"}:
+                result_type = normalized_xml_type(member.find("type"))
+                if result_type != "pjson":
+                    name = member.findtext("name", default="")
+                    errors.append(
+                        f"pJsonParser::{signature(name, parameter_types(member))} returns "
+                        f"{result_type}, expected pjson"
+                    )
 
     # Pin every public enum nested anywhere under pjson. Scanning all public
     # pjson compounds, rather than only the currently expected owners, also
@@ -625,6 +657,8 @@ def main() -> int:
         if (
             compound_name != "ByteDance::pjson"
             and not compound_name.startswith("ByteDance::pjson::")
+            and compound_name != "ByteDance::pJsonParser"
+            and not compound_name.startswith("ByteDance::pJsonParser::")
             and compound_name != "ByteDance::pJsonSchemaValidator"
             and not compound_name.startswith("ByteDance::pJsonSchemaValidator::")
         ):

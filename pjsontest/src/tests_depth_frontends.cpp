@@ -19,6 +19,7 @@
 // acceptance and rejection for the same input and options.
 //
 #include "pjson.h"
+#include "pjson_parser.h"
 #include "test_harness.h"
 #include "test_util.h"
 
@@ -36,7 +37,7 @@ namespace {
     }
 
     // Counts container-start events so we can compare SAX front ends.
-    struct CountingHandler : pjson::SaxHandler {
+    struct CountingHandler : pJsonParser::SaxHandler {
         size_t starts = 0;
         bool onStartArray() override {
             ++starts;
@@ -51,13 +52,13 @@ namespace {
 // nesting returns a resource-limit error rather than overflowing the stack.
 //===----------------------------------------------------------------------===//
 TEST(depth_limit_intmax_is_clamped_and_safe) {
-    pjson::ParseOptions opt;
+    pJsonParser::Options opt;
     opt.maxDepth = INT_MAX; // caller requests effectively unlimited depth
 
     // 100,000 levels is far beyond any safe native-recursion ceiling. With the
     // clamp in place this must fail cleanly (empty result) instead of crashing.
     const std::string doc = nestedArrays(100000);
-    pjson::ParseError err;
+    pJsonParser::Error err;
     pjson_test::Parsed p = pjson_test::parse(doc, err, opt);
     CHECK(p == nullptr);
     CHECK(!err.ok);
@@ -67,13 +68,13 @@ TEST(depth_limit_intmax_is_clamped_and_safe) {
 // The same clamp protects the SAX front end.
 //===----------------------------------------------------------------------===//
 TEST(depth_limit_intmax_is_clamped_for_sax) {
-    pjson::ParseOptions opt;
+    pJsonParser::Options opt;
     opt.maxDepth = INT_MAX;
 
     const std::string doc = nestedArrays(100000);
     CountingHandler handler;
-    pjson::ParseError err;
-    const bool ok = pjson::parseSax(doc, handler, err, opt);
+    pJsonParser::Error err;
+    const bool ok = pJsonParser(opt).parseSax(doc, handler, err);
     CHECK(!ok);
     CHECK(!err.ok);
 }
@@ -82,14 +83,14 @@ TEST(depth_limit_intmax_is_clamped_for_sax) {
 // A streaming SAX parse over the same input is also protected.
 //===----------------------------------------------------------------------===//
 TEST(depth_limit_intmax_is_clamped_for_stream_sax) {
-    pjson::ParseOptions opt;
+    pJsonParser::Options opt;
     opt.maxDepth = INT_MAX;
 
     const std::string doc = nestedArrays(100000);
     std::istringstream in(doc);
     CountingHandler handler;
-    pjson::ParseError err;
-    const bool ok = pjson::parseSaxStream(in, handler, err, opt);
+    pJsonParser::Error err;
+    const bool ok = pJsonParser(opt).parseSaxStream(in, handler, err);
     CHECK(!ok);
     CHECK(!err.ok);
 }
@@ -115,10 +116,10 @@ TEST(parser_front_ends_agree_on_acceptance) {
         CHECK(*fromString == *fromStream);
 
     CountingHandler bufferHandler;
-    CHECK(pjson::parseSax(doc, bufferHandler));
+    CHECK(pJsonParser().parseSax(doc, bufferHandler));
     std::istringstream saxStream(doc);
     CountingHandler streamHandler;
-    CHECK(pjson::parseSaxStream(saxStream, streamHandler));
+    CHECK(pJsonParser().parseSaxStream(saxStream, streamHandler));
     // Both SAX front ends see the same array/object structure.
     CHECK_EQ(bufferHandler.starts, streamHandler.starts);
 }
@@ -136,36 +137,36 @@ TEST(parser_front_ends_agree_on_rejection) {
     CHECK(pjson_test::parseStream(in) == nullptr);
 
     CountingHandler h1;
-    CHECK(!pjson::parseSax(doc, h1));
+    CHECK(!pJsonParser().parseSax(doc, h1));
     std::istringstream saxStream(doc);
     CountingHandler h2;
-    CHECK(!pjson::parseSaxStream(saxStream, h2));
+    CHECK(!pJsonParser().parseSaxStream(saxStream, h2));
 }
 
 TEST(parser_front_ends_agree_on_nonzero_underflow_policy) {
     const std::string doc = "-1e-400";
-    pjson::ParseError error;
-    (void)pjson::parse(doc, error);
+    pJsonParser::Error error;
+    (void)pJsonParser().parse(doc, error);
     CHECK(!error.ok);
-    CHECK_EQ(error.code, pjson::ParseError::NumberRange);
+    CHECK_EQ(error.code, pJsonParser::Error::NumberRange);
     CHECK(pjson_test::parse(doc.data(), doc.size()) == nullptr);
     std::istringstream in(doc);
     CHECK(pjson_test::parseStream(in) == nullptr);
 
     CountingHandler h1;
-    CHECK(!pjson::parseSax(doc, h1));
+    CHECK(!pJsonParser().parseSax(doc, h1));
     std::istringstream saxStream(doc);
     CountingHandler h2;
-    CHECK(!pjson::parseSaxStream(saxStream, h2));
+    CHECK(!pJsonParser().parseSaxStream(saxStream, h2));
 
-    pjson::ParseOptions lossy;
-    lossy.numberPolicy = pjson::ParseOptions::AllowLossyNumbers;
+    pJsonParser::Options lossy;
+    lossy.numberPolicy = pJsonParser::Options::AllowLossyNumbers;
     CHECK(pjson_test::parse(doc, lossy) != nullptr);
     std::istringstream lossyStream(doc);
     CHECK(pjson_test::parseStream(lossyStream, lossy) != nullptr);
     CountingHandler h3;
-    CHECK(pjson::parseSax(doc, h3, lossy));
+    CHECK(pJsonParser(lossy).parseSax(doc, h3));
     std::istringstream lossySaxStream(doc);
     CountingHandler h4;
-    CHECK(pjson::parseSaxStream(lossySaxStream, h4, lossy));
+    CHECK(pJsonParser(lossy).parseSaxStream(lossySaxStream, h4));
 }

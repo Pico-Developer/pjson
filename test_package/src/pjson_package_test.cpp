@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <pjson.h>
+#include <pjson_parser.h>
 
 #include <string>
 
@@ -12,8 +13,8 @@ int main() {
     ByteDance::pjson value;
     value["packaged"] = true;
 
-    ByteDance::pjson::ParseError error;
-    const ByteDance::pjson parsed = ByteDance::pjson::parse(value.toString(), error);
+    ByteDance::pJsonParser::Error error;
+    const ByteDance::pjson parsed = ByteDance::pJsonParser().parse(value.toString(), error);
     bool packaged = false;
     // A successful package preserves the sentinel property through a round
     // trip and keeps the public header macro in sync with the linked library.

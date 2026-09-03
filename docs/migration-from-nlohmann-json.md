@@ -15,13 +15,14 @@ using json = nlohmann::json;
 
 // After
 #include "pjson.h"
+#include "pjson_parser.h"
 using ByteDance::pjson;
+using ByteDance::pJsonParser;
 ```
 
-pjson requires C++11 or newer. It is a compiled library: link `pjson::pjson`
-or compile `pjsonlib/src/pjson.cpp` with the application in addition to
-including `pjson.h`. Those two files are the canonical API and behavior
-sources; generated documentation and examples are explanatory.
+pjson requires C++11 or newer. It is a compiled library; link `pjson::pjson`,
+which contains the core, parser, serialization, Pointer, Patch, and schema
+translation units. Include `pjson_parser.h` only where parsing is needed.
 
 ## API mapping at a glance
 
@@ -29,9 +30,9 @@ sources; generated documentation and examples are explanatory.
 |---|---|---|
 | `json j;` | `pjson j;` | Both start as JSON `null`. |
 | `json::object()` / `json::array()` | `pjson::object()` / `pjson::array()` | Factories return an empty object/array value. |
-| `json::parse(text)` | `pjson::parse(text)` | Returns a `pjson` value; failure yields JSON `null`. |
-| `json::parse(text, nullptr, false)` | `pjson::parse(text, error)` | Pass a `ParseError` to detect failure vs. a real `null`. |
-| `input >> j` or `json::parse(input)` | `pjson::parseStream(input, error)` | Builds a DOM and buffers the complete input. |
+| `json::parse(text)` | `pJsonParser().parse(text)` | Returns a `pjson` value; failure yields JSON `null`. |
+| `json::parse(text, nullptr, false)` | `pJsonParser().parse(text, error)` | Pass a `pJsonParser::Error` to detect failure vs. a real `null`. |
+| `input >> j` or `json::parse(input)` | `pJsonParser().parseStream(input, error)` | Builds a DOM and buffers the complete input. |
 | `j.dump()` | `j.toString()` | Compact output. |
 | `j.dump(indent, ch, ensure_ascii)` | `j.toString(options)` | Configure a `SerializeOptions` value explicitly. |
 | `out << j` | `j.write(out[, options])` | Returns `void`; inspect stream state. |
@@ -46,7 +47,7 @@ sources; generated documentation and examples are explanatory.
 | `j.push_back(value)` | `j.pushBack(value)` | Promotes to an array and appends a value. |
 | `j.erase(key/index)` | `j.erase(key/index)` | Returns `bool`; an array index is `size_t`. |
 | range iteration | `forEachMember`/`forEachElement`, or `size()` + `find(index)` | No public raw-container access. |
-| `json::sax_parse(...)` | `pjson::parseSax(...)` / `parseSaxStream(...)` | `parseSaxStream()` is the incremental stream path. |
+| `json::sax_parse(...)` | `pJsonParser().parseSax(...)` / `parseSaxStream(...)` | `parseSaxStream()` is the incremental stream path. |
 | `j = j.patch(patch)` | `j.applyPatch(patch[, error][, options])` | Mutates atomically; `PatchOptions` bounds amplification. |
 | `j.merge_patch(patch)` | `j.applyMergePatch(patch[, error][, options])` | Atomic RFC 7396 with the same limits. |
 | external JSON Schema library | `pJsonSchemaValidator v(schema[, options]); v.validate(value[, errors])` | Standalone validator; subset by default, with required Draft 2020-12 vocabularies via `Options::draft2020()`. |
@@ -57,13 +58,13 @@ sources; generated documentation and examples are explanatory.
 
 All DOM parse and stream-parse overloads return a `pjson` **by value** that owns
 its subtree and frees it on destruction — no smart pointer, no `delete`. The
-terse overloads return JSON `null` on failure; pass a `ParseError` to tell
+terse overloads return JSON `null` on failure; pass a `pJsonParser::Error` to tell
 failure apart from a successfully parsed literal `null`. Move the value to
 transfer ownership into another document.
 
 ```cpp
-pjson::ParseError error;
-pjson document = pjson::parse(text, error);
+pJsonParser::Error error;
+pjson document = pJsonParser().parse(text, error);
 if (!error.ok) {
     report(error.message, error.offset, error.line, error.column);
     return;
@@ -76,17 +77,17 @@ including embedded NUL bytes. `parseStream()` buffers one complete document.
 Pass `pjson&` or `const pjson&` when code only borrows the parsed document, and
 `std::move` the returned value to transfer ownership into another tree.
 
-Allocator-aware overloads take a borrowed `pjson::Allocator&`. That allocator
+An allocator-aware `pJsonParser` constructor takes a borrowed `pjson::Allocator&`. That allocator
 must outlive the returned value and every descendant. A directly constructed
 root remains caller-owned; a parser-created value is bound to, and freed
-through, the allocator passed to `parse()`. SAX parsing builds no persistent DOM
-and has no allocator overload.
+through, the allocator selected by the parser. SAX parsing builds no persistent
+DOM and does not use the parser's allocator.
 
-### `ParseError` is reset on every reporting call
+### `pJsonParser::Error` is reset on every reporting call
 
-`ParseError::offset` is a zero-based byte offset. `line` and `column` are
+`pJsonParser::Error::offset` is a zero-based byte offset. `line` and `column` are
 one-based, and `column` counts bytes. `code` is a stable machine-facing
-category. Every parse overload that accepts a `ParseError&` resets all fields
+category. Every parse overload that accepts a `pJsonParser::Error&` resets all fields
 before doing work. Success leaves:
 
 ```text
@@ -104,14 +105,14 @@ unpaired UTF-16 surrogates, upper- or mixed-case keywords, raw control
 characters in strings, malformed UTF-8, invalid number grammar, comments,
 trailing commas, `NaN`, `Infinity`, and trailing non-whitespace content.
 
-`ParseOptions` contains resource budgets and duplicate-key policy only:
+`pJsonParser::Options` contains resource budgets and duplicate-key policy only:
 
 ```cpp
-pjson::ParseOptions options;
+pJsonParser::Options options;
 options.maxDepth = 512;
 options.maxNodes = 1000000;
 options.maxInputBytes = size_t(64) * 1024 * 1024;
-options.duplicateKeys = pjson::ParseOptions::RejectDuplicateKeys;
+options.duplicateKeys = pJsonParser::Options::RejectDuplicateKeys;
 ```
 
 `maxNodes == 0` and `maxInputBytes == 0` mean unlimited. A non-positive
@@ -128,10 +129,10 @@ To preserve nlohmann/json's usual keep-last behavior without weakening RFC
 8259 validation:
 
 ```cpp
-pjson::ParseError error;
-pjson::ParseOptions options;
-options.duplicateKeys = pjson::ParseOptions::KeepLastDuplicate;
-pjson document = pjson::parse(text, error, options);
+pJsonParser::Error error;
+pJsonParser::Options options;
+options.duplicateKeys = pJsonParser::Options::KeepLastDuplicate;
+pjson document = pJsonParser(options).parse(text, error);
 ```
 
 ## Reading without mutation
@@ -201,7 +202,7 @@ if (!root.tryGet("count", count) || !root.tryGet("big", big) ||
 
 Integer tokens above `INT64_MAX` (up to `UINT64_MAX`) become the unsigned kind.
 Tokens beyond `UINT64_MAX`, and non-finite floats, are rejected by default (see
-`ParseOptions::AllowLossyNumbers` and `SerializeOptions::NonFinitePolicy`). An
+`pJsonParser::Options::AllowLossyNumbers` and `SerializeOptions::NonFinitePolicy`). An
 integer read as `double` may lose precision beyond `2^53`.
 
 ### Building and editing
@@ -288,7 +289,7 @@ with `maxInputBytes` but buffers the document. `parseSaxStream()` reads
 incrementally and retains no DOM. SAX callbacks receive borrowed string/key
 references valid only for the duration of the callback. Returning `false` from
 a callback cancels parsing; the public call then returns `false` and populates
-`ParseError` when supplied.
+`pJsonParser::Error` when supplied.
 
 ## JSON Schema validation modes
 
@@ -343,9 +344,9 @@ ignored.
 
 ## Suggested migration sequence
 
-1. Replace parse results with a `pjson` value plus a `ParseError`, and check
+1. Replace parse results with a `pjson` value plus a `pJsonParser::Error`, and check
    `error.ok` before using the value.
-2. Replace exception-based parse handling with `ParseError`, remembering that
+2. Replace exception-based parse handling with `pJsonParser::Error`, remembering that
    reporting calls reset it on entry.
 3. Remove permissive parser flags; pjson always enforces RFC 8259 syntax.
 4. Choose a duplicate-key policy and explicit resource budgets.

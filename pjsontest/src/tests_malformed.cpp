@@ -17,6 +17,7 @@
 // without throwing and (where meaningful) report a sensible error offset.
 //
 #include "pjson.h"
+#include "pjson_parser.h"
 #include "test_harness.h"
 #include "test_util.h"
 
@@ -238,7 +239,7 @@ TEST(malformed_invalid_utf8) {
 // Error offsets point at the offending byte.
 //===----------------------------------------------------------------------===//
 TEST(malformed_error_offsets) {
-    pjson::ParseError err;
+    pJsonParser::Error err;
 
     CHECK(!pjson_test::parse("[1, 2, ]", err));
     CHECK_EQ(err.offset, size_t(7)); // the ']' after a trailing comma
@@ -277,7 +278,7 @@ TEST(malformed_partial_tree_teardown_is_leak_free) {
         R"([{"a":1},{"b":2},{"c":3},])",
     };
     for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
-        pjson::ParseError err;
+        pJsonParser::Error err;
         CHECK(pjson_test::parse(cases[i], err) == nullptr);
         CHECK(!err.ok);
     }

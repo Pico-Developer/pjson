@@ -1,5 +1,6 @@
 #include "benchmark_build_config.h"
 #include "pjson.h"
+#include "pjson_parser.h"
 
 #include <algorithm>
 #include <chrono>
@@ -27,6 +28,7 @@
 namespace {
 
     using ByteDance::pjson;
+    using ByteDance::pJsonParser;
 
     // -------------------------------------------------------------------------
     // Benchmark data and anti-optimization state
@@ -372,8 +374,8 @@ namespace {
         workload.name = name;
         workload.origin = origin;
         workload.jsonText = jsonText;
-        pjson::ParseError parseError;
-        workload.parsed = pjson::parse(workload.jsonText, parseError);
+        pJsonParser::Error parseError;
+        workload.parsed = pJsonParser().parse(workload.jsonText, parseError);
         if (!parseError.ok) {
             std::cerr << "failed to parse benchmark workload: " << name << "\n";
             std::exit(1);
@@ -431,8 +433,8 @@ namespace {
                 continue;
             }
 
-            pjson::ParseError parseError;
-            pjson parsed = pjson::parse(jsonText, parseError);
+            pJsonParser::Error parseError;
+            pjson parsed = pJsonParser().parse(jsonText, parseError);
             if (!parseError.ok) {
                 std::cerr << "warning: benchmark input is not valid JSON and was skipped: "
                           << inputFiles[i] << "\n";
@@ -754,8 +756,8 @@ namespace {
             const Workload& workload = workloads[i];
 
             const RunStats parseStats = measure(workload.jsonText, [&workload]() {
-                pjson::ParseError parseError;
-                pjson parsed = pjson::parse(workload.jsonText, parseError);
+                pJsonParser::Error parseError;
+                pjson parsed = pJsonParser().parse(workload.jsonText, parseError);
                 if (!parseError.ok) {
                     std::cerr << "benchmark parse failed for " << workload.name << "\n";
                     std::exit(1);

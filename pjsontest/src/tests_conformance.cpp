@@ -19,6 +19,7 @@
 //     configured or fetched locally
 //
 #include "pjson.h"
+#include "pjson_parser.h"
 #include "test_harness.h"
 #include "test_util.h"
 
@@ -56,8 +57,8 @@ namespace {
 
     // Uses unbounded size/node budgets so the conformance corpus measures grammar rather than
     // deployment limits; the production recursion guard remains active for stack safety.
-    pjson::ParseOptions conformanceOptions() {
-        pjson::ParseOptions opts;
+    pJsonParser::Options conformanceOptions() {
+        pJsonParser::Options opts;
         // Keep the production recursion guard. Some implementation-defined
         // corpus files intentionally contain extreme nesting; they are skipped
         // below, while y_/n_ files remain bounded by the safe default.
@@ -67,7 +68,7 @@ namespace {
         // RFC 8259 says object names SHOULD be unique but does not make
         // duplicates a grammar error. Use keep-last for the external syntax
         // corpus while the public default policy rejects duplicates.
-        opts.duplicateKeys = pjson::ParseOptions::KeepLastDuplicate;
+        opts.duplicateKeys = pJsonParser::Options::KeepLastDuplicate;
         return opts;
     }
 
@@ -80,7 +81,7 @@ namespace {
     void expectConformanceParse(const Expectation& tc) {
         ::pjson_test::current().checks += 1;
 
-        pjson::ParseError err;
+        pJsonParser::Error err;
         pjson_test::Parsed parsed = pjson_test::parse(tc.document, err, conformanceOptions());
 
         if (tc.shouldParse) {
@@ -236,7 +237,7 @@ namespace {
         const std::string payload = readFile(path);
         ::pjson_test::current().checks += 1;
 
-        pjson::ParseError err;
+        pJsonParser::Error err;
         pjson_test::Parsed parsed = pjson_test::parse(payload, err, conformanceOptions());
 
         if (shouldParse && parsed == nullptr) {

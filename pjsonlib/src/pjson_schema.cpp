@@ -25,6 +25,7 @@
 // activates the required Draft 2020-12 vocabularies and meta-schema policy.
 //===----------------------------------------------------------------------===//
 #include "pjson_schema.h"
+#include "pjson_parser.h"
 #include "pjson_schema_builtins.h"
 #include "pjson_schema_dialect.h"
 #include "pjson_schema_regex.h"
@@ -149,8 +150,8 @@ namespace {
         std::string text;
         if (!builtinSchemaText(stripFragment(uri), text))
             return false;
-        pjson::ParseError error;
-        output = pjson::parse(text, error);
+        pJsonParser::Error error;
+        output = pJsonParser().parse(text, error);
         return error.ok;
     }
 

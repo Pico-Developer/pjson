@@ -10,16 +10,17 @@
 // Referenced by docs/05-parsing-and-errors.md.
 //
 #include "pjson.h"
+#include "pjson_parser.h"
 
 #include <iostream>
 
 using namespace ByteDance;
 
 // Attempts one parse and prints either its compact form or the precise failure
-// location. Reporting parse APIs reset ParseError on entry.
-static void tryParse(const char* label, const std::string& text, const pjson::ParseOptions& opt) {
-    pjson::ParseError err;
-    pjson doc = pjson::parse(text, err, opt);
+// location. Reporting parse APIs reset pJsonParser::Error on entry.
+static void tryParse(const char* label, const std::string& text, const pJsonParser::Options& opt) {
+    pJsonParser::Error err;
+    pjson doc = pJsonParser(opt).parse(text, err);
     std::cout << label << ": ";
     if (err.ok) {
         pjson::SerializeOptions compact;
@@ -34,7 +35,7 @@ static void tryParse(const char* label, const std::string& text, const pjson::Pa
 // Exercises invalid syntax, duplicate-key policy, and a nesting-depth budget.
 int main() {
     // --- JSON syntax -------------------------------------------------------
-    pjson::ParseOptions defaults;
+    pJsonParser::Options defaults;
     tryParse("trailing comma", "[1, 2, ]", defaults);
     tryParse("uppercase keyword", "NULL", defaults);
     std::string rawTab = "\"a\tb\"";
@@ -42,13 +43,13 @@ int main() {
 
     // Duplicate policy does not relax the JSON grammar.
     tryParse("duplicate (reject)", R"({"id":1,"id":2})", defaults);
-    pjson::ParseOptions keepLast;
-    keepLast.duplicateKeys = pjson::ParseOptions::KeepLastDuplicate;
+    pJsonParser::Options keepLast;
+    keepLast.duplicateKeys = pJsonParser::Options::KeepLastDuplicate;
     tryParse("duplicate (keep last)", R"({"id":1,"id":2})", keepLast);
 
     // --- Resource limits --------------------------------------------------
     // Guard against runaway nesting.
-    pjson::ParseOptions shallow;
+    pJsonParser::Options shallow;
     shallow.maxDepth = 3;
     tryParse("deep nesting (maxDepth=3)", "[[[[1]]]]", shallow);
     return 0;

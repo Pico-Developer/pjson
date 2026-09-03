@@ -17,6 +17,7 @@
 // number policy, and explicit non-finite floating-point handling.
 //
 #include "pjson.h"
+#include "pjson_parser.h"
 #include "test_harness.h"
 #include "test_util.h"
 
@@ -137,13 +138,13 @@ TEST(uint_vector_assignment_and_append) {
 //===----------------------------------------------------------------------===//
 TEST(number_above_uint64_policy) {
     const std::string doc = "18446744073709551616"; // UINT64_MAX + 1
-    pjson::ParseError err;
+    pJsonParser::Error err;
     pjson_test::Parsed rejected = pjson_test::parse(doc, err);
     CHECK(rejected == nullptr);
     CHECK(!err.ok);
 
-    pjson::ParseOptions lossy;
-    lossy.numberPolicy = pjson::ParseOptions::AllowLossyNumbers;
+    pJsonParser::Options lossy;
+    lossy.numberPolicy = pJsonParser::Options::AllowLossyNumbers;
     pjson_test::Parsed allowed = pjson_test::parse(doc, lossy);
     CHECK(allowed != nullptr);
     if (allowed)

@@ -17,28 +17,24 @@
 //
 // This header is NOT installed and is not part of the public API. It defines
 // the pjsonImpl friend struct and shared internal aliases so the library
-// implementation can span multiple translation units (pjson.cpp for the DOM,
-// parser, and serializer; pjson_schema*.cpp for JSON Schema validation) while
-// keeping the public pjson.h declaration-focused.
+// implementation can span the DOM, serialization, Pointer, and Patch
+// translation units while keeping the public pjson.h declaration-focused.
+// Parser implementation details live in pjson_parser_internal.h and depend on
+// this core header; this header never depends on the parser.
 //===----------------------------------------------------------------------===//
 #ifndef PRAVEENJSON_INTERNAL_H
 #define PRAVEENJSON_INTERNAL_H
 
 #include "pjson.h"
 
-#include <istream>
-#include <limits>
 #include <map>
 #include <memory>
 #include <ostream>
-#include <regex>
-#include <set>
 #include <string>
-#include <utility>
 #include <vector>
 
 //===----------------------------------------------------------------------===//
-// pjsonImpl — private DOM, parsing, ownership, and encoding helpers.
+// pjsonImpl — private DOM, ownership, and serialization helpers.
 //
 // Keeping implementation-only DOM operations in one friend struct leaves
 // pjson.h declaration-focused while allowing these helpers to maintain DOM
@@ -48,36 +44,6 @@ struct ByteDance::pjsonImpl {
     // Public APIs deliberately hide the owning container representation.
     typedef std::vector<pjson*> ArrayStorage;
     typedef std::map<std::string, pjson*> ObjectStorage;
-
-    // Parser state threaded through the recursive-descent scanner: the input
-    // buffer, cursor, options, current/maximum nesting depth, a running count
-    // of allocated nodes (bounded by maxNodes to stop memory-amplification
-    // attacks), and the first error encountered (if any).
-    struct ParseCtx {
-        const char* src;
-        size_t pos;
-        size_t end;
-        pjson::ParseOptions::DuplicateKeyPolicy duplicateKeys;
-        pjson::ParseOptions::NumberPolicy numberPolicy;
-        int depth;
-        int maxDepth;
-        size_t nodeCount;
-        size_t maxNodes; // 0 = unlimited
-        pjson::Allocator* allocator;
-        bool failed;
-        size_t errPos;
-        std::string errMsg;
-    };
-
-    // Result of the shared DOM/SAX numeric-token conversion step. Grammar is
-    // scanned by each cursor, then this type/policy decision is made once.
-    struct ParsedNumber {
-        enum Kind { SignedInteger, UnsignedInteger, FloatingPoint };
-        Kind kind;
-        int64_t signedValue;
-        uint64_t unsignedValue;
-        double floatingValue;
-    };
 
     // One suspended container in the iterative serializer. Exactly one of
     // array/object is active according to isObject; the associated cursor
@@ -93,35 +59,8 @@ struct ByteDance::pjsonImpl {
         ObjectStorage::const_reverse_iterator objectReverseIt;
     };
 
-    static bool _isWhitespace(char c);
-    static void _appendUtf8(uint32_t aCodePoint, std::string& aOut);
-    static bool _hex4(const char* aSrc, size_t aStart, uint32_t& aOut);
     static int _utf8Len(const char* src, size_t pos, size_t end);
     static std::string _formatDouble(double aValue);
-    static bool _parseDouble(const std::string& aText, double& aValue,
-                             bool* aUnderflowToZero = nullptr);
-    static bool _convertNumberToken(const std::string& aText, bool aIsFloat,
-                                    pjson::ParseOptions::NumberPolicy aPolicy,
-                                    ParsedNumber& aResult, const char*& aErrorMessage);
-
-    static bool _fail(ParseCtx& c, size_t aPos, const char* aMsg);
-    static pjson* _newNode(ParseCtx& c); // budget-checked allocation (nullptr on overflow)
-    static bool _peek(ParseCtx& c, char& aOut);
-    static bool _skipColon(ParseCtx& c);
-    static bool _parseValue(ParseCtx& c, pjson*& aOut);
-    static bool _parseString(ParseCtx& c, pjson*& aOut);
-    static bool _extractString(ParseCtx& c, std::string& aOut);
-    static bool _decodeStringBody(ParseCtx& c, std::string& aOut, bool bStopAtQuote);
-    static bool _parseKeyword(ParseCtx& c, pjson*& aOut);
-    static bool _parseNumber(ParseCtx& c, pjson*& aOut);
-    static bool _parseArray(ParseCtx& c, pjson*& aOut);
-    static bool _parseObject(ParseCtx& c, pjson*& aOut);
-    // Parse entry points return the document by value (JSON null on failure);
-    // aErr, when non-null, receives the structured outcome.
-    static pjson _parseTop(const char* aSrc, size_t aSize, const pjson::ParseOptions& aOpts,
-                           pjson::ParseError* aErr, pjson::Allocator& aAlloc);
-    static pjson _parseStream(std::istream& aIn, const pjson::ParseOptions& aOpts,
-                              pjson::ParseError* aErr, pjson::Allocator& aAlloc);
     template <typename Sink>
     static bool _writeEscapedTo(Sink& aOut, const std::string& aIn, bool bEscapeNonAscii);
     template <typename Sink>
@@ -135,10 +74,6 @@ struct ByteDance::pjsonImpl {
                              const pjson::SerializeOptions& aOpts);
     static bool _writeValue(std::ostream& aOut, const pjson& aValue,
                             const pjson::SerializeOptions& aOpts);
-    static bool _parseSaxTop(const char* aSrc, size_t aSize, pjson::SaxHandler& aHandler,
-                             const pjson::ParseOptions& aOpts, pjson::ParseError* aErr);
-    static bool _parseSaxStream(std::istream& aIn, pjson::SaxHandler& aHandler,
-                                const pjson::ParseOptions& aOpts, pjson::ParseError* aErr);
 
     // Internal typed/storage access keeps representation and permissive
     // conversion helpers out of the public API. Callers first establish type.
@@ -173,7 +108,7 @@ struct ByteDance::pjsonImpl {
     static void _destroyNode(pjson* aValue) noexcept;
 
     // Internal origin-aware owning pointer. Replaces the former public
-    // pjsonImpl::OwnedNode/ValueDeleter: parse and the mutation helpers still get
+    // pjsonImpl::OwnedNode/ValueDeleter: parser and mutation helpers still get
     // RAII cleanup during construction, but no smart pointer leaks into the
     // public API. Destruction routes through _destroyNode so allocator-backed
     // and ordinary `new` roots are both freed correctly.
@@ -207,17 +142,4 @@ struct ByteDance::pjsonImpl {
 typedef ByteDance::pjson::jsonType jsonType;
 typedef ByteDance::pjsonImpl::ArrayStorage PJSONARRAY;
 typedef ByteDance::pjsonImpl::ObjectStorage PJSONMAP;
-typedef ByteDance::pjson::ParseOptions ParseOptions;
-typedef ByteDance::pjson::ParseError ParseError;
-typedef ByteDance::pjson::SaxHandler SaxHandler;
-typedef ByteDance::pjsonImpl::ParseCtx ParseCtx;
-
-// PJSON-SEC-001: the DOM and buffered/streaming SAX parsers use bounded native
-// recursion, so an arbitrarily large configured maxDepth (up to INT_MAX) could
-// exhaust the native stack. Clamp any configured depth to a conservative ceiling
-// proven safe on every supported platform. A value <= 0 still means a one-level
-// limit. Callers that need deeper documents cannot disable this memory-safety
-// ceiling; it is intentionally not configurable.
-static const int kParseDepthHardLimit = 1024;
-
 #endif /* !PRAVEENJSON_INTERNAL_H */

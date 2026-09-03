@@ -18,6 +18,7 @@
 // they exercise unusually expensive paths without introducing timing flakes.
 //===----------------------------------------------------------------------===//
 #include "pjson.h"
+#include "pjson_parser.h"
 #include "test_harness.h"
 #include "test_util.h"
 
@@ -131,7 +132,7 @@ TEST(pathological_mixed_numeric_equality_is_exact_above_binary64_integer_precisi
 // caller opts in to its lossy conversion to zero.
 TEST(pathological_very_long_numeric_tokens) {
     const size_t digitCount = 65536;
-    pjson::ParseError err;
+    pJsonParser::Error err;
 
     const std::string longMantissa = "1." + std::string(digitCount, '0');
     auto mantissa = pjson_test::parse(longMantissa, err);
@@ -174,9 +175,9 @@ TEST(pathological_very_long_numeric_tokens) {
     const std::string hugeNegativeExponent = "1e-" + std::string(digitCount, '9');
     CHECK(pjson_test::parse(hugeNegativeExponent, err) == nullptr);
     CHECK(!err.ok);
-    CHECK_EQ(err.code, pjson::ParseError::NumberRange);
-    pjson::ParseOptions lossy;
-    lossy.numberPolicy = pjson::ParseOptions::AllowLossyNumbers;
+    CHECK_EQ(err.code, pJsonParser::Error::NumberRange);
+    pJsonParser::Options lossy;
+    lossy.numberPolicy = pJsonParser::Options::AllowLossyNumbers;
     auto underflow = pjson_test::parse(hugeNegativeExponent, err, lossy);
     CHECK(underflow != nullptr);
     CHECK(err.ok);
@@ -206,11 +207,11 @@ TEST(pathological_binary64_halfway_rounding) {
         {"2.47032822920623272088284396434110686182529901307162382212792841250337753635104376e-324",
          std::numeric_limits<double>::denorm_min()},
     };
-    pjson::ParseOptions lossy;
-    lossy.numberPolicy = pjson::ParseOptions::AllowLossyNumbers;
+    pJsonParser::Options lossy;
+    lossy.numberPolicy = pJsonParser::Options::AllowLossyNumbers;
     for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
-        pjson::ParseError error;
-        pjson value = pjson::parse(cases[i].text, error, lossy);
+        pJsonParser::Error error;
+        pjson value = pJsonParser(lossy).parse(cases[i].text, error);
         CHECK(error.ok);
         CHECK_EQ(doubleValue(value), cases[i].expected);
     }
@@ -234,8 +235,8 @@ TEST(pathological_random_binary64_round_trips_bit_exactly) {
             continue;
         pjson node;
         node = value;
-        pjson::ParseError error;
-        pjson reparsed = pjson::parse(node.toString(), error);
+        pJsonParser::Error error;
+        pjson reparsed = pJsonParser().parse(node.toString(), error);
         CHECK(error.ok);
         double result = 0.0;
         CHECK(reparsed.tryGet(result));
@@ -314,10 +315,10 @@ TEST(pathological_wide_array_node_budget_boundary) {
     const std::string json = makeFlatArray(width);
     CHECK_EQ(json.size(), width * 2U + 1U);
 
-    pjson::ParseOptions opts;
+    pJsonParser::Options opts;
     opts.maxNodes = width + 1U;
     opts.maxInputBytes = json.size();
-    pjson::ParseError err;
+    pJsonParser::Error err;
     auto atLimit = pjson_test::parse(json, err, opts);
     CHECK(atLimit != nullptr);
     CHECK(err.ok);
@@ -344,10 +345,10 @@ TEST(pathological_wide_object_node_budget_boundary) {
     size_t lastValueOffset = 0;
     const std::string json = makeFlatObject(width, lastValueOffset);
 
-    pjson::ParseOptions opts;
+    pJsonParser::Options opts;
     opts.maxNodes = width + 1U;
     opts.maxInputBytes = json.size();
-    pjson::ParseError err;
+    pJsonParser::Error err;
     auto atLimit = pjson_test::parse(json, err, opts);
     CHECK(atLimit != nullptr);
     CHECK(err.ok);
@@ -390,9 +391,9 @@ TEST(pathological_large_escaped_payload_and_byte_budget) {
     CHECK_EQ(raw.size(), repeats * 5U);
     CHECK_EQ(json.size(), repeats * 13U + 2U);
 
-    pjson::ParseOptions opts;
+    pJsonParser::Options opts;
     opts.maxInputBytes = json.size();
-    pjson::ParseError err;
+    pJsonParser::Error err;
     auto fromBuffer = pjson_test::parse(json, err, opts);
     CHECK(fromBuffer != nullptr);
     CHECK(err.ok);

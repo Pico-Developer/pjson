@@ -56,12 +56,12 @@ the whole suite passes under ASan/UBSan.
 Confirmed defect A.3 was real (UINT64_MAX became `1.8446744073709552e+19`).
 Added the `jsonNumberUInt` kind and full unsigned surface: `uint64_t`
 assignment/append/vectors, `isUInt()`/`isInteger()`, `tryGet(uint64_t&)`,
-`SaxHandler::onUInt`, exact signed/unsigned/double comparison
+`pJsonParser::SaxHandler::onUInt`, exact signed/unsigned/double comparison
 (`_compareNumbers` rewritten), and decimal serialization via `std::to_string`
 without a `double` round-trip. Tokens in `[INT64_MIN, INT64_MAX]` stay signed;
 `(INT64_MAX, UINT64_MAX]` are unsigned; an explicit `uint64_t` assignment keeps
 unsigned identity even for small values. Tokens outside the exact range are
-rejected by default (`ParseOptions::RejectUnrepresentableNumbers`) or, with
+rejected by default (`pJsonParser::Options::RejectUnrepresentableNumbers`) or, with
 `AllowLossyNumbers`, stored as the nearest double. Tests:
 `pjsontest/src/tests_numbers.cpp`, and both SAX/DOM front ends agree
 (`tests_depth_frontends.cpp`).
@@ -145,7 +145,7 @@ The consolidated prose table enumerating every conversion is in the README
 numeric/equality sections.
 
 ### PJSON-API-005 — Structured error model — Implemented
-`ParseError` gained a stable `Code` enum (syntax, invalid encoding, duplicate
+`pJsonParser::Error` gained a stable `Code` enum (syntax, invalid encoding, duplicate
 key, number range, depth/input/node limits, allocation failure, stream error,
 callback error, invalid argument) set alongside the existing message and
 byte/line/column. Serialization now also exposes non-throwing `SerializeError`
@@ -191,7 +191,7 @@ deterministic; order does not affect structural equality. Verified by
 Parser, serializer, patch, and schema budgets exist with a documented "zero =
 hard ceiling / unlimited" convention and checked arithmetic. This pass added the
 depth hard-ceiling clamp (SEC-001) and kept the number-policy failures
-distinguishable from malformed input via `ParseError::Code`.
+distinguishable from malformed input via `pJsonParser::Error::Code`.
 
 ### PJSON-SEC-003 — Transactional mutation — Already satisfied (verified)
 Patch/Merge Patch remain atomic (build-scratch-then-swap), now using the safe
@@ -348,9 +348,12 @@ DOM and SAX now share numeric-token classification and conversion, including
 integer kind and lossy overflow/underflow policy. Their remaining token scanning,
 Unicode, and container control flow stays separate because streaming cursors and
 DOM ownership have materially different needs; further unification remains
-tracked. Schema validation is external to `pjson`, and stateless value/numeric,
-format, and URI helpers now use focused private translation units behind the one
-public `pjson_schema.h` surface.
+tracked. Parsing now lives in the standalone `pJsonParser` class and dedicated
+`pjson_parser.cpp`; dependencies flow from parser to DOM core only. Serialization,
+JSON Pointer, and JSON Patch/Merge Patch also use focused translation units.
+Schema validation is external to `pjson`, and stateless value/numeric, format,
+and URI helpers use focused private translation units behind the one public
+`pjson_schema.h` surface. All components remain in one library target.
 
 A conventional per-node `Impl*` was evaluated and rejected. It would add another
 allocation and indirection to every value (including scalar roots and every child),

@@ -10,6 +10,7 @@
 // Referenced by docs/06-schema-validation.md.
 //
 #include "pjson.h"
+#include "pjson_parser.h"
 #include "pjson_schema.h"
 
 #include <iostream>
@@ -23,8 +24,8 @@ int main() {
     // --- Define the schema -------------------------------------------------
     // Local $defs keep shared constraints in one place; $ref resolves them by
     // RFC 6901 fragment pointers within this same schema document.
-    pjson::ParseError parseError;
-    pjson schema = pjson::parse(R"({
+    pJsonParser::Error parseError;
+    pjson schema = pJsonParser().parse(R"({
         "$defs": {
             "displayName": { "type": "string", "minLength": 1 },
             "emailAddress": { "type": "string", "pattern": "@" }
@@ -43,15 +44,15 @@ int main() {
             }
         }
     })",
-                                parseError);
+                                       parseError);
 
     // --- Validate a conforming instance -----------------------------------
-    pjson::ParseError goodError;
-    pjson good = pjson::parse(R"({
+    pJsonParser::Error goodError;
+    pjson good = pJsonParser().parse(R"({
         "name": "Ada", "age": 36, "email": "ada@example.com",
         "joined": "2025-01-02", "roles": ["admin"]
     })",
-                              goodError);
+                                     goodError);
     if (!parseError.ok || !goodError.ok) {
         std::cerr << "could not parse schema or valid example\n";
         return 1;
@@ -75,12 +76,12 @@ int main() {
     std::cout << "good is valid: " << (validator.validate(good) ? "yes" : "no") << "\n";
 
     // --- Collect failures for a non-conforming instance -------------------
-    pjson::ParseError badError;
-    pjson bad = pjson::parse(R"({
+    pJsonParser::Error badError;
+    pjson bad = pJsonParser().parse(R"({
         "name": "", "age": 200, "email": "nope",
         "joined": "2025-01-02", "roles": ["root"], "extra": 1
     })",
-                             badError);
+                                    badError);
     if (!badError.ok) {
         std::cerr << "could not parse invalid example\n";
         return 1;

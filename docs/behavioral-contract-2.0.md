@@ -4,7 +4,7 @@
 # pjson 2.0 behavioral contract
 
 Status: normative public behavior for pjson 2.0.x  
-Applies to: `pjson.h`, `pjson_schema.h`, and the `pjson::pjson` library target
+Applies to: `pjson.h`, `pjson_parser.h`, `pjson_schema.h`, and the `pjson::pjson` library target
 
 This page consolidates the guarantees that applications may rely on. The public
 headers remain authoritative for overload signatures and enum members. Examples,
@@ -101,14 +101,16 @@ constructed replacement.
 
 ## 4. Parsing contract
 
-All DOM, byte-span, buffered-stream, SAX-buffer, and incremental SAX entry points
+The separate `ByteDance::pJsonParser` owns parser configuration and consumes the
+DOM API; `pjson` does not depend on or expose parser members. All DOM, byte-span,
+buffered-stream, SAX-buffer, and incremental SAX entry points
 accept exactly one RFC 8259 JSON value followed only by JSON whitespace. They reject
 malformed UTF-8, raw string controls, invalid escapes/surrogates, non-lowercase
 literals, malformed numbers, trailing data, and (by default) duplicate object names.
 A byte-span is length-aware and may contain NUL bytes; a null source pointer is an
 `InvalidArgument` failure even when its size is zero.
 
-Default `ParseOptions` are:
+Default `pJsonParser::Options` are:
 
 | Option | Default | Zero/non-positive meaning |
 |---|---:|---|
@@ -119,7 +121,7 @@ Default `ParseOptions` are:
 | `numberPolicy` | `RejectUnrepresentableNumbers` | opt into lossy conversion explicitly |
 
 Every DOM overload returns a `pjson` value. A failed parse returns null; because valid
-JSON `null` produces the same value, use a `ParseError` overload whenever success must
+JSON `null` produces the same value, use a `pJsonParser::Error` overload whenever success must
 be distinguished. Reporting overloads reset the error first and provide a stable
 `Code`, zero-based byte offset, one-based line, one-based byte column, and unstable
 human-readable message. In-memory syntax, budget, numeric, and DOM-allocation

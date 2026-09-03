@@ -197,8 +197,8 @@ namespace pjson_test {
 #define CHECK_PARSE_FAILS(aStr)                                                                    \
     do {                                                                                           \
         ::pjson_test::current().checks += 1;                                                       \
-        ByteDance::pjson::ParseError _e;                                                           \
-        ByteDance::pjson _p = ByteDance::pjson::parse(aStr, _e);                                   \
+        ByteDance::pJsonParser::Error _e;                                                          \
+        ByteDance::pjson _p = ByteDance::pJsonParser().parse(aStr, _e);                            \
         if (_e.ok) {                                                                               \
             ::pjson_test::report_failure(__FILE__, __LINE__, "parse(" #aStr ") should fail",       \
                                          "parsed to: " + _p.toString());                           \

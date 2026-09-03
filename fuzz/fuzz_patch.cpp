@@ -8,6 +8,7 @@
 #include <string>
 
 using ByteDance::pjson;
+using ByteDance::pJsonParser;
 
 namespace {
 
@@ -15,12 +16,12 @@ namespace {
     // that are observable from fuzz-side callers.
     void exercisePatchVariant(const uint8_t* data, size_t size, const std::string& documentInput,
                               const std::string& patchInput, size_t variantOffset) {
-        const pjson::ParseOptions options =
+        const pJsonParser::Options options =
             pjson_fuzz::parseOptionsVariant(data, size, variantOffset);
-        pjson::ParseError originalError;
-        pjson::ParseError patchError;
-        pjson original = pjson::parse(documentInput, originalError, options);
-        pjson patch = pjson::parse(patchInput, patchError, options);
+        pJsonParser::Error originalError;
+        pJsonParser::Error patchError;
+        pjson original = pJsonParser(options).parse(documentInput, originalError);
+        pjson patch = pJsonParser(options).parse(patchInput, patchError);
         if (!originalError.ok || !patchError.ok)
             return;
 
@@ -47,18 +48,18 @@ namespace {
         // Successful mutation must serialize and reparse stably.
         pjson_fuzz::require(working == simple);
         const std::string compact = working.toString();
-        pjson::ParseOptions compactOptions = options;
+        pJsonParser::Options compactOptions = options;
         compactOptions.maxInputBytes = compact.size();
-        pjson::ParseError reparsedError;
-        pjson reparsed = pjson::parse(compact, reparsedError, compactOptions);
+        pJsonParser::Error reparsedError;
+        pjson reparsed = pJsonParser(compactOptions).parse(compact, reparsedError);
         pjson_fuzz::require(reparsedError.ok);
         pjson_fuzz::require(reparsed == working);
 
         const std::string pretty = working.toString(pjson::SerializeOptions::prettyPrinted());
-        pjson::ParseOptions prettyOptions = options;
+        pJsonParser::Options prettyOptions = options;
         prettyOptions.maxInputBytes = pretty.size();
-        pjson::ParseError prettyError;
-        pjson prettyParsed = pjson::parse(pretty, prettyError, prettyOptions);
+        pJsonParser::Error prettyError;
+        pjson prettyParsed = pJsonParser(prettyOptions).parse(pretty, prettyError);
         pjson_fuzz::require(prettyError.ok);
         pjson_fuzz::require(prettyParsed == working);
     }

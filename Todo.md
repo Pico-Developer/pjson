@@ -62,7 +62,7 @@ PJSON_JSON_SCHEMA_TEST_SUITE_DIR="$PWD/.test-corpora/JSON-Schema-Test-Suite" \
 ./build.sh --all --auto
 ```
 
-The last complete Debug/ASan/Release runs passed 522/522 tests. The current
+The last complete Debug/ASan/Release runs passed 529/529 tests. The current
 Draft 2020-12 manifest explicitly accounts for all 80 files in the pinned
 corpus. It executes 1,773 official cases across 437 groups with no selected-group
 skips and explicitly defers 15 whole optional files. Those cover unsupported
@@ -70,7 +70,7 @@ big-number/cross-draft behavior and unimplemented format families.
 Also verified: clang-format, clang-tidy, 20,000 schema-fuzzer runs, seven-target
 libFuzzer smoke coverage with inputs above 4 KiB, Doxygen API
 validation, relocatable static/shared CMake and pkg-config consumers, REUSE
-licensing (174/174 files), GCC, and a direct ThreadSanitizer concurrency probe.
+licensing (203/203 files), GCC, and a direct ThreadSanitizer concurrency probe.
 
 ---
 

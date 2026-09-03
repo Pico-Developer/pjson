@@ -25,6 +25,7 @@
 //===----------------------------------------------------------------------===//
 #include "pjson_schema.h"
 #include "pjson_schema_builtins.h"
+#include "pjson_schema_dialect.h"
 #include "pjson_schema_regex.h"
 #include "pjson_schema_util.h"
 
@@ -49,35 +50,9 @@ namespace {
     typedef pJsonSchemaValidator::Error SchemaError;
     typedef pJsonSchemaValidator::Options Options;
 
-    const char kDocumentedSubsetDialect[] = "urn:bytedance:pjson:schema:documented-subset:2";
-    const char kDocumentedSubsetVocabulary[] =
-        "urn:bytedance:pjson:schema:vocabulary:documented-subset:2";
-    const char kDraft2020Dialect[] = "https://json-schema.org/draft/2020-12/schema";
-
-    enum Vocabulary {
-        VCore = 1U << 0U,
-        VApplicator = 1U << 1U,
-        VUnevaluated = 1U << 2U,
-        VValidation = 1U << 3U,
-        VMetadata = 1U << 4U,
-        VFormatAnnotation = 1U << 5U,
-        VFormatAssertion = 1U << 6U,
-        VContent = 1U << 7U
-    };
-
-    struct DialectPolicy {
-        unsigned vocabularies;
-        bool refSiblings;
-        bool assertFormats;
-        DialectPolicy()
-                : vocabularies(0)
-                , refSiblings(false)
-                , assertFormats(false) {}
-    };
-
-    bool hasVocabulary(const DialectPolicy& policy, Vocabulary vocabulary) {
-        return (policy.vocabularies & static_cast<unsigned>(vocabulary)) != 0U;
-    }
+    const char* const kDocumentedSubsetDialect = documentedSubsetDialect();
+    const char* const kDocumentedSubsetVocabulary = documentedSubsetVocabulary();
+    const char* const kDraft2020Dialect = draft2020Dialect();
 
     // Recursive validation still uses native recursion for applicator keywords.
     // Keep its logical depth below a conservative stack-safe ceiling even when a
@@ -405,24 +380,6 @@ namespace {
 
     size_t resolvedByteLimit(const Options& options) {
         return options.maxResolvedBytes == 0 ? size_t(16) * 1024 * 1024 : options.maxResolvedBytes;
-    }
-
-    DialectPolicy subsetPolicy(const Options& options) {
-        DialectPolicy policy;
-        policy.vocabularies = VCore | VApplicator | VUnevaluated | VValidation | VMetadata |
-                              VFormatAnnotation | VFormatAssertion | VContent;
-        policy.refSiblings = options.refSiblings;
-        policy.assertFormats = options.validateFormats;
-        return policy;
-    }
-
-    DialectPolicy draft2020Policy(const Options& options) {
-        DialectPolicy policy;
-        policy.vocabularies = VCore | VApplicator | VUnevaluated | VValidation | VMetadata |
-                              VFormatAnnotation | VContent;
-        policy.refSiblings = true;
-        policy.assertFormats = options.validateFormats;
-        return policy;
     }
 
     bool chargeValidationWork(ValidationCtx& ctx, ErrorSink& errors, const std::string& path,
@@ -896,32 +853,6 @@ namespace {
         }
     }
 
-    bool vocabularyForUri(const std::string& uri, Vocabulary& vocabulary) {
-        static const char prefix[] = "https://json-schema.org/draft/2020-12/vocab/";
-        if (uri.compare(0, sizeof(prefix) - 1, prefix) != 0)
-            return false;
-        const std::string name = uri.substr(sizeof(prefix) - 1);
-        if (name == "core")
-            vocabulary = VCore;
-        else if (name == "applicator")
-            vocabulary = VApplicator;
-        else if (name == "unevaluated")
-            vocabulary = VUnevaluated;
-        else if (name == "validation")
-            vocabulary = VValidation;
-        else if (name == "meta-data")
-            vocabulary = VMetadata;
-        else if (name == "format-annotation")
-            vocabulary = VFormatAnnotation;
-        else if (name == "format-assertion")
-            vocabulary = VFormatAssertion;
-        else if (name == "content")
-            vocabulary = VContent;
-        else
-            return false;
-        return true;
-    }
-
     bool policyFromVocabulary(const pjson& vocabularies, const Options& options,
                               DialectPolicy& policy, std::vector<SchemaError>& errors,
                               const std::string& location) {
@@ -957,7 +888,7 @@ namespace {
                 addCompilationError(errors, SchemaError::UnsupportedVocabulary, path, "$vocabulary",
                                     "unsupported required schema vocabulary: " + uris[i]);
         }
-        policy.assertFormats = hasVocabulary(policy, VFormatAssertion);
+        policy.assertFormats = false;
         return errors.empty();
     }
 

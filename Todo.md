@@ -147,8 +147,8 @@ about 88% while preserving all serialization and randomized bit-round-trip tests
 implementations in `pjson.cpp`, with differential conformance tests guarding
 their behavior.
 
-**Progress:** numeric token classification and conversion now use one internal
-routine shared by DOM and SAX.
+**Progress:** number grammar scanning plus token classification/conversion now use
+shared internal routines across DOM and SAX.
 
 **Why:** duplicated token scanning, Unicode, and container grammar logic raises
 the chance that a future parser fix reaches only one API. The current paths are
@@ -163,21 +163,23 @@ DOM/SAX differential regression suite.
 types and callback/cancellation semantics while DOM has allocator-bound ownership
 and transactional attachment. Forcing both through one state machine would replace
 two tested paths at once. Continue extracting only independently testable lexical
-operations when a defect or measured maintenance problem justifies the churn.
+operations when a defect or measured maintenance problem justifies the churn. The
+number path is now fully shared behind buffer/stream adapters.
 
 ### [ ] MAINT-2 — Further split the stateful schema dispatcher
 
-Stateless value/numeric/regex, format, and URI helpers now live in focused
-private translation units. `validateCtx` still coordinates references, scalar
+Stateless value/numeric, regex, format, URI, and dialect/vocabulary policy helpers
+now live in focused private translation units. `validateCtx` still coordinates references, scalar
 keywords, containers, combinators, annotations, and shared budgets. Extracting
 those stateful families requires a shared private context interface and should
 be done only with the official schema and resource-budget suites green after
 each step.
 
-**Current disposition:** no further split until the per-resource dialect/vocabulary
-context is designed. Moving code before that boundary exists would spread the same
-mutable budget, diagnostic, annotation, reference-cycle, and dynamic-scope state
-across more files without reducing coupling.
+**Current disposition:** the per-resource dialect/vocabulary context is now designed
+and its stateless policy is extracted. Keep resolver ownership and the remaining
+stateful dispatcher together: moving them would spread the same mutable budget,
+diagnostic, annotation, reference-cycle, and dynamic-scope state across more files
+without reducing coupling.
 
 ### [~] MAINT-3 — Keep implementation details out of the public DOM API
 

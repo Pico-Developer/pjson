@@ -149,6 +149,78 @@ namespace {
         const char* what() const noexcept override { return "SAX parse aborted"; }
     };
 
+    template <typename Cursor>
+    bool scanJsonNumber(Cursor& cursor, std::string& text, bool& isFloat,
+                        const char*& errorMessage) {
+        text.clear();
+        isFloat = false;
+        errorMessage = nullptr;
+        char ch = 0;
+        if (!cursor.peek(ch)) {
+            errorMessage = "unexpected end of input; expected a value";
+            return false;
+        }
+        if (ch == '-') {
+            if (!cursor.take(ch))
+                return false;
+            text.push_back(ch);
+            if (!cursor.peek(ch)) {
+                errorMessage = "invalid number: expected digit";
+                return false;
+            }
+        }
+        if (ch == '0') {
+            if (!cursor.take(ch))
+                return false;
+            text.push_back(ch);
+        } else if (ch >= '1' && ch <= '9') {
+            do {
+                if (!cursor.take(ch))
+                    return false;
+                text.push_back(ch);
+            } while (cursor.peek(ch) && ch >= '0' && ch <= '9');
+        } else {
+            errorMessage = "invalid number: expected digit";
+            return false;
+        }
+        if (cursor.peek(ch) && ch == '.') {
+            isFloat = true;
+            if (!cursor.take(ch))
+                return false;
+            text.push_back(ch);
+            if (!cursor.peek(ch) || ch < '0' || ch > '9') {
+                errorMessage = "invalid number: '.' must be followed by a digit";
+                return false;
+            }
+            do {
+                if (!cursor.take(ch))
+                    return false;
+                text.push_back(ch);
+            } while (cursor.peek(ch) && ch >= '0' && ch <= '9');
+        }
+        if (cursor.peek(ch) && (ch == 'e' || ch == 'E')) {
+            isFloat = true;
+            if (!cursor.take(ch))
+                return false;
+            text.push_back(ch);
+            if (cursor.peek(ch) && (ch == '+' || ch == '-')) {
+                if (!cursor.take(ch))
+                    return false;
+                text.push_back(ch);
+            }
+            if (!cursor.peek(ch) || ch < '0' || ch > '9') {
+                errorMessage = "invalid number: exponent must have a digit";
+                return false;
+            }
+            do {
+                if (!cursor.take(ch))
+                    return false;
+                text.push_back(ch);
+            } while (cursor.peek(ch) && ch >= '0' && ch <= '9');
+        }
+        return true;
+    }
+
     // Non-owning cursor over a contiguous input buffer. Positions are byte
     // offsets, while line/column values are maintained incrementally.
     class BufferSaxCursor {
@@ -454,65 +526,15 @@ namespace {
         // overflow int64 are preserved as finite doubles rather than truncated.
         bool parseNumberValue(bool emit) {
             std::string text;
-            char ch = 0;
-            if (!cur.peek(ch))
-                return fail("unexpected end of input; expected a value");
-
-            if (ch == '-') {
-                if (!getChar(ch))
-                    return false;
-                text.push_back(ch);
-                if (!cur.peek(ch))
-                    return fail("invalid number: expected digit");
-            }
-
-            if (ch == '0') {
-                if (!getChar(ch))
-                    return false;
-                text.push_back(ch);
-            } else if (ch >= '1' && ch <= '9') {
-                do {
-                    if (!getChar(ch))
-                        return false;
-                    text.push_back(ch);
-                } while (cur.peek(ch) && ch >= '0' && ch <= '9');
-            } else {
-                return fail("invalid number: expected digit");
-            }
-
             bool isFloat = false;
-            if (cur.peek(ch) && ch == '.') {
-                isFloat = true;
-                if (!getChar(ch))
-                    return false;
-                text.push_back(ch);
-                if (!cur.peek(ch) || ch < '0' || ch > '9')
-                    return fail("invalid number: '.' must be followed by a digit");
-                do {
-                    if (!getChar(ch))
-                        return false;
-                    text.push_back(ch);
-                } while (cur.peek(ch) && ch >= '0' && ch <= '9');
-            }
-
-            if (cur.peek(ch) && (ch == 'e' || ch == 'E')) {
-                isFloat = true;
-                if (!getChar(ch))
-                    return false;
-                text.push_back(ch);
-                if (cur.peek(ch) && (ch == '+' || ch == '-')) {
-                    if (!getChar(ch))
-                        return false;
-                    text.push_back(ch);
-                }
-                if (!cur.peek(ch) || ch < '0' || ch > '9')
-                    return fail("invalid number: exponent must have a digit");
-                do {
-                    if (!getChar(ch))
-                        return false;
-                    text.push_back(ch);
-                } while (cur.peek(ch) && ch >= '0' && ch <= '9');
-            }
+            const char* scanError = nullptr;
+            struct Adapter {
+                SaxParser& parser;
+                bool peek(char& ch) { return parser.cur.peek(ch); }
+                bool take(char& ch) { return parser.getChar(ch); }
+            } adapter = {*this};
+            if (!scanJsonNumber(adapter, text, isFloat, scanError))
+                return scanError == nullptr ? false : fail(scanError);
 
             if (!reserveNode())
                 return false;
@@ -4333,47 +4355,26 @@ bool pjsonImpl::_parseString(ParseCtx& c, pjson*& aOut) {
 /*static*/
 bool pjsonImpl::_parseNumber(ParseCtx& c, pjson*& aOut) {
     const size_t begin = c.pos;
-    size_t i = c.pos;
+    struct Adapter {
+        ParseCtx& context;
+        bool peek(char& ch) {
+            if (context.pos >= context.end)
+                return false;
+            ch = context.src[context.pos];
+            return true;
+        }
+        bool take(char& ch) {
+            if (!peek(ch))
+                return false;
+            ++context.pos;
+            return true;
+        }
+    } adapter = {c};
+    std::string text;
     bool bFloat = false;
-
-    if (i < c.end && c.src[i] == '-')
-        ++i;
-
-    // integer part: 0 or [1-9][0-9]*
-    if (i < c.end && c.src[i] == '0') {
-        ++i;
-    } else if (i < c.end && c.src[i] >= '1' && c.src[i] <= '9') {
-        while (i < c.end && c.src[i] >= '0' && c.src[i] <= '9')
-            ++i;
-    } else {
-        return _fail(c, i, "invalid number: expected digit");
-    }
-
-    // fractional part
-    if (i < c.end && c.src[i] == '.') {
-        bFloat = true;
-        ++i;
-        if (!(i < c.end && c.src[i] >= '0' && c.src[i] <= '9')) {
-            return _fail(c, i, "invalid number: '.' must be followed by a digit");
-        }
-        while (i < c.end && c.src[i] >= '0' && c.src[i] <= '9')
-            ++i;
-    }
-
-    // exponent part
-    if (i < c.end && (c.src[i] == 'e' || c.src[i] == 'E')) {
-        bFloat = true;
-        ++i;
-        if (i < c.end && (c.src[i] == '+' || c.src[i] == '-'))
-            ++i;
-        if (!(i < c.end && c.src[i] >= '0' && c.src[i] <= '9')) {
-            return _fail(c, i, "invalid number: exponent must have a digit");
-        }
-        while (i < c.end && c.src[i] >= '0' && c.src[i] <= '9')
-            ++i;
-    }
-
-    const std::string text(c.src + begin, i - begin);
+    const char* scanError = nullptr;
+    if (!scanJsonNumber(adapter, text, bFloat, scanError))
+        return _fail(c, c.pos, scanError == nullptr ? "invalid number" : scanError);
     ParsedNumber number;
     const char* message = nullptr;
     if (!_convertNumberToken(text, bFloat, c.numberPolicy, number, message))
@@ -4388,7 +4389,6 @@ bool pjsonImpl::_parseNumber(ParseCtx& c, pjson*& aOut) {
     else
         *value = number.floatingValue;
     aOut = value.release();
-    c.pos = i;
     return true;
 }
 // Parses one array under a balanced depth charge. A child remains RAII-owned

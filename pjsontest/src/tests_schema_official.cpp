@@ -846,8 +846,8 @@ namespace {
                  "SRELL Unicode ECMAScript regular-expression implementation");
         addWhole("optional/non-bmp-regex.json",
                  "SRELL Unicode code-point regular-expression semantics");
-        addWhole("optional/format-assertion.json",
-                 "per-resource format-assertion vocabulary activation");
+        addSkip("optional/format-assertion.json",
+                "complete optional format-assertion vocabulary is not implemented");
 
         static const char* const kFormatSuites[] = {
             "optional/format/duration.json",

@@ -10,6 +10,7 @@ set (INCLUDE_DIR "include")
 set (SRC_FILES ${SRC_FILES}
 ${SRC_DIR}/pjson.cpp
 ${SRC_DIR}/pjson_schema.cpp
+${SRC_DIR}/pjson_schema_dialect.cpp
 ${SRC_DIR}/pjson_schema_format.cpp
 ${SRC_DIR}/pjson_schema_regex.cpp
 ${SRC_DIR}/pjson_schema_uri.cpp

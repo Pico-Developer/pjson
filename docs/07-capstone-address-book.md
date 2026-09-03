@@ -118,7 +118,7 @@ book["contacts"][0]["emails"] += "ada@lovelace.org";
 // Find the contact with id == 2 without creating anything.
 const pjson* contacts = book.find("contacts");
 for (size_t i = 0; contacts && i < contacts->size(); ++i) {
-    const pjson* contact = contacts->find(static_cast<int>(i));
+    const pjson* contact = contacts->findIndex(i);
     int64_t id = 0;
     std::string name;
     if (contact && contact->tryGet("id", id) && id == int64_t(2) &&

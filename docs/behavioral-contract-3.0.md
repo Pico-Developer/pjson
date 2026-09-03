@@ -9,7 +9,9 @@ Applies to: `pjson.h`, `pjson_parser.h`, `pjson_schema.h`, and the
 
 The behavioral guarantees from the
 [pjson 2.0 behavioral contract](behavioral-contract-2.0.md) continue to apply
-except where the 3.0 API intentionally moves parsing into `pJsonParser`.
+except where the 3.0 API intentionally moves parsing into `pJsonParser`. The
+additive `findIndex(size_t)` lookup is the non-narrowing read path for
+non-negative array indexes; signed `find(int)` retains end-relative negatives.
 
 ## ABI baseline
 
@@ -51,9 +53,16 @@ allocator. Parser objects are copyable, movable, and reusable; moved-from parser
 remain usable with default options and the default allocator. `pjson` has no
 dependency on the parser.
 
+SAX cancellation and ordinary callback exceptions report `CallbackError`;
+allocation failures, including `std::bad_alloc` thrown by a callback, report
+`AllocationFailure`; and input-stream failures report `StreamError`. These failures
+do not escape the SAX API boundary.
+
 ## Symbol visibility
 
 `PJSON_API` marks supported binary interfaces. Shared builds export that surface
 and use hidden visibility for implementation symbols. Static builds leave the
 annotation empty. Consumers should not link against unexported implementation
-symbols or include headers under `pjsonlib/src`.
+symbols or include headers under `pjsonlib/src`. The exported CMake target,
+pkg-config metadata, and Conan package propagate `PJSON_SHARED` for shared
+consumers; `PJSON_BUILDING_LIBRARY` is reserved for the library build itself.

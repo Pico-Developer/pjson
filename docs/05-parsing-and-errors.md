@@ -105,8 +105,9 @@ JSON `null` value, always test `err.ok` (not the value) when the input might
 legitimately be `null`.
 
 The same options and error coordinates apply to `parseSax()` and the incremental
-`parseSaxStream()` API. SAX callback cancellation and callback exceptions are
-converted into an ordinary parse failure rather than escaping. Streaming avoids
+`parseSaxStream()` API. SAX callback cancellation and ordinary callback exceptions
+become `CallbackError`; `std::bad_alloc` becomes `AllocationFailure`. Input-stream
+failures become `StreamError`. None escapes the SAX boundary. Streaming avoids
 buffering the complete document, but current tokens, nesting state, duplicate-key
 tracking, and handler-owned state still consume memory.
 

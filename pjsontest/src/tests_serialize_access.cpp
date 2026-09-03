@@ -22,6 +22,7 @@
 #include <climits>
 #include <cstdint>
 #include <ios>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -356,6 +357,13 @@ TEST(value_find_index_const_and_wrong_types_do_not_mutate) {
                   "const indexed lookup must return const pjson*");
     CHECK(constArray.find(0) != nullptr);
     CHECK(constArray.find(1) == nullptr);
+    const size_t zero = 0;
+    const size_t one = 1;
+    static_assert(std::is_same<decltype(constArray.findIndex(zero)), const pjson*>::value,
+                  "const size_t lookup must return const pjson*");
+    CHECK(constArray.findIndex(zero) != nullptr);
+    CHECK(constArray.findIndex(one) == nullptr);
+    CHECK(constArray.findIndex(std::numeric_limits<size_t>::max()) == nullptr);
 
     pjson empty;
     empty.resetTo(pjson::jsonArray);

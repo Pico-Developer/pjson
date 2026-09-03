@@ -13,8 +13,8 @@
 // limitations under the License.
 //
 //===----------------------------------------------------------------------===//
-// Storage-focused tests: inline scalar copy/move/swap behavior, transitions
-// between inline and heap-backed kinds, and noexcept trait guarantees.
+// Storage-focused tests: scalar copy/move/swap behavior, transitions between
+// scalar and container kinds, and ABI/noexcept guarantees.
 //
 #include "pjson.h"
 #include "test_harness.h"
@@ -27,6 +27,8 @@
 
 using namespace ByteDance;
 
+static_assert(std::is_nothrow_default_constructible<pjson>::value,
+              "pjson null construction must remain noexcept");
 static_assert(std::is_nothrow_move_constructible<pjson>::value,
               "pjson move construction must remain noexcept");
 static_assert(sizeof(pjson) == sizeof(void*) * 2, "pjson ABI must remain a two-pointer handle");
@@ -63,7 +65,7 @@ namespace {
 } // namespace
 
 //===----------------------------------------------------------------------===//
-// Copy and move preserve inline scalar values and reset moved-from sources
+// Copy and move preserve scalar values and reset moved-from sources
 //===----------------------------------------------------------------------===//
 
 TEST(storage_copy_constructs_inline_scalars) {

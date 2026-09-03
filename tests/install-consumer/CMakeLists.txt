@@ -27,6 +27,8 @@ set_target_properties(pjson_install_consumer PROPERTIES
     CXX_STANDARD 11
     CXX_STANDARD_REQUIRED ON
     CXX_EXTENSIONS OFF
+    CXX_VISIBILITY_PRESET hidden
+    VISIBILITY_INLINES_HIDDEN YES
 )
 
 # Register a runtime check in addition to proving that discovery and linking

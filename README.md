@@ -507,7 +507,8 @@ pjson j = pJsonParser().parse(
          "friends": [ {"name":"Bob"}, {"name":"Cid"} ] })");
 ```
 
-Read arrays through `size()` and `find(index)`. These operations do not resize or
+Read arrays through `size()` and `findIndex(size_t)`. Use `find(int)` only when
+you need negative indexes from the end. These operations do not resize or
 otherwise modify the array:
 
 ```cpp
@@ -515,7 +516,7 @@ if (const pjson* scores = j.find("scores")) {
     std::cout << "count = " << scores->size() << "\n"; // 3
     for (size_t i = 0; i < scores->size(); ++i) {
         int64_t value = 0;
-        const pjson* element = scores->find(static_cast<int>(i));
+        const pjson* element = scores->findIndex(i);
         if (element && element->tryGet(value))
             std::cout << value << " "; // 90 82 77
     }
@@ -526,7 +527,7 @@ if (const pjson* scores = j.find("scores")) {
 ```cpp
 if (const pjson* friends = j.find("friends")) {
     for (size_t i = 0; i < friends->size(); ++i) {
-        const pjson* entry = friends->find(static_cast<int>(i));
+        const pjson* entry = friends->findIndex(i);
         std::string name;
         if (entry && entry->tryGet("name", name))
             std::cout << name << " "; // Bob Cid
@@ -553,7 +554,7 @@ pjson mixed = pJsonParser().parse(R"({ "mixed": [1, "two", 3, true, 4] })");
 if (const pjson* node = mixed.find("mixed")) {
     for (size_t i = 0; i < node->size(); ++i) {
         int64_t value = 0;
-        const pjson* element = node->find(static_cast<int>(i));
+        const pjson* element = node->findIndex(i);
         if (element && element->tryGet(value))
             std::cout << value << " ";
     }

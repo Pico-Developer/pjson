@@ -146,7 +146,7 @@ namespace {
                 const std::size_t elementCount = value.size();
                 hash = mixHash(hash, static_cast<std::uint64_t>(elementCount));
                 for (std::size_t i = 0; i < elementCount; ++i) {
-                    const pjson* child = value.find(static_cast<int>(i));
+                    const pjson* child = value.findIndex(i);
                     if (child != NULL) {
                         hash = mixHash(hash, traversePjson(*child));
                     }
@@ -699,15 +699,15 @@ namespace {
 #endif
 
         for (std::size_t i = 0; i < workloads.size(); ++i) {
-            report["workloads"][static_cast<int>(i)]["name"] = workloads[i].name;
-            report["workloads"][static_cast<int>(i)]["origin"] = workloads[i].origin;
-            report["workloads"][static_cast<int>(i)]["input_bytes"] =
+            report["workloads"][i]["name"] = workloads[i].name;
+            report["workloads"][i]["origin"] = workloads[i].origin;
+            report["workloads"][i]["input_bytes"] =
                 static_cast<uint64_t>(workloads[i].jsonText.size());
         }
         for (std::size_t i = 0; i < results.size(); ++i) {
             const BenchmarkResult& result = results[i];
             const Workload& workload = workloads[result.workloadIndex];
-            pjson& row = report["results"][static_cast<int>(i)];
+            pjson& row = report["results"][i];
             row["library"] = result.library;
             row["workload"] = workload.name;
             row["operation"] = result.operation;

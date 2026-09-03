@@ -383,7 +383,7 @@ bool pjsonImpl::_writeEscapedTo(Sink& aOut, const std::string& aIn, bool bEscape
         }
 
         uint32_t codePoint = ch & (byteCount == 2 ? 0x1FU : byteCount == 3 ? 0x0FU : 0x07U);
-        for (int k = 1; k < byteCount; ++k)
+        for (size_t k = 1; k < static_cast<size_t>(byteCount); ++k)
             codePoint = (codePoint << 6U) | (static_cast<unsigned char>(aIn[i + k]) & 0x3FU);
         if (codePoint <= 0xFFFFU) {
             if (!writeUnicodeEscape(aOut, static_cast<uint16_t>(codePoint)))

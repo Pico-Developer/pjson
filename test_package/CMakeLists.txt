@@ -15,3 +15,7 @@ find_package(pjson CONFIG REQUIRED)
 add_executable(pjson_package_test src/pjson_package_test.cpp)
 target_compile_features(pjson_package_test PRIVATE cxx_std_11)
 target_link_libraries(pjson_package_test PRIVATE pjson::pjson)
+set_target_properties(pjson_package_test PROPERTIES
+    CXX_VISIBILITY_PRESET hidden
+    VISIBILITY_INLINES_HIDDEN YES
+)

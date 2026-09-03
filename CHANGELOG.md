@@ -31,6 +31,16 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases follow
   declared by `PJSON_ABI_VERSION` and shared-library `SOVERSION`.
 - Added `Allocator::ImplementationAllocation` for non-null `pjson` private-state
   allocation. Custom allocators must accept the appended allocation kind.
+- Default construction is now explicitly `noexcept`, matching its
+  allocation-free null-sentinel implementation and the 3.0 ABI contract.
+- Added non-vivifying `findIndex(size_t)` lookup so large non-negative indexes
+  never narrow through the signed `find(int)` API.
+- Shared-library consumers now receive `PJSON_SHARED` through both exported
+  CMake targets, pkg-config, and Conan metadata, and public declarations retain
+  default visibility even when the consumer compiles with hidden visibility.
+- SAX parsing now reports `AllocationFailure` rather than `CallbackError` when
+  allocation fails in parser state or a callback, and reports exception-enabled
+  input-stream failures as `StreamError`.
 - **BREAKING (behavior):** mutable array subscripting no longer clamps a
   negative index before the beginning to element zero. It now throws
   `std::out_of_range` without mutation; valid negative indexes still count from

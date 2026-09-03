@@ -492,7 +492,9 @@ source_files() {
         "${SCRIPT_DIR}/bench" "${SCRIPT_DIR}/fuzz" "${SCRIPT_DIR}/test_package" \
         "${SCRIPT_DIR}/tests" \
         \( -name '*.cpp' -o -name '*.h' \) -type f \
-        ! -path '*/third_party/*' | sort
+        ! -path '*/third_party/*' \
+        ! -path '*/build/*' \
+        ! -path '*/out/*' | sort
 }
 
 # ---------------------------------------------------------------------------

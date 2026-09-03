@@ -60,6 +60,7 @@ REQUIRED_MEMBERS = {
     "contains": 2,
     "hasIndex": 1,
     "find": 6,
+    "findIndex": 2,
     "forEachMember": 2,
     "forEachElement": 2,
     "at": 4,

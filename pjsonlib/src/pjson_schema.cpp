@@ -601,7 +601,7 @@ namespace {
             return false;
         std::set<std::string> seen;
         for (size_t i = 0; i < value.size(); ++i) {
-            const pjson* item = value.find(static_cast<int>(i));
+            const pjson* item = value.findIndex(i);
             if (item == nullptr || !item->isString() || !seen.insert(strOf(*item)).second)
                 return false;
         }
@@ -614,7 +614,7 @@ namespace {
         if (!isUniqueStringArray(value, false))
             return false;
         for (size_t i = 0; i < value.size(); ++i) {
-            const pjson* item = value.find(static_cast<int>(i));
+            const pjson* item = value.findIndex(i);
             if (item == nullptr || !validTypeName(strOf(*item)))
                 return false;
         }
@@ -625,9 +625,9 @@ namespace {
         if (!value.isArray())
             return false;
         for (size_t i = 0; i < value.size(); ++i) {
-            const pjson* left = value.find(static_cast<int>(i));
+            const pjson* left = value.findIndex(i);
             for (size_t j = i + 1; left != nullptr && j < value.size(); ++j) {
-                const pjson* right = value.find(static_cast<int>(j));
+                const pjson* right = value.findIndex(j);
                 if (right != nullptr && *left == *right)
                     return true;
             }
@@ -665,7 +665,7 @@ namespace {
         };
         const auto rejectSchemaArrayValues = [&](const char* keyword, const pjson& value) {
             for (size_t i = 0; i < value.size() && errors.size() < limit; ++i) {
-                const pjson* child = value.find(static_cast<int>(i));
+                const pjson* child = value.findIndex(i);
                 if (child == nullptr || !isSchemaNode(*child))
                     addCompilationError(errors, SchemaError::InvalidSchema,
                                         absoluteSchemaLocation(
@@ -1188,7 +1188,7 @@ namespace {
                 if (array == nullptr || !array->isArray())
                     continue;
                 for (size_t i = 0; i < array->size(); ++i) {
-                    const pjson* child = array->find(static_cast<int>(i));
+                    const pjson* child = array->findIndex(i);
                     if (child != nullptr)
                         compileSchemaResource(
                             *child, currentResource, currentBase, index, errors, options,
@@ -1201,7 +1201,7 @@ namespace {
             if (const pjson* items = node.find("items")) {
                 if (items->isArray()) {
                     for (size_t i = 0; i < items->size(); ++i) {
-                        const pjson* child = items->find(static_cast<int>(i));
+                        const pjson* child = items->findIndex(i);
                         if (child != nullptr)
                             compileSchemaResource(
                                 *child, currentResource, currentBase, index, errors, options,
@@ -1561,8 +1561,8 @@ namespace {
                 if (l.size() != r.size())
                     return true;
                 for (size_t i = 0; i < l.size(); ++i) {
-                    const pjson* le = l.find(static_cast<int>(i));
-                    const pjson* re = r.find(static_cast<int>(i));
+                    const pjson* le = l.findIndex(i);
+                    const pjson* re = r.findIndex(i);
                     if (le == nullptr || re == nullptr)
                         return true;
                     Pair child = {le, re};
@@ -1830,7 +1830,7 @@ namespace {
                 for (size_t i = 0; i < t->size(); ++i) {
                     if (!chargeLoopWork(ctx, errors, path))
                         return false;
-                    const pjson* e = t->find(static_cast<int>(i));
+                    const pjson* e = t->findIndex(i);
                     if (e && e->isString()) {
                         if (!names.empty())
                             names += ", ";
@@ -1864,7 +1864,7 @@ namespace {
             if (en->isArray()) {
                 bool found = false;
                 for (size_t i = 0; i < en->size(); ++i) {
-                    const pjson* opt = en->find(static_cast<int>(i));
+                    const pjson* opt = en->findIndex(i);
                     if (opt == nullptr)
                         continue;
                     bool equal = false;
@@ -1993,8 +1993,8 @@ namespace {
                     bool dup = false;
                     for (size_t i = 0; i < arrSize && !dup; ++i) {
                         for (size_t j = i + 1; j < arrSize; ++j) {
-                            const pjson* a = node.find(static_cast<int>(i));
-                            const pjson* b = node.find(static_cast<int>(j));
+                            const pjson* a = node.findIndex(i);
+                            const pjson* b = node.findIndex(j);
                             bool equal = false;
                             if (a && b && !equalWithBudget(*a, *b, ctx, errors, path, equal))
                                 return false;
@@ -2018,8 +2018,8 @@ namespace {
                 for (size_t i = 0; i < prefixCount && !ctx.aborted; ++i) {
                     if (!chargeLoopWork(ctx, errors, path))
                         return false;
-                    const pjson* elem = node.find(static_cast<int>(i));
-                    const pjson* sub = prefixItems->find(static_cast<int>(i));
+                    const pjson* elem = node.findIndex(i);
+                    const pjson* sub = prefixItems->findIndex(i);
                     if (elem && sub) {
                         evaluated.items.insert(i);
                         validateCtx(*elem, *sub, pointerAppend(path, std::to_string(i)), errors,
@@ -2034,8 +2034,8 @@ namespace {
                     for (size_t i = 0; i < count && !ctx.aborted; ++i) {
                         if (!chargeLoopWork(ctx, errors, path))
                             return false;
-                        const pjson* elem = node.find(static_cast<int>(i));
-                        const pjson* sub = items->find(static_cast<int>(i));
+                        const pjson* elem = node.findIndex(i);
+                        const pjson* sub = items->findIndex(i);
                         if (elem && sub) {
                             evaluated.items.insert(i);
                             validateCtx(*elem, *sub, pointerAppend(path, std::to_string(i)), errors,
@@ -2046,7 +2046,7 @@ namespace {
                     for (size_t i = prefixCount; i < arrSize && !ctx.aborted; ++i) {
                         if (!chargeLoopWork(ctx, errors, path))
                             return false;
-                        const pjson* elem = node.find(static_cast<int>(i));
+                        const pjson* elem = node.findIndex(i);
                         if (elem) {
                             evaluated.items.insert(i);
                             validateCtx(*elem, *items, pointerAppend(path, std::to_string(i)),
@@ -2062,7 +2062,7 @@ namespace {
                 for (size_t i = 0; i < arrSize && !ctx.aborted; ++i) {
                     if (!chargeLoopWork(ctx, errors, path))
                         return false;
-                    const pjson* elem = node.find(static_cast<int>(i));
+                    const pjson* elem = node.findIndex(i);
                     if (elem == nullptr)
                         continue;
                     std::vector<SchemaError> scratch;
@@ -2110,7 +2110,7 @@ namespace {
                     for (size_t i = 0; i < req->size(); ++i) {
                         if (!chargeLoopWork(ctx, errors, path))
                             return false;
-                        const pjson* k = req->find(static_cast<int>(i));
+                        const pjson* k = req->findIndex(i);
                         if (k && k->isString() && !node.hasKey(strOf(*k)))
                             errors.push_back(validationError(
                                 ctx, schema, SchemaError::ObjectConstraint, path, "required",
@@ -2206,7 +2206,7 @@ namespace {
                     for (size_t i = 0; i < list->size(); ++i) {
                         if (!chargeLoopWork(ctx, errors, path))
                             return false;
-                        const pjson* required = list->find(static_cast<int>(i));
+                        const pjson* required = list->findIndex(i);
                         if (required && required->isString() && !node.hasKey(strOf(*required)))
                             errors.push_back(validationError(
                                 ctx, schema, SchemaError::ObjectConstraint, path,
@@ -2232,7 +2232,7 @@ namespace {
                         for (size_t i = 0; i < dep->size(); ++i) {
                             if (!chargeLoopWork(ctx, errors, path))
                                 return false;
-                            const pjson* required = dep->find(static_cast<int>(i));
+                            const pjson* required = dep->findIndex(i);
                             if (required && required->isString() && !node.hasKey(strOf(*required)))
                                 errors.push_back(validationError(
                                     ctx, schema, SchemaError::ObjectConstraint, path,
@@ -2346,7 +2346,7 @@ namespace {
                 for (size_t i = 0; i < allOf->size(); ++i) {
                     if (!chargeLoopWork(ctx, errors, path))
                         return false;
-                    const pjson* sub = allOf->find(static_cast<int>(i));
+                    const pjson* sub = allOf->findIndex(i);
                     if (sub) {
                         SchemaAnnotations branchAnnotations;
                         const bool branchValid = validateCtx(node, *sub, path, errors, ctx, nullptr,
@@ -2367,7 +2367,7 @@ namespace {
                 for (size_t i = 0; i < anyOf->size(); ++i) {
                     if (!chargeLoopWork(ctx, errors, path))
                         return false;
-                    const pjson* sub = anyOf->find(static_cast<int>(i));
+                    const pjson* sub = anyOf->findIndex(i);
                     if (sub == nullptr)
                         continue;
                     std::vector<SchemaError> discarded;
@@ -2405,7 +2405,7 @@ namespace {
                 for (size_t i = 0; i < oneOf->size(); ++i) {
                     if (!chargeLoopWork(ctx, errors, path))
                         return false;
-                    const pjson* sub = oneOf->find(static_cast<int>(i));
+                    const pjson* sub = oneOf->findIndex(i);
                     if (sub == nullptr)
                         continue;
                     std::vector<SchemaError> discarded;
@@ -2481,7 +2481,7 @@ namespace {
                         continue;
                     if (!chargeLoopWork(ctx, errors, path))
                         return false;
-                    const pjson* item = node.find(static_cast<int>(i));
+                    const pjson* item = node.findIndex(i);
                     const std::string itemPath = pointerAppend(path, std::to_string(i));
                     if (unevaluated->isBool() && !boolOf(*unevaluated)) {
                         errors.push_back(validationError(ctx, schema, SchemaError::ArrayConstraint,

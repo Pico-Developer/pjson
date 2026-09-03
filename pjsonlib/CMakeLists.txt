@@ -65,9 +65,13 @@ set_target_properties(${TARGET_NAME} PROPERTIES
     SOVERSION "${PJSON_ABI_VERSION}"
     CXX_EXTENSIONS OFF
     EXPORT_NAME pjson
-    CXX_VISIBILITY_PRESET hidden
-    VISIBILITY_INLINES_HIDDEN YES
 )
+if(BUILD_SHARED_LIBS)
+    set_target_properties(${TARGET_NAME} PROPERTIES
+        CXX_VISIBILITY_PRESET hidden
+        VISIBILITY_INLINES_HIDDEN YES
+    )
+endif()
 
 # Consumers get the include dir whether they build in-tree or install.
 target_include_directories(${TARGET_NAME} PUBLIC
@@ -133,6 +137,11 @@ set(PJSON_PC_PREFIX_FROM_PCFILEDIR ".")
 cmake_path(RELATIVE_PATH PJSON_PC_PREFIX_FROM_PCFILEDIR
     BASE_DIRECTORY "${PJSON_INSTALL_PKGCONFIGDIR}")
 cmake_path(NORMAL_PATH PJSON_PC_PREFIX_FROM_PCFILEDIR)
+if(BUILD_SHARED_LIBS)
+    set(PJSON_PC_COMPILE_FLAGS "-DPJSON_SHARED")
+else()
+    set(PJSON_PC_COMPILE_FLAGS "")
+endif()
 configure_file(
     "${CMAKE_CURRENT_LIST_DIR}/../cmake/pjson.pc.in"
     "${CMAKE_CURRENT_BINARY_DIR}/pjson.pc"

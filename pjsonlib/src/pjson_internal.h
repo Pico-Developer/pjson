@@ -153,7 +153,7 @@ struct ByteDance::pjsonImpl {
         std::string* _pValueString;
     };
 
-    pjsonImpl()
+    pjsonImpl() noexcept
             : _disposeNext(nullptr)
             , _eType(pjson::jsonNull)
             , _valueUInt(0) {}

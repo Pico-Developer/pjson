@@ -163,7 +163,7 @@ if (root.tryGet("name", name))
 
 if (const pjson* items = root.find("items")) {
     for (size_t i = 0; i < items->size(); ++i) {
-        if (const pjson* item = items->find(static_cast<int>(i)))
+        if (const pjson* item = items->findIndex(i))
             consume(*item);
     }
 }

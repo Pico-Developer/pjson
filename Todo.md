@@ -71,7 +71,7 @@ PJSON_JSON_SCHEMA_TEST_SUITE_DIR="$PWD/.test-corpora/JSON-Schema-Test-Suite" \
 ```
 
 The last complete contributor gate built Release and ASan/UBSan Debug, then
-passed all 537 CTest checks in sanitized Debug (536 compiled C++ cases plus the
+passed all 538 CTest checks in sanitized Debug (537 compiled C++ cases plus the
 benchmark-tool regression suite). The current
 Draft 2020-12 manifest explicitly accounts for all 80 files in the pinned
 corpus. It executes 1,773 official cases across 437 groups with no selected-group
@@ -86,6 +86,9 @@ insertion against ancestor/descendant aliasing, made `canSwap()` accurately
 reject overlapping nodes without violating its `noexcept` contract, fixed
 duplicate custom-meta-schema resource accounting, normalized relative URI dot
 segments, and made benchmark comparison reject missing/duplicate/invalid rows.
+A follow-up ABI audit added non-narrowing `findIndex(size_t)`, corrected SAX
+allocation/stream error categories, made null construction explicitly `noexcept`,
+and verified shared-import visibility through CMake, pkg-config, and Conan.
 
 ---
 

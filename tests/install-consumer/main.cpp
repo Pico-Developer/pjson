@@ -9,6 +9,14 @@
 #include <string>
 #include <vector>
 
+static_assert(PJSON_ABI_VERSION == 3, "unexpected pjson ABI generation");
+static_assert(sizeof(ByteDance::pjson) == sizeof(void*) * 2,
+              "installed pjson must use the two-pointer ABI");
+static_assert(sizeof(ByteDance::pJsonParser) == sizeof(void*),
+              "installed parser must use the one-pointer ABI");
+static_assert(sizeof(ByteDance::pJsonSchemaValidator) == sizeof(void*),
+              "installed schema validator must use the one-pointer ABI");
+
 // ---- Installed-package consumer smoke test -----------------------------
 
 // Verifies that an external C++11 consumer sees coherent headers, version

@@ -39,8 +39,8 @@
  * literal null.
  *
  * operator[] is the auto-vivifying builder API. For observation without
- * mutation, use find(), findPointer(), hasKey(), hasIndex(), at(), contains(),
- * forEachMember()/forEachElement(), or tryGet().
+ * mutation, use find(), findIndex(), findPointer(), hasKey(), hasIndex(), at(),
+ * contains(), forEachMember()/forEachElement(), or tryGet().
  * tryGet() requires the requested stored type and leaves its output unchanged
  * on failure; integer-to-double widening and exact signed/unsigned integer
  * reads are permitted. Containers expose query
@@ -85,8 +85,9 @@
  * The allocator is borrowed and must outlive every bound value. allocate() must
  * return non-null storage honoring the requested size and alignment or throw;
  * deallocate() receives matching metadata and must not throw. The interface
- * covers pjson nodes and string/array/object wrapper objects, not their internal
- * standard-library allocations or transient algorithm scratch space.
+ * covers pjson nodes, non-null opaque implementation objects, and
+ * string/array/object wrapper objects, not their internal standard-library
+ * allocations or transient algorithm scratch space.
  */
 
 /**

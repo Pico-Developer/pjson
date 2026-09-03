@@ -13,7 +13,7 @@ accurate audit; a small number rest on assumptions that did not match the
 The production-readiness work first targeted 2.0.0. The subsequent opaque-state
 ABI migration targets **3.0.0** because it intentionally replaces the public
 object layout and establishes a new ABI baseline. The current suite contains
-536 compiled cases plus the benchmark-tool regression and is exercised under
+537 compiled cases plus the benchmark-tool regression and is exercised under
 normal Debug and Release builds and AddressSanitizer + UndefinedBehaviorSanitizer.
 
 ## Legend
@@ -130,10 +130,11 @@ build-then-swap strong-guarantee pattern. Tests: `tests_dom_api.cpp`.
 ### PJSON-API-003 — Separate safe reads from vivifying writes — Implemented
 Added checked, non-vivifying `at(key)` and `at(index)` (throwing
 `std::out_of_range`) and `contains()` alongside the existing non-vivifying
-`find`/`hasKey`/`hasIndex`/`tryGet`. Positive `at(size_t)` uses `size_t`;
-negative lookup stays on the separate signed `find(int)`/`tryGet(int, …)` API.
-Mutable indexing now also has a `size_t` overload; valid negative `int` indexes
-count from the end and an index before the beginning throws without mutation.
+`find`/`findIndex`/`hasKey`/`hasIndex`/`tryGet`. Positive `at(size_t)` and
+`findIndex(size_t)` avoid index narrowing; negative lookup stays on the separate
+signed `find(int)`/`tryGet(int, …)` API. Mutable indexing also has a `size_t`
+overload; valid negative `int` indexes count from the end and an index before the
+beginning throws without mutation.
 Tests: `tests_dom_api.cpp`, `tests_build.cpp`, and `tests_mutation.cpp`.
 
 ### PJSON-API-004 — Type conversion and equality — Implemented

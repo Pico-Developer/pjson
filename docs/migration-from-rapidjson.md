@@ -164,7 +164,7 @@ Iterate without exposing container internals:
 
 ```cpp
 for (size_t i = 0; i < array.size(); ++i) {
-    if (const pjson* value = array.find(static_cast<int>(i)))
+    if (const pjson* value = array.findIndex(i))
         consume(*value);
 }
 

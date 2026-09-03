@@ -131,7 +131,7 @@ namespace ByteDance {
                                     token, "JSON Pointer array index is out of range");
                         return nullptr;
                     }
-                    current = current->find(static_cast<int>(index));
+                    current = current->findIndex(index);
                     continue;
                 }
                 failPointer(error, pjson::PointerError::ExpectedContainer, pointer, i, token,

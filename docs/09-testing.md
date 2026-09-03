@@ -106,7 +106,7 @@ one executable:
 | `tests_fuzz.cpp` | deterministic (seeded) fuzzing |
 | `tests_pathological.cpp` | extreme numbers, wide payloads, and exact budget boundaries |
 | `tests_conformance.cpp` | inline RFC 8259 cases + optional nst/JSONTestSuite corpus |
-| `tests_storage.cpp` | inline scalar storage, copy/move/swap, type transitions |
+| `tests_storage.cpp` | opaque scalar storage, copy/move/swap, type transitions, ABI shape |
 | `tests_allocator.cpp` | custom allocator ownership, failure, move, and swap behavior |
 | `tests_streaming.cpp` | SAX events, chunk boundaries, cancellation, direct stream output |
 | `tests_serialize_access.cpp` | serialization options and non-vivifying access |

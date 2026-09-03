@@ -100,3 +100,5 @@ class PjsonConan(ConanFile):
         self.cpp_info.set_property("cmake_target_name", "pjson::pjson")
         self.cpp_info.set_property("pkg_config_name", "pjson")
         self.cpp_info.libs = ["pjson"]
+        if self.options.shared:
+            self.cpp_info.defines.append("PJSON_SHARED")

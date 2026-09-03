@@ -6,6 +6,7 @@
 #include <cerrno>
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <exception>
 #include <locale>
 #include <new>
@@ -203,7 +204,7 @@ void pJsonParserImpl::appendUtf8(uint32_t aCodePoint, std::string& aOut) {
 // Decodes exactly four hexadecimal bytes at aStart into one UTF-16 code unit.
 bool pJsonParserImpl::hex4(const char* aSrc, size_t aStart, uint32_t& aOut) {
     aOut = 0;
-    for (int k = 0; k < 4; ++k) {
+    for (size_t k = 0; k < size_t(4); ++k) {
         char h = aSrc[aStart + k];
         aOut <<= 4;
         if (h >= '0' && h <= '9')
@@ -393,19 +394,63 @@ namespace {
         return pJsonParser::Error::Syntax;
     }
 
+    pJsonParser::Error::Code classifyParseMessage(const char* message) noexcept {
+        if (std::strstr(message, "UTF-8") != nullptr ||
+            std::strstr(message, "surrogate") != nullptr ||
+            std::strstr(message, "escape") != nullptr || std::strstr(message, "\\u") != nullptr)
+            return pJsonParser::Error::InvalidEncoding;
+        if (std::strstr(message, "duplicate object key") != nullptr)
+            return pJsonParser::Error::DuplicateKey;
+        if (std::strstr(message, "out of range") != nullptr ||
+            std::strstr(message, "number") != nullptr)
+            return pJsonParser::Error::NumberRange;
+        if (std::strstr(message, "nesting depth") != nullptr)
+            return pJsonParser::Error::DepthLimit;
+        if (std::strstr(message, "maxInputBytes") != nullptr)
+            return pJsonParser::Error::InputLimit;
+        if (std::strstr(message, "maxNodes") != nullptr ||
+            std::strstr(message, "node budget") != nullptr)
+            return pJsonParser::Error::NodeLimit;
+        if (std::strstr(message, "out of memory") != nullptr)
+            return pJsonParser::Error::AllocationFailure;
+        if (std::strstr(message, "stream read") != nullptr)
+            return pJsonParser::Error::StreamError;
+        return pJsonParser::Error::Syntax;
+    }
+
     // Publishes a buffer-parser failure, deriving source coordinates from the
     // authoritative byte offset. A null destination intentionally discards it.
     // The code is classified from the message unless an explicit one is given.
     void setParseError(pJsonParser::Error* err, const char* src, size_t size, size_t offset,
                        const std::string& message,
-                       pJsonParser::Error::Code code = pJsonParser::Error::None) {
+                       pJsonParser::Error::Code code = pJsonParser::Error::None) noexcept {
         if (!err)
             return;
         err->ok = false;
         err->code = code == pJsonParser::Error::None ? classifyParseMessage(message) : code;
         err->offset = offset;
         lineAndColumn(src, size, offset, err->line, err->column);
-        err->message = message;
+        try {
+            err->message = message;
+        } catch (...) {
+            err->message.clear();
+        }
+    }
+
+    void setParseError(pJsonParser::Error* err, const char* src, size_t size, size_t offset,
+                       const char* message,
+                       pJsonParser::Error::Code code = pJsonParser::Error::None) noexcept {
+        if (!err)
+            return;
+        err->ok = false;
+        err->code = code == pJsonParser::Error::None ? classifyParseMessage(message) : code;
+        err->offset = offset;
+        lineAndColumn(src, size, offset, err->line, err->column);
+        try {
+            err->message = message;
+        } catch (...) {
+            err->message.clear();
+        }
     }
 
     // Restores the public error object to its successful, start-of-input state.
@@ -645,7 +690,15 @@ namespace {
                 _failed = true;
                 return false;
             }
-            const std::streambuf::int_type next = buffer->sbumpc();
+            std::streambuf::int_type next;
+            try {
+                next = buffer->sbumpc();
+            } catch (const std::bad_alloc&) {
+                throw;
+            } catch (...) {
+                _failed = true;
+                return false;
+            }
             if (!std::streambuf::traits_type::eq_int_type(next,
                                                           std::streambuf::traits_type::eof())) {
                 _buffer[0] = std::streambuf::traits_type::to_char_type(next);
@@ -713,13 +766,16 @@ namespace {
                     return fail("stream read failed");
                 return true;
             } catch (const SaxParseCancelled&) {
-                return failNoThrow("SAX parse aborted");
+                return failNoThrow("SAX parse aborted", pJsonParser::Error::CallbackError);
             } catch (const std::bad_alloc&) {
-                return failNoThrow("SAX parse ran out of memory");
+                return failNoThrow("SAX parse ran out of memory",
+                                   pJsonParser::Error::AllocationFailure);
             } catch (const std::exception&) {
-                return failNoThrow("SAX parse or handler exception");
+                return failNoThrow("SAX parse or handler exception",
+                                   pJsonParser::Error::CallbackError);
             } catch (...) {
-                return failNoThrow("SAX parse or handler exception");
+                return failNoThrow("SAX parse or handler exception",
+                                   pJsonParser::Error::CallbackError);
             }
         }
 
@@ -1192,10 +1248,10 @@ namespace {
 
         // Catch-path diagnostics must not replace the original handler/parser
         // failure with an allocation exception while assigning the message.
-        bool failNoThrow(const char* message) noexcept {
+        bool failNoThrow(const char* message, pJsonParser::Error::Code code) noexcept {
             if (err) {
                 err->ok = false;
-                err->code = pJsonParser::Error::CallbackError;
+                err->code = code;
                 err->offset = cur.position();
                 err->line = cur.line();
                 err->column = cur.column();
@@ -1443,7 +1499,7 @@ pjson pJsonParserImpl::parseTop(const char* aSrc, size_t aSize, const pJsonParse
             return pjson(aAlloc);
         }
         // Move the parsed node's storage into a value bound to the same allocator.
-        // O(1): the value adopts the node's inline storage; the node wrapper is
+        // O(1): the value adopts the node's private implementation; the node wrapper is
         // then freed empty by OwnedNode, so no smart pointer escapes to the caller.
         pjson result(aAlloc);
         pjsonImpl::_swapStorage(result, *parsed);
@@ -1452,8 +1508,8 @@ pjson pJsonParserImpl::parseTop(const char* aSrc, size_t aSize, const pJsonParse
         setParseError(aErr, aSrc, aSize, c.pos, "parse ran out of memory",
                       pJsonParser::Error::AllocationFailure);
     } catch (const std::exception& ex) {
-        setParseError(aErr, aSrc, aSize, c.pos,
-                      std::string("parse failed with exception: ") + ex.what());
+        (void)ex;
+        setParseError(aErr, aSrc, aSize, c.pos, "parse failed with exception");
     } catch (...) {
         setParseError(aErr, aSrc, aSize, c.pos, "parse failed with exception");
     }

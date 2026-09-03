@@ -1020,7 +1020,7 @@ namespace {
         const size_t count = tests->size();
         summary.groupsRun += 1;
         for (size_t i = 0; i < count; ++i) {
-            const pjson* testCase = tests->find(static_cast<int>(i));
+            const pjson* testCase = tests->findIndex(i);
             if (testCase == NULL) {
                 recordFailure("official schema suite case shape",
                               relativePath + " :: " + groupDesc + " :: index " +
@@ -1044,7 +1044,7 @@ namespace {
 
         std::vector<std::string> seenDescriptions;
         for (size_t i = 0; i < suiteFile.size(); ++i) {
-            const pjson* groupPtr = suiteFile.find(static_cast<int>(i));
+            const pjson* groupPtr = suiteFile.findIndex(i);
             if (groupPtr == NULL) {
                 recordFailure("official schema suite group shape",
                               std::string(fileRule.relativePath) + " :: index " +
@@ -1098,7 +1098,7 @@ namespace {
         }
 
         for (size_t i = 0; i < suiteFile.size(); ++i) {
-            const pjson* group = suiteFile.find(static_cast<int>(i));
+            const pjson* group = suiteFile.findIndex(i);
             if (group == NULL) {
                 recordFailure("official schema suite group shape",
                               std::string(fileRule.relativePath) + " :: index " +

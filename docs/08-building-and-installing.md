@@ -181,6 +181,11 @@ These defaults describe a normal configure with no pre-seeded cache values.
 Use the three explicit pjson component switches in scripts so the selected
 target set does not depend on surrounding project configuration.
 
+Shared consumers should use the exported `pjson::pjson` CMake target or the
+installed `pjson.pc` file. Both propagate the private `PJSON_SHARED` import-mode
+definition required by the public visibility macro; consumers should not define
+`PJSON_BUILDING_LIBRARY`.
+
 With an empty `PJSON_FUZZING_ENGINE`, `PJSON_BUILD_FUZZERS=ON` requires Clang
 with libFuzzer on Linux/macOS. An external engine can instead be supplied
 through `PJSON_FUZZING_ENGINE`. For a small

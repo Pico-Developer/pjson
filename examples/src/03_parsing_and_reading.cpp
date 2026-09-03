@@ -62,7 +62,7 @@ int main() {
     if (scoresNode && scoresNode->isArray()) {
         for (size_t i = 0; i < scoresNode->size(); ++i) {
             int64_t value = 0;
-            const pjson* score = scoresNode->find(static_cast<int>(i));
+            const pjson* score = scoresNode->findIndex(i);
             if (score && score->tryGet(value))
                 std::cout << " " << value;
         }
@@ -85,7 +85,7 @@ int main() {
     if (const pjson* friendsNode = j.find("friends")) {
         if (friendsNode->isArray()) {
             for (size_t i = 0; i < friendsNode->size(); ++i) {
-                const pjson* friend_ = friendsNode->find(static_cast<int>(i));
+                const pjson* friend_ = friendsNode->findIndex(i);
                 pjson::StringView friendName;
                 if (friend_ && friend_->tryGet("name", friendName)) {
                     std::cout << " ";

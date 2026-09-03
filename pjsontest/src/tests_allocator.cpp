@@ -212,7 +212,7 @@ namespace {
             CHECK_EQ(&cur->getAllocator(), &aExpected);
             if (cur->isArray()) {
                 for (size_t i = 0; i < cur->size(); ++i) {
-                    const pjson* child = cur->find(static_cast<int>(i));
+                    const pjson* child = cur->findIndex(i);
                     CHECK(child != nullptr);
                     if (child != nullptr)
                         work.push_back(child);

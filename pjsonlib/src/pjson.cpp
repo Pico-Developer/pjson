@@ -131,7 +131,7 @@ void pjsonImpl::_destroyNode(pjson* aValue) noexcept {
 //===----------------------------------------------------------------------===//
 
 // Constructs an allocation-free null root using the default allocator.
-pjson::pjson()
+pjson::pjson() noexcept
         : _allocator(&pjsonImpl::_defaultAllocator())
         , _pImpl(&pjsonImpl::_nullImpl()) {}
 // Constructs an allocation-free null root backed by a caller allocator.
@@ -669,7 +669,7 @@ int pjsonImpl::_utf8Len(const char* src, size_t pos, size_t end) {
         return 0; // stray continuation / invalid lead
     if (pos + static_cast<size_t>(n) > end)
         return 0;
-    for (int k = 1; k < n; ++k) {
+    for (size_t k = 1; k < static_cast<size_t>(n); ++k) {
         unsigned char ck = static_cast<unsigned char>(src[pos + k]);
         if ((ck & 0xC0) != 0x80)
             return 0; // not a continuation byte
@@ -974,6 +974,8 @@ pjson& pjson::pushBack(pjson&& aValue) {
     // Reserve before consuming aValue so allocation failure leaves both values
     // logically unchanged. Child nodes are separately allocated, so a vector
     // reallocation cannot invalidate an aliased descendant source.
+    if (_pImpl->_pValueArray->size() == _pImpl->_pValueArray->max_size())
+        throw std::length_error("pjson array exceeds maximum size");
     _pImpl->_pValueArray->reserve(_pImpl->_pValueArray->size() + 1);
     if (child->_allocator == aValue._allocator) {
         pjsonImpl::_swapStorage(*child, aValue);
@@ -1274,6 +1276,15 @@ const pjson* pjson::find(int aIndex) const noexcept {
         position = values.size() - fromEnd;
     }
     return values[position];
+}
+pjson* pjson::findIndex(size_t aIndex) noexcept {
+    return const_cast<pjson*>(static_cast<const pjson*>(this)->findIndex(aIndex));
+}
+// Finds a non-negative array index without narrowing to int.
+const pjson* pjson::findIndex(size_t aIndex) const noexcept {
+    if (_pImpl->_eType != pjson::jsonType::jsonArray || aIndex >= _pImpl->_pValueArray->size())
+        return nullptr;
+    return (*_pImpl->_pValueArray)[aIndex];
 }
 
 // Key/index extraction overloads combine non-mutating lookup with exact

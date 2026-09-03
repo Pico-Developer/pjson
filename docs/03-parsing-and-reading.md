@@ -165,7 +165,7 @@ or mutating internal storage:
 ```cpp
 if (const pjson* node = j.find("scores")) {
     for (size_t i = 0; node->isArray() && i < node->size(); ++i) {
-        const pjson* score = node->find(static_cast<int>(i));
+        const pjson* score = node->findIndex(i);
         int64_t value = 0;
         if (score && score->tryGet(value))
             std::cout << value << " ";
@@ -200,7 +200,7 @@ Combine iteration with per-element lookup:
 if (const pjson* friends = j.find("friends")) {
     if (friends->isArray()) {
         for (size_t i = 0; i < friends->size(); ++i) {
-            const pjson* friend_ = friends->find(static_cast<int>(i));
+            const pjson* friend_ = friends->findIndex(i);
             pjson::StringView name;
             if (friend_ && friend_->tryGet("name", name))
                 std::cout.write(name.data(), static_cast<std::streamsize>(name.size()));

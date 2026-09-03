@@ -14,7 +14,7 @@
 //
 //===----------------------------------------------------------------------===//
 // Parsing: valid documents of every shape, the (ptr,size) overload, and an
-// exhaustive set of invalid inputs that must return nullptr without throwing.
+// exhaustive set of invalid inputs that must return null values without throwing.
 // Number-grammar acceptance/rejection lives here too.
 //
 #include "pjson.h"

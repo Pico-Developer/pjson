@@ -43,7 +43,7 @@
 #else
 #define PJSON_API __declspec(dllimport)
 #endif
-#elif defined(PJSON_BUILDING_LIBRARY) && defined(__GNUC__)
+#elif defined(PJSON_SHARED) && (defined(__GNUC__) || defined(__clang__))
 #define PJSON_API __attribute__((visibility("default")))
 #else
 #define PJSON_API
@@ -275,7 +275,7 @@ namespace ByteDance {
 
         //== Construction / lifetime =========================================
         /// Constructs null using the process-lifetime default allocator.
-        pjson();
+        pjson() noexcept;
         /// Constructs null bound to borrowed aAlloc, which must outlive this tree.
         explicit pjson(Allocator& aAlloc) noexcept;
         /// Destroys this value and its complete owned subtree.
@@ -337,7 +337,7 @@ namespace ByteDance {
         bool isNull() const;
         /// Returns whether this node stores a string.
         bool isString() const;
-        /// Returns whether this node stores either numeric representation.
+        /// Returns whether this node stores any numeric representation.
         bool isNumber() const;
         /// Returns whether this node stores a signed-integer representation.
         bool isInt() const;
@@ -467,6 +467,10 @@ namespace ByteDance {
         pjson* find(int aIndex) noexcept;
         /// Returns the read-only borrowed array child at aIndex, or null on failure.
         const pjson* find(int aIndex) const noexcept;
+        /// Returns the borrowed array child at a non-negative index, or null on failure.
+        pjson* findIndex(size_t aIndex) noexcept;
+        /// Returns the read-only borrowed array child at a non-negative index, or null.
+        const pjson* findIndex(size_t aIndex) const noexcept;
 
         // RFC 6901 lookup. The empty pointer addresses this value; every
         // non-empty pointer must begin with '/'. Lookups are iterative and
@@ -711,8 +715,8 @@ namespace ByteDance {
         // Encoding, ownership, and other DOM operations that need to touch the
         // data members below live behind the pjsonImpl helper. Schema
         // validation is deliberately separate and uses only the public API.
-        // pjsonImpl is a friend so it can reach the storage union directly; no
-        // instance helper methods are declared here.
+        // pjsonImpl is a friend so it can reach private representation directly;
+        // no instance helper methods are declared here.
         friend struct pjsonImpl;
         // These two pointers are the stable ABI handle. Null values share a
         // private implementation sentinel; non-null state belongs to _allocator.

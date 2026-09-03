@@ -204,6 +204,19 @@ namespace {
         ChunkedStreamBuf _buf;
     };
 
+    class ThrowingInputStreamBuf : public std::streambuf {
+    protected:
+        int_type underflow() override { throw std::runtime_error("input failure"); }
+    };
+
+    struct ThrowingIStream : std::istream {
+        ThrowingIStream()
+                : std::istream(&_buf) {}
+
+    private:
+        ThrowingInputStreamBuf _buf;
+    };
+
     // Accepts at most `limit` output bytes, then reports a short write to its ostream.
     class FailingStreamBuf : public std::stringbuf {
     public:
@@ -373,28 +386,33 @@ TEST(streaming_sax_cancel_and_throw_become_parse_error) {
     pJsonParser::Error err;
     CHECK(!pJsonParser().parseSax("[1,2,3]", cancel, err));
     CHECK(!err.ok);
+    CHECK_EQ(err.code, pJsonParser::Error::CallbackError);
     CHECK(err.message.find("aborted") != std::string::npos);
 
     ThrowingHandler throwing;
     CHECK(!pJsonParser().parseSax("{\"a\":1}", throwing, err));
     CHECK(!err.ok);
+    CHECK_EQ(err.code, pJsonParser::Error::CallbackError);
     CHECK(err.message.find("exception") != std::string::npos);
 
     ChunkedIStream throwingStream("{\"a\":1}", 1);
     ThrowingHandler streamThrowing;
     CHECK(!pJsonParser().parseSaxStream(throwingStream, streamThrowing, err));
     CHECK(!err.ok);
+    CHECK_EQ(err.code, pJsonParser::Error::CallbackError);
     CHECK(err.message.empty() || err.message.find("exception") != std::string::npos);
 
     BadAllocHandler allocationFailure;
     CHECK(!pJsonParser().parseSax("\"value\"", allocationFailure, err));
     CHECK(!err.ok);
+    CHECK_EQ(err.code, pJsonParser::Error::AllocationFailure);
     CHECK(err.message.empty() || err.message.find("memory") != std::string::npos);
 
     ChunkedIStream stream("\"value\"", 1);
     BadAllocHandler streamedAllocationFailure;
     CHECK(!pJsonParser().parseSaxStream(stream, streamedAllocationFailure, err));
     CHECK(!err.ok);
+    CHECK_EQ(err.code, pJsonParser::Error::AllocationFailure);
     CHECK(err.message.empty() || err.message.find("memory") != std::string::npos);
 }
 
@@ -405,6 +423,19 @@ TEST(streaming_sax_null_stream_buffer_reports_read_failure) {
 
     CHECK(!pJsonParser().parseSaxStream(input, handler, error));
     CHECK(!error.ok);
+    CHECK_EQ(error.code, pJsonParser::Error::StreamError);
+    CHECK(error.message.find("stream read failed") != std::string::npos);
+    CHECK(handler.events.empty());
+}
+
+TEST(streaming_sax_streambuf_exception_reports_stream_error) {
+    ThrowingIStream input;
+    RecordingHandler handler;
+    pJsonParser::Error error;
+
+    CHECK(!pJsonParser().parseSaxStream(input, handler, error));
+    CHECK(!error.ok);
+    CHECK_EQ(error.code, pJsonParser::Error::StreamError);
     CHECK(error.message.find("stream read failed") != std::string::npos);
     CHECK(handler.events.empty());
 }

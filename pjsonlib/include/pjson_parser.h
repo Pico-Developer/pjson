@@ -49,7 +49,7 @@ namespace ByteDance {
                 DepthLimit,        ///< Nesting exceeded the effective depth limit.
                 InputLimit,        ///< Input exceeded maxInputBytes.
                 NodeLimit,         ///< Values processed exceeded maxNodes.
-                AllocationFailure, ///< Parser or DOM allocation failed.
+                AllocationFailure, ///< Parser, DOM, or callback allocation failed.
                 StreamError,       ///< Reading from the input stream failed.
                 CallbackError,     ///< A SAX callback cancelled or threw.
                 InvalidArgument    ///< The caller supplied an invalid argument.

@@ -198,16 +198,18 @@ validator-owned storage, and the callback/context pointers are then cleared.
 - `patternProperties` applies schemas to matching keys, `propertyNames` checks
   each key, and `dependentRequired`/`dependencies` express rules triggered by
   the presence of another property.
-- Known string formats are `date`, `time`, `date-time`, `ipv4`, `ipv6`, and
-  `uuid`. They are checked by the normal/default options;
+- Known string formats are `date`, `time`, `date-time`, `ipv4`, `ipv6`, `uuid`,
+  and `regex`. They are checked by the normal/default options;
   `Options::modernSubset()` follows Draft 2020-12 and treats them as annotations
   unless `validateFormats` is explicitly re-enabled. Unknown names are ignored.
 - A **boolean schema** is allowed: `true` accepts everything, `false` rejects
   everything (handy as a sub-schema, e.g. `"additionalProperties": false`).
-- `pattern` uses `std::regex` ECMAScript syntax with search semantics. Default
-  options bound pattern and subject byte sizes and reject expressions
-  disallowed by the regex safety policy. Applications that fully trust both
-  schemas and instances may opt out with
+- `pattern` uses a private Unicode-aware ECMAScript engine with search semantics,
+  including Unicode property escapes and non-BMP code points. Default options
+  bound pattern and subject byte sizes and reject expressions disallowed by the
+  regex safety policy. The engine also has a finite internal work ceiling.
+  Applications that fully trust both schemas and instances may opt out of the
+  conservative syntax policy with
   `pJsonSchemaValidator::Options::trustedRegex()`.
 
 The supported vocabulary is deliberately a subset. Tuple-form `items` validates

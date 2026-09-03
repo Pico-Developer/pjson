@@ -1025,7 +1025,7 @@ Notes:
   documents require an explicit function-pointer resolver; pjson never performs
   network I/O. `Options::modernSubset()` enables modern `$ref` sibling semantics
   and makes `format` annotation-only unless explicitly re-enabled.
-- Known formats are `date`, `time`, `date-time`, `ipv4`, `ipv6`, and `uuid`;
+- Known formats are `date`, `time`, `date-time`, `ipv4`, `ipv6`, `uuid`, and `regex`;
   normal options assert them, while `modernSubset()` follows the Draft 2020-12
   annotation-only default. Unknown format names are ignored.
 - `minLength` and `maxLength` count Unicode code points, not UTF-8 bytes.

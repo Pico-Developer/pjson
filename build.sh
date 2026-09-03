@@ -491,7 +491,8 @@ source_files() {
     find "${SCRIPT_DIR}/pjsonlib" "${SCRIPT_DIR}/pjsontest" "${SCRIPT_DIR}/examples" \
         "${SCRIPT_DIR}/bench" "${SCRIPT_DIR}/fuzz" "${SCRIPT_DIR}/test_package" \
         "${SCRIPT_DIR}/tests" \
-        \( -name '*.cpp' -o -name '*.h' \) -type f | sort
+        \( -name '*.cpp' -o -name '*.h' \) -type f \
+        ! -path '*/third_party/*' | sort
 }
 
 # ---------------------------------------------------------------------------

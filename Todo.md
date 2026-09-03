@@ -108,26 +108,21 @@ defers 27 whole optional files with concrete reasons.
 Strict mode now performs a complete pre-validation pass over the documented
 keyword set and rejects malformed keyword shapes before instance validation.
 
-**What remains:** standard/custom meta-schema-driven vocabulary activation and a
-real ECMA-262 Unicode regular-expression implementation. The optional bignum and
-cross-draft suites are outside pjson's explicit numeric/dialect contracts. Format
-assertion suites also require vocabulary-driven activation; several individual
-format implementations are intentionally absent. Until those gaps land, docs must
+**What remains:** standard/custom meta-schema-driven vocabulary activation. The
+optional bignum and cross-draft suites are outside pjson's explicit numeric/dialect
+contracts. Format assertion suites also require vocabulary-driven activation;
+several individual formats are intentionally absent. Until those gaps land, docs must
 keep saying "documented subset" and must not claim general 2020-12 conformance.
 
 **Validated implementation direction:** vocabulary activation must be stored per
 compiled schema resource, because external resources can select different
 meta-schemas. Bundle/pin the official 2020-12 meta-schema resources and apply a
 vocabulary mask during compilation/validation; do not special-case the handful of
-current fixtures. For regex, an SRELL 2026.06 validator integration probe passed all
-86 optional ECMAScript and non-BMP pattern cases, including Unicode properties.
-Adoption still requires a
-pinned BSD-2-Clause vendoring/update policy, integration of its roughly 900 KiB
-header/data footprint, explicit rejection of its nonstandard inline-flag extensions
-for `format: regex`, cross-platform verification, and proof that its internal work
-limit plus pjson's safe-mode policy meet PJSON-SEC-004. Ambient ICU, PCRE2, and RE2
-are not substitutes: they either break portability/dependency-free builds or do not
-implement the required ECMAScript language.
+current fixtures. Regex is now implemented with privately vendored, pinned SRELL
+2026.06 under BSD-2-Clause. It passes the mandatory Unicode-property groups and the
+optional ECMAScript, non-BMP, and regex-format suites. pjson retains pattern/subject
+byte budgets and conservative safe-mode syntax checks; SRELL's finite work ceiling
+is mapped to a resource-limit error.
 
 ### [~] PERF-BASELINE — Controlled regression policy and auxiliary metrics
 

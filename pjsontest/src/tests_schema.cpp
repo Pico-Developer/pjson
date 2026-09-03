@@ -259,6 +259,39 @@ TEST(schema_pattern) {
     CHECK(!validates(R"({"pattern":"^[a-z]+$"})", R"("Hello1")"));
 }
 
+TEST(schema_pattern_unicode_ecmascript_semantics) {
+    CHECK(validates(R"({"pattern":"^\\p{Letter}+$"})", R"("Helloπ")"));
+    CHECK(!validates(R"({"pattern":"^\\p{Letter}+$"})", R"("123")"));
+    CHECK(validates(R"({"pattern":"^🐲*$"})", R"("🐲🐲")"));
+    CHECK(!validates(R"({"pattern":"^🐲*$"})", R"("🐉")"));
+
+    pjson_test::SchemaOptions trusted = pjson_test::SchemaOptions::trustedRegex();
+    pjson schema = pjson::parse(R"({"pattern":"(?<=a+)b"})");
+    pjson value = pjson::parse(R"("aaab")");
+    std::vector<pjson_test::SchemaError> errors;
+    CHECK(pjson_test::schemaValidate(value, schema, errors, trusted));
+}
+
+TEST(schema_regex_format_uses_ecmascript_syntax) {
+    pjson_test::SchemaOptions options;
+    options.validateFormats = true;
+    pjson schema = pjson::parse(R"({"format":"regex"})");
+    const char* valid[] = {"([abc])+\\s+$", "(?<name>x)", "(?<=a+)b", "[]", "[^]", "\\cA"};
+    const char* invalid[] = {"^(abc]", "\\a", "(?P<name>x)", "(?#comment)a", "(?i)abc"};
+    for (size_t i = 0; i < sizeof(valid) / sizeof(valid[0]); ++i) {
+        pjson value;
+        value = valid[i];
+        std::vector<pjson_test::SchemaError> errors;
+        CHECK(pjson_test::schemaValidate(value, schema, errors, options));
+    }
+    for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); ++i) {
+        pjson value;
+        value = invalid[i];
+        std::vector<pjson_test::SchemaError> errors;
+        CHECK(!pjson_test::schemaValidate(value, schema, errors, options));
+    }
+}
+
 TEST(schema_pattern_redos_safety_policy) {
     pjson_test::Parsed schema = parseJson(R"({"pattern":"^(a+)+$","minLength":10})");
     pjson_test::Parsed value = parseJson(R"("aaaa")");
@@ -303,6 +336,18 @@ TEST(schema_pattern_size_limits_and_trusted_opt_in) {
     errors.clear();
     CHECK(pjson_test::schemaValidate(value, schema, errors, trusted));
     CHECK(errors.empty());
+}
+
+TEST(schema_trusted_regex_still_has_backend_work_limit) {
+    pjson schema = pjson::parse(R"({"pattern":"^(a|aa)+$"})");
+    pjson value;
+    value = std::string(64, 'a') + "!";
+    pjson_test::SchemaOptions trusted = pjson_test::SchemaOptions::trustedRegex();
+    std::vector<pjson_test::SchemaError> errors;
+    CHECK(!pjson_test::schemaValidate(value, schema, errors, trusted));
+    CHECK(!errors.empty());
+    CHECK_EQ(errors[0].code, pjson_test::SchemaError::ResourceLimit);
+    CHECK(errors[0].message.find("work limit") != std::string::npos);
 }
 
 //===----------------------------------------------------------------------===//

@@ -24,6 +24,7 @@
 // This is a documented JSON Schema subset, not a complete draft implementation.
 //===----------------------------------------------------------------------===//
 #include "pjson_schema.h"
+#include "pjson_schema_regex.h"
 #include "pjson_schema_util.h"
 
 #include <algorithm>
@@ -34,7 +35,6 @@
 #include <limits>
 #include <map>
 #include <new>
-#include <regex>
 #include <set>
 #include <string>
 #include <utility>
@@ -87,7 +87,7 @@ namespace {
     struct RegexCacheEntry {
         enum State { Uninitialized, Ready, PatternTooLarge, UnsafePattern, InvalidPattern };
         State state;
-        std::regex expression;
+        EcmaRegex expression;
         RegexCacheEntry()
                 : state(Uninitialized) {}
     };
@@ -425,12 +425,8 @@ namespace {
             } else if (!ctx.options.allowUnsafeRegex && !isSafeRegex(pattern)) {
                 cached.state = RegexCacheEntry::UnsafePattern;
             } else {
-                try {
-                    cached.expression.assign(pattern, std::regex::ECMAScript);
-                    cached.state = RegexCacheEntry::Ready;
-                } catch (const std::regex_error&) {
-                    cached.state = RegexCacheEntry::InvalidPattern;
-                }
+                cached.state = cached.expression.compile(pattern) ? RegexCacheEntry::Ready
+                                                                  : RegexCacheEntry::InvalidPattern;
             }
         }
 
@@ -451,7 +447,18 @@ namespace {
         }
         if (!chargeLoopWork(ctx, errors, path, subject.size() + size_t(1)))
             return false;
-        matches = std::regex_search(subject, cached.expression);
+        const EcmaRegex::Result result = cached.expression.search(subject);
+        if (result == EcmaRegex::WorkLimit) {
+            errors.push_back(validationError(ctx, schema, SchemaError::ResourceLimit, path, keyword,
+                                             "schema regex work limit exceeded"));
+            return false;
+        }
+        if (result == EcmaRegex::Invalid) {
+            errors.push_back(validationError(ctx, schema, SchemaError::RegexFailure, path, keyword,
+                                             "schema regex evaluation failed"));
+            return false;
+        }
+        matches = result == EcmaRegex::Match;
         return true;
     }
 
@@ -797,16 +804,7 @@ namespace {
                                         "schema regex pattern exceeds safety limit");
                 return;
             }
-            if (!options.allowUnsafeRegex && !isSafeRegex(pattern)) {
-                if (errors.size() < limit)
-                    addCompilationError(errors, SchemaError::RegexFailure, location, keyword,
-                                        "schema regex pattern rejected by safety policy");
-                return;
-            }
-            try {
-                std::regex compiled(pattern, std::regex::ECMAScript);
-                (void)compiled;
-            } catch (const std::regex_error&) {
+            if (!validEcmaRegex(pattern)) {
                 if (errors.size() < limit)
                     addCompilationError(errors, SchemaError::RegexFailure, location, keyword,
                                         "schema has an invalid regex pattern");

@@ -26,3 +26,14 @@ path = ["CODE_OF_CONDUCT.md"]
 precedence = "override"
 SPDX-FileCopyrightText = "2014 Coraline Ada Ehmke"
 SPDX-License-Identifier = "CC-BY-4.0"
+
+[[annotations]]
+path = [
+    "pjsonlib/src/third_party/srell/LICENSE.txt",
+    "pjsonlib/src/third_party/srell/srell.hpp",
+    "pjsonlib/src/third_party/srell/srell_ucfdata2.h",
+    "pjsonlib/src/third_party/srell/srell_updata3.h",
+]
+precedence = "override"
+SPDX-FileCopyrightText = "2012-2026 Nozomu Katoo"
+SPDX-License-Identifier = "BSD-2-Clause"

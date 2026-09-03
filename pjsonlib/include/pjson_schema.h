@@ -67,8 +67,9 @@ namespace ByteDance {
     /// A boolean schema (true/false) accepts/rejects everything. By default
     /// unknown or unsupported keywords are ignored; strict() rejects unsupported
     /// standard keywords. External references require an explicit Resolver;
-    /// pjson never performs network I/O. Full standard meta-schema loading and
-    /// Unicode property escapes in regular expressions are not implemented.
+    /// pjson never performs network I/O. Full standard meta-schema loading is
+    /// not implemented. Regular expressions use a private Unicode-aware
+    /// ECMAScript engine, including property escapes.
     class pJsonSchemaValidator {
     public:
         /// Resolves one absolute schema-document URI during construction.
@@ -134,8 +135,9 @@ namespace ByteDance {
         // Bounds schema regular-expression work and controls format checks. By
         // default only a conservative, non-ambiguous ECMAScript subset is
         // accepted and both pattern/subject sizes are capped, preventing
-        // catastrophic std::regex backtracking. trustedRegex() restores
-        // unrestricted ECMAScript regex behavior for trusted schemas/data.
+        // catastrophic backtracking. trustedRegex() restores unrestricted
+        // ECMAScript regex behavior for trusted schemas/data; the backend still
+        // enforces its own finite work ceiling.
         struct Options {
             size_t maxRegexPatternBytes; ///< 0 = unlimited (default: 256).
             size_t maxRegexSubjectBytes; ///< 0 = unlimited (default: 4096).

@@ -75,6 +75,9 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases follow
   source/build/environment/methodology metadata and advisory CI artifacts.
 - Aligned SAX null-span diagnostics with DOM parsing by reporting
   `ParseError::InvalidArgument`.
+- Replaced schema `std::regex` use with private, pinned SRELL 2026.06, adding
+  Unicode ECMAScript property/non-BMP support, bounded backend work, and the
+  asserted `regex` format without changing the public dependency surface.
 - Moved pJsonSchemaValidator storage behind a private implementation pointer;
   schemas are copied to the default allocator, removing dependence on the
   caller's schema allocator lifetime.

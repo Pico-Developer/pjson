@@ -251,7 +251,7 @@ propagation for both `unevaluated*` keywords. The official gate now accounts for
 all 80 files in the pinned Draft 2020-12 corpus: it runs 1,349 cases across 396
 groups, skips 10 cases across four selected groups, and explicitly defers 27
 whole optional files. Remaining conformance gaps include meta-schema-controlled
-vocabulary/format behavior and a real ECMA-262 Unicode regex implementation;
+vocabulary/format behavior;
 optional big-number and cross-draft behavior are outside pjson's data/dialect
 model. Documentation therefore continues to describe this as a **documented
 subset**, not general 2020-12 conformance.

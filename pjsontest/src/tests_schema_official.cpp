@@ -680,9 +680,8 @@ namespace {
         r.reason = "";
         r.groups.push_back(GroupRule{"pattern validation", true, "supported"});
         r.groups.push_back(GroupRule{"pattern is not anchored", true, "supported"});
-        r.groups.push_back(
-            GroupRule{"pattern with Unicode property escape requires unicode mode", false,
-                      "std::regex ECMAScript lacks Unicode property escapes (\\\\p{...})"});
+        r.groups.push_back(GroupRule{"pattern with Unicode property escape requires unicode mode",
+                                     true, "SRELL provides Unicode ECMAScript property escapes"});
         rules.push_back(r);
         r = FileRule();
         r.relativePath = "patternProperties.json";
@@ -697,9 +696,8 @@ namespace {
         r.groups.push_back(GroupRule{"patternProperties with boolean schemas", true, "supported"});
         r.groups.push_back(
             GroupRule{"patternProperties with null valued instance properties", true, "supported"});
-        r.groups.push_back(
-            GroupRule{"patternProperties with Unicode property escape", false,
-                      "std::regex ECMAScript lacks Unicode property escapes (\\\\p{...})"});
+        r.groups.push_back(GroupRule{"patternProperties with Unicode property escape", true,
+                                     "SRELL provides Unicode ECMAScript property escapes"});
         rules.push_back(r);
         r = FileRule();
         r.relativePath = "prefixItems.json";
@@ -847,10 +845,10 @@ namespace {
                 "pjson intentionally rejects integers outside its signed/unsigned 64-bit model");
         addSkip("optional/cross-draft.json",
                 "historic JSON Schema dialect interpretation is not implemented");
-        addSkip("optional/ecmascript-regex.json",
-                "std::regex is not a Unicode ECMAScript regular-expression engine");
-        addSkip("optional/non-bmp-regex.json",
-                "std::regex does not provide portable Unicode code-point semantics");
+        addWhole("optional/ecmascript-regex.json",
+                 "SRELL Unicode ECMAScript regular-expression implementation");
+        addWhole("optional/non-bmp-regex.json",
+                 "SRELL Unicode code-point regular-expression semantics");
         addSkip("optional/format-assertion.json",
                 "custom meta-schema format-assertion vocabulary selection is not implemented");
 
@@ -858,7 +856,6 @@ namespace {
             "optional/format/date-time.json",
             "optional/format/date.json",
             "optional/format/duration.json",
-            "optional/format/ecmascript-regex.json",
             "optional/format/email.json",
             "optional/format/hostname.json",
             "optional/format/idn-email.json",
@@ -868,7 +865,6 @@ namespace {
             "optional/format/iri-reference.json",
             "optional/format/iri.json",
             "optional/format/json-pointer.json",
-            "optional/format/regex.json",
             "optional/format/relative-json-pointer.json",
             "optional/format/time.json",
             "optional/format/unknown.json",
@@ -880,6 +876,9 @@ namespace {
         for (size_t i = 0; i < sizeof(kFormatSuites) / sizeof(kFormatSuites[0]); ++i)
             addSkip(kFormatSuites[i],
                     "Draft 2020-12 format assertions require vocabulary-controlled activation");
+        addWhole("optional/format/regex.json", "supported asserted regex format");
+        addWhole("optional/format/ecmascript-regex.json",
+                 "SRELL parser with ECMA-262 extension restrictions");
         return rules;
     }
 
@@ -1122,6 +1121,9 @@ static void runOfficialSuite(const std::string& suiteDir, const std::vector<File
     for (size_t i = 0; i < rules.size(); ++i) {
         const std::string path = joinPath(suiteDir, rules[i].relativePath);
         summary.filesVisited += 1;
+        pJsonSchemaValidator::Options fileOptions = options;
+        if (std::string(rules[i].relativePath).compare(0, 16, "optional/format/") == 0)
+            fileOptions.validateFormats = true;
 
         if (!isRegularFile(path)) {
             recordFailure("official schema suite file missing",
@@ -1148,9 +1150,9 @@ static void runOfficialSuite(const std::string& suiteDir, const std::vector<File
         }
 
         if (rules[i].mode == RunWholeFile) {
-            runWholeFile(rules[i], *suite, summary, options, adaptDialect);
+            runWholeFile(rules[i], *suite, summary, fileOptions, adaptDialect);
         } else {
-            runSelectedGroups(rules[i], *suite, summary, options, adaptDialect);
+            runSelectedGroups(rules[i], *suite, summary, fileOptions, adaptDialect);
         }
     }
 

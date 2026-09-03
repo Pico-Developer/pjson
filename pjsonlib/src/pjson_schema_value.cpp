@@ -135,6 +135,12 @@ namespace ByteDance {
                 if (escaped) {
                     if (c >= '1' && c <= '9')
                         return false;
+                    if ((c == 'p' || c == 'P') && i + 1 < pattern.size() && pattern[i + 1] == '{') {
+                        const size_t close = pattern.find('}', i + 2);
+                        if (close == std::string::npos || close == i + 2)
+                            return false;
+                        i = close;
+                    }
                     escaped = false;
                     continue;
                 }

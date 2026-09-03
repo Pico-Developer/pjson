@@ -233,10 +233,12 @@ permissive mode; `Options::strict()` rejects unsupported standard keywords and
 malformed supported keywords. `Options::modernSubset()` enables modern `$ref` sibling
 semantics and makes `format` annotation-only by default.
 
-Standard meta-schema/vocabulary loading and ECMA-262 Unicode property escapes are not
-implemented. Therefore pjson does not claim full Draft 2020-12 conformance. Safe regex
-mode bounds patterns/subjects and rejects risky constructs; `trustedRegex()` removes
-only those regex restrictions and must be reserved for trusted schemas and instances.
+Standard meta-schema/vocabulary loading is not implemented. Therefore pjson does not
+claim full Draft 2020-12 conformance. The private regex backend implements Unicode-aware
+ECMAScript syntax, including property escapes and non-BMP code points. Safe regex mode
+bounds patterns/subjects and rejects risky constructs; `trustedRegex()` removes only
+that conservative syntax restriction and must be reserved for trusted schemas and
+instances. The backend's finite work ceiling remains active.
 Validation/reference/work/error/resource budgets remain active.
 
 ## 11. Standards and compatibility scope

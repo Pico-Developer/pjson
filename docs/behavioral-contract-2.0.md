@@ -224,8 +224,10 @@ vocabularies, keyword shapes, identifiers, anchors, references, resolver failure
 resource exhaustion. `validate()` is read-only, `noexcept`, and never mutates either
 input; its vector overload appends diagnostics rather than clearing the vector.
 
-The validator implements the named dialect returned by
-`documentedSubsetDialectUri()`, not general JSON Schema Draft 2020-12. It supports the
+Default validation implements the named dialect returned by
+`documentedSubsetDialectUri()`. `Options::draft2020()` opts into official Draft
+2020-12, bundled standard meta-schema validation, and per-resource vocabulary
+activation. It supports the
 keyword allowlist documented in `pjson_schema.h`, including references/anchors,
 conditionals, applicators, `unevaluated*`, object/array/string/numeric assertions, and
 six formats. It never performs implicit network I/O. Unknown keywords are ignored in
@@ -233,8 +235,7 @@ permissive mode; `Options::strict()` rejects unsupported standard keywords and
 malformed supported keywords. `Options::modernSubset()` enables modern `$ref` sibling
 semantics and makes `format` annotation-only by default.
 
-Standard meta-schema/vocabulary loading is not implemented. Therefore pjson does not
-claim full Draft 2020-12 conformance. The private regex backend implements Unicode-aware
+The private regex backend implements Unicode-aware
 ECMAScript syntax, including property escapes and non-BMP code points. Safe regex mode
 bounds patterns/subjects and rejects risky constructs; `trustedRegex()` removes only
 that conservative syntax restriction and must be reserved for trusted schemas and

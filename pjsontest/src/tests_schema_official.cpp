@@ -208,8 +208,6 @@ namespace {
             return false;
         pjson::ParseError error;
         output = pjson::parse(readFile(path), error);
-        if (error.ok && output.isObject())
-            output.erase("$schema");
         return error.ok;
     }
 
@@ -462,8 +460,8 @@ namespace {
         rules.push_back(r);
         r = FileRule();
         r.relativePath = "defs.json";
-        r.mode = SkipWholeFile;
-        r.reason = "requires metaschema remote $ref validation";
+        r.mode = RunWholeFile;
+        r.reason = "bundled official Draft 2020-12 meta-schema";
         rules.push_back(r);
         r = FileRule();
         r.relativePath = "dependentRequired.json";
@@ -725,9 +723,8 @@ namespace {
         r.groups.push_back(GroupRule{"nested refs", true, "supported"});
         r.groups.push_back(GroupRule{"ref applies alongside sibling keywords", true,
                                      "supported modern subset semantics"});
-        r.groups.push_back(GroupRule{
-            "remote ref, containing refs itself", false,
-            "requires the official 2020-12 meta-schema, which pjson intentionally does not claim"});
+        r.groups.push_back(GroupRule{"remote ref, containing refs itself", true,
+                                     "bundled official Draft 2020-12 meta-schema"});
         r.groups.push_back(
             GroupRule{"property named $ref that is not a reference", true, "supported"});
         r.groups.push_back(
@@ -807,8 +804,8 @@ namespace {
         r.mode = RunSelectedGroups;
         r.reason = "";
         r.groups.push_back(
-            GroupRule{"schema that uses custom metaschema with with no validation vocabulary",
-                      false, "requires $vocabulary negotiation and custom metaschema resolution"});
+            GroupRule{"schema that uses custom metaschema with with no validation vocabulary", true,
+                      "per-resource custom meta-schema vocabulary activation"});
         r.groups.push_back(GroupRule{"ignore unrecognized optional vocabulary", true, "supported"});
         rules.push_back(r);
 
@@ -849,29 +846,22 @@ namespace {
                  "SRELL Unicode ECMAScript regular-expression implementation");
         addWhole("optional/non-bmp-regex.json",
                  "SRELL Unicode code-point regular-expression semantics");
-        addSkip("optional/format-assertion.json",
-                "custom meta-schema format-assertion vocabulary selection is not implemented");
+        addWhole("optional/format-assertion.json",
+                 "per-resource format-assertion vocabulary activation");
 
         static const char* const kFormatSuites[] = {
-            "optional/format/date-time.json",
-            "optional/format/date.json",
             "optional/format/duration.json",
             "optional/format/email.json",
             "optional/format/hostname.json",
             "optional/format/idn-email.json",
             "optional/format/idn-hostname.json",
-            "optional/format/ipv4.json",
-            "optional/format/ipv6.json",
             "optional/format/iri-reference.json",
             "optional/format/iri.json",
             "optional/format/json-pointer.json",
             "optional/format/relative-json-pointer.json",
-            "optional/format/time.json",
-            "optional/format/unknown.json",
             "optional/format/uri-reference.json",
             "optional/format/uri-template.json",
             "optional/format/uri.json",
-            "optional/format/uuid.json",
         };
         for (size_t i = 0; i < sizeof(kFormatSuites) / sizeof(kFormatSuites[0]); ++i)
             addSkip(kFormatSuites[i],
@@ -879,6 +869,13 @@ namespace {
         addWhole("optional/format/regex.json", "supported asserted regex format");
         addWhole("optional/format/ecmascript-regex.json",
                  "SRELL parser with ECMA-262 extension restrictions");
+        addWhole("optional/format/date.json", "supported date assertion");
+        addWhole("optional/format/time.json", "supported time assertion");
+        addWhole("optional/format/date-time.json", "supported date-time assertion");
+        addWhole("optional/format/ipv4.json", "supported IPv4 assertion");
+        addWhole("optional/format/ipv6.json", "supported IPv6 assertion");
+        addWhole("optional/format/uuid.json", "supported UUID assertion");
+        addWhole("optional/format/unknown.json", "unknown formats remain annotations");
         return rules;
     }
 
@@ -1189,10 +1186,10 @@ TEST(schema_official_draft2020_optional) {
     }
     OfficialResolverContext resolverContext;
     resolverContext.remoteRoot = joinPath(configuredSchemaSuiteDir(), "remotes");
-    pJsonSchemaValidator::Options options = pJsonSchemaValidator::Options::modernSubset();
+    pJsonSchemaValidator::Options options = pJsonSchemaValidator::Options::draft2020();
     options.resolver = resolveOfficialSchema;
     options.resolverContext = &resolverContext;
     const std::vector<FileRule> rules = manifest2020();
     requireCompleteManifest(dir, rules);
-    runOfficialSuite(dir, rules, "draft2020-12", options, true);
+    runOfficialSuite(dir, rules, "draft2020-12", options, false);
 }

@@ -64,10 +64,9 @@ PJSON_JSON_SCHEMA_TEST_SUITE_DIR="$PWD/.test-corpora/JSON-Schema-Test-Suite" \
 
 The last complete Debug/ASan/Release runs passed 522/522 tests. The current
 Draft 2020-12 manifest explicitly accounts for all 80 files in the pinned
-corpus. It executes 1,349 official cases across 396 groups, skips 10 cases across
-four selected groups, and explicitly defers 27 whole optional files. The latter
-cover unsupported big-number/cross-draft behavior, full ECMA-262 regex and format
-suites, and custom meta-schema-controlled vocabulary activation.
+corpus. It executes 1,777 official cases across 439 groups with no selected-group
+skips and explicitly defers 14 whole optional files. Those cover unsupported
+big-number/cross-draft behavior and unimplemented format families.
 Also verified: clang-format, clang-tidy, 20,000 schema-fuzzer runs, seven-target
 libFuzzer smoke coverage with inputs above 4 KiB, Doxygen API
 validation, relocatable static/shared CMake and pkg-config consumers, REUSE
@@ -102,23 +101,23 @@ SCHEMA-004 now provide `$id`/URI resources, `$anchor`, `$dynamicAnchor`, `$ref`,
 `$dynamicRef`, an explicit resolver with document/byte/work/depth budgets, and
 annotation propagation for `unevaluatedItems`/`unevaluatedProperties`. The
 official Draft 2020-12 gate now explicitly accounts for all 80 pinned files. It
-runs 1,349 cases across 396 groups, skips four selected groups (10 cases), and
-defers 27 whole optional files with concrete reasons.
+runs 1,777 cases across 439 groups with no selected-group skips and defers 14
+whole optional files with concrete reasons.
 
 Strict mode now performs a complete pre-validation pass over the documented
 keyword set and rejects malformed keyword shapes before instance validation.
 
-**What remains:** standard/custom meta-schema-driven vocabulary activation. The
-optional bignum and cross-draft suites are outside pjson's explicit numeric/dialect
-contracts. Format assertion suites also require vocabulary-driven activation;
-several individual formats are intentionally absent. Until those gaps land, docs must
-keep saying "documented subset" and must not claim general 2020-12 conformance.
+**What remains:** optional asserted formats not currently implemented: duration,
+email/IDN email, hostname/IDN hostname, IRI/IRI-reference, JSON Pointer/relative
+JSON Pointer, URI/URI-reference, and URI-template. Optional bignum and cross-draft
+suites are outside pjson's explicit numeric/dialect contracts. Do not claim every
+optional Draft 2020-12 behavior until those dispositions are reflected in the
+release's conformance statement.
 
-**Validated implementation direction:** vocabulary activation must be stored per
-compiled schema resource, because external resources can select different
-meta-schemas. Bundle/pin the official 2020-12 meta-schema resources and apply a
-vocabulary mask during compilation/validation; do not special-case the handful of
-current fixtures. Regex is now implemented with privately vendored, pinned SRELL
+**Implemented direction:** vocabulary activation is stored per compiled schema
+resource. Official 2020-12 meta-schemas are bundled and pinned; custom meta-schemas
+are loaded only through the explicit resolver and share document/byte budgets. Regex
+is implemented with privately vendored, pinned SRELL
 2026.06 under BSD-2-Clause. It passes the mandatory Unicode-property groups and the
 optional ECMAScript, non-BMP, and regex-format suites. pjson retains pattern/subject
 byte budgets and conservative safe-mode syntax checks; SRELL's finite work ceiling

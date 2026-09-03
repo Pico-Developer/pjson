@@ -1,0 +1,49 @@
+// SPDX-FileCopyrightText: 2026 ByteDance Ltd. and/or its affiliates
+// SPDX-License-Identifier: Apache-2.0
+// Generated from the pinned JSON Schema Draft 2020-12 meta-schema files.
+#ifndef PRAVEENJSON_SCHEMA_BUILTINS_H
+#define PRAVEENJSON_SCHEMA_BUILTINS_H
+
+#include <cstddef>
+#include <string>
+
+namespace ByteDance {
+    namespace pjson_schema_detail {
+        struct BuiltinSchemaText {
+            const char* uri;
+            const char* json;
+        };
+
+        static const BuiltinSchemaText kBuiltinSchemaTexts[] = {
+            {"https://json-schema.org/draft/2020-12/schema", R"PJS0(@PJSON_META_SCHEMA@)PJS0"},
+            {"https://json-schema.org/draft/2020-12/meta/core", R"PJS1(@PJSON_META_CORE@)PJS1"},
+            {"https://json-schema.org/draft/2020-12/meta/applicator",
+             R"PJS2(@PJSON_META_APPLICATOR@)PJS2"},
+            {"https://json-schema.org/draft/2020-12/meta/unevaluated",
+             R"PJS3(@PJSON_META_UNEVALUATED@)PJS3"},
+            {"https://json-schema.org/draft/2020-12/meta/validation",
+             R"PJS4(@PJSON_META_VALIDATION@)PJS4"},
+            {"https://json-schema.org/draft/2020-12/meta/meta-data",
+             R"PJS5(@PJSON_META_METADATA@)PJS5"},
+            {"https://json-schema.org/draft/2020-12/meta/format-annotation",
+             R"PJS6(@PJSON_META_FORMAT_ANNOTATION@)PJS6"},
+            {"https://json-schema.org/draft/2020-12/meta/format-assertion",
+             R"PJS7(@PJSON_META_FORMAT_ASSERTION@)PJS7"},
+            {"https://json-schema.org/draft/2020-12/meta/content",
+             R"PJS8(@PJSON_META_CONTENT@)PJS8"},
+        };
+
+        inline bool builtinSchemaText(const std::string& uri, std::string& json) {
+            for (size_t i = 0; i < sizeof(kBuiltinSchemaTexts) / sizeof(kBuiltinSchemaTexts[0]);
+                 ++i) {
+                if (uri == kBuiltinSchemaTexts[i].uri) {
+                    json = kBuiltinSchemaTexts[i].json;
+                    return true;
+                }
+            }
+            return false;
+        }
+    } // namespace pjson_schema_detail
+} // namespace ByteDance
+
+#endif

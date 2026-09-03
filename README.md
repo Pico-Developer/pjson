@@ -962,15 +962,14 @@ if (!validator.validate(data, errors)) {
 }
 ```
 
-The validator implements one explicitly named dialect for this documented
-subset. If a root schema declares `$schema`, it must equal
-`pJsonSchemaValidator::documentedSubsetDialectUri()`; otherwise schema
-compilation fails. When `$schema` is absent, `Options::defaultDialectUri`
-selects the dialect and defaults to that same URI. `$vocabulary` may require
-`documentedSubsetVocabularyUri()`; unknown optional vocabularies are accepted
-as annotations, while unknown required vocabularies fail compilation. This is
-why pjson does not accept the official 2020-12 meta-schema URI: doing so would
-incorrectly claim the complete dialect.
+Default construction implements pjson's explicitly named subset dialect. Use
+`pJsonSchemaValidator::Options::draft2020()` to opt into the official Draft
+2020-12 URI, bundled standard meta-schema validation, modern `$ref` behavior,
+and per-resource `$vocabulary` activation. Custom meta-schema URIs are loaded
+only through the supplied resolver during construction; pjson never performs
+network I/O. Unknown optional vocabularies are annotations, while unknown
+required vocabularies fail compilation. Optional big-number and historic
+cross-draft behavior remain outside pjson's numeric and dialect contracts.
 
 References are compiled during construction; resolver callbacks and their
 context are not retained, and validation performs no resolver I/O or cache

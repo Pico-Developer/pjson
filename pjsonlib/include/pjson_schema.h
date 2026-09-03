@@ -48,11 +48,11 @@ namespace ByteDance {
     /// read-only and may be called concurrently when each caller uses its own
     /// error vector.
     ///
-    /// Dialect contract: the validator implements one explicitly named dialect,
-    /// documentedSubsetDialectUri(). A root `$schema` may select it; any other
-    /// declared or default dialect fails schema compilation. `$vocabulary` may
-    /// require documentedSubsetVocabularyUri(); unknown optional vocabularies
-    /// are annotations and unknown required vocabularies fail compilation.
+    /// Dialect contract: default construction implements the named subset dialect.
+    /// Options::draft2020() selects official Draft 2020-12, bundled meta-schema
+    /// validation, and per-resource vocabulary activation. Custom meta-schemas
+    /// require explicit resolver-based loading. Unknown optional vocabularies are
+    /// annotations and unknown required vocabularies fail compilation.
     ///
     /// Supported keywords (documented subset):
     ///   type, enum, const, $ref, $dynamicRef, $id, $anchor, $dynamicAnchor;
@@ -67,8 +67,7 @@ namespace ByteDance {
     /// A boolean schema (true/false) accepts/rejects everything. By default
     /// unknown or unsupported keywords are ignored; strict() rejects unsupported
     /// standard keywords. External references require an explicit Resolver;
-    /// pjson never performs network I/O. Full standard meta-schema loading is
-    /// not implemented. Regular expressions use a private Unicode-aware
+    /// pjson never performs network I/O. Regular expressions use a private Unicode-aware
     /// ECMAScript engine, including property escapes.
     class pJsonSchemaValidator {
     public:
@@ -163,13 +162,15 @@ namespace ByteDance {
             /// Applies `$ref` siblings using pjson's modern subset semantics.
             /// The default false preserves legacy Draft 7 replacement semantics.
             bool refSiblings; ///< True when `$ref` siblings must also be evaluated.
+            /// Allows an unknown absolute `$schema` URI to be resolved during
+            /// construction and interpreted through its `$vocabulary` object.
+            bool resolveCustomDialects; ///< Enables explicit custom meta-schema resolution.
             /// Retrieval URI used as the initial base when the root has no `$id`.
             /// Leave empty only when all references are absolute or local.
             std::string retrievalUri; ///< Initial base URI for a root without `$id`.
-            /// Dialect used when the root schema has no `$schema`. The only
-            /// supported value today is documentedSubsetDialectUri(). An empty
-            /// value selects that default; every other URI is rejected when the
-            /// validator is constructed.
+            /// Dialect used when the root schema has no `$schema`. An empty value
+            /// selects documentedSubsetDialectUri(). Use draft2020() instead of
+            /// setting this field directly when selecting the official dialect.
             std::string defaultDialectUri; ///< Dialect used when `$schema` is absent.
             Resolver resolver;             ///< Construction-only external-schema resolver.
             void* resolverContext;         ///< Construction-only opaque resolver context.
@@ -184,6 +185,9 @@ namespace ByteDance {
             /// Selects modern subset semantics: `$ref` siblings apply and
             /// `format` is annotation-only unless the caller re-enables it.
             static Options modernSubset();
+            /// Selects the official Draft 2020-12 dialect, modern `$ref`
+            /// semantics, annotation-only format, and custom dialect resolution.
+            static Options draft2020();
         };
 
         //== Construction ====================================================
@@ -207,6 +211,8 @@ namespace ByteDance {
         static const char* documentedSubsetDialectUri() noexcept;
         /// URI naming the vocabulary implemented by the subset dialect.
         static const char* documentedSubsetVocabularyUri() noexcept;
+        /// URI of the supported official JSON Schema Draft 2020-12 dialect.
+        static const char* draft2020DialectUri() noexcept;
         /// Returns whether dialect and required-vocabulary compilation succeeded.
         bool isSchemaValid() const noexcept;
         /// Returns immutable schema-compilation diagnostics (paths address the schema).

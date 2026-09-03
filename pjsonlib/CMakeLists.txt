@@ -16,6 +16,21 @@ ${SRC_DIR}/pjson_schema_uri.cpp
 ${SRC_DIR}/pjson_schema_value.cpp
 )
 
+set(PJSON_META_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/src/third_party/json-schema-2020-12")
+file(READ "${PJSON_META_ROOT}/schema.json" PJSON_META_SCHEMA)
+file(READ "${PJSON_META_ROOT}/meta/core.json" PJSON_META_CORE)
+file(READ "${PJSON_META_ROOT}/meta/applicator.json" PJSON_META_APPLICATOR)
+file(READ "${PJSON_META_ROOT}/meta/unevaluated.json" PJSON_META_UNEVALUATED)
+file(READ "${PJSON_META_ROOT}/meta/validation.json" PJSON_META_VALIDATION)
+file(READ "${PJSON_META_ROOT}/meta/meta-data.json" PJSON_META_METADATA)
+file(READ "${PJSON_META_ROOT}/meta/format-annotation.json" PJSON_META_FORMAT_ANNOTATION)
+file(READ "${PJSON_META_ROOT}/meta/format-assertion.json" PJSON_META_FORMAT_ASSERTION)
+file(READ "${PJSON_META_ROOT}/meta/content.json" PJSON_META_CONTENT)
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/pjson_schema_builtins.h.in
+    ${CMAKE_CURRENT_BINARY_DIR}/generated/pjson_schema_builtins.h
+    @ONLY)
+
 # Warning flags differ by compiler: GCC/Clang use -Wall -Wextra, MSVC uses /W4.
 if (MSVC)
     set (PJSON_WARN_FLAGS /W4)
@@ -30,6 +45,7 @@ add_library(pjson::pjson ALIAS ${TARGET_NAME})
 
 target_compile_features(${TARGET_NAME} PUBLIC cxx_std_11)
 target_compile_options(${TARGET_NAME} PRIVATE ${PJSON_WARN_FLAGS})
+target_include_directories(${TARGET_NAME} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
 set_target_properties(${TARGET_NAME} PROPERTIES
     VERSION "${PROJECT_VERSION}"
     SOVERSION "${PROJECT_VERSION_MAJOR}"
@@ -113,3 +129,11 @@ install(FILES "${CMAKE_CURRENT_BINARY_DIR}/pjson.pc"
 install(FILES "${CMAKE_CURRENT_LIST_DIR}/../LICENSE"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/pjson"
 )
+install(FILES
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/third_party/srell/LICENSE.txt"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/pjson"
+    RENAME "LICENSE-SRELL")
+install(FILES
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/third_party/json-schema-2020-12/LICENSE.txt"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/pjson"
+    RENAME "LICENSE-JSON-SCHEMA")

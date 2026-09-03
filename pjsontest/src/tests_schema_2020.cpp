@@ -206,6 +206,47 @@ TEST(schema_unsupported_declared_dialect_fails_compilation) {
     CHECK_EQ(errors[0].category, pJsonSchemaValidator::Error::SchemaCompilation);
 }
 
+TEST(schema_draft2020_preset_accepts_official_dialect) {
+    pjson schema = pjson::parse(
+        R"({"$schema":"https://json-schema.org/draft/2020-12/schema","type":"integer"})");
+    pJsonSchemaValidator validator(schema, pJsonSchemaValidator::Options::draft2020());
+    CHECK(validator.isSchemaValid());
+    CHECK_EQ(validator.dialect(), std::string(pJsonSchemaValidator::draft2020DialectUri()));
+    pjson integerValue;
+    integerValue = int64_t(7);
+    pjson stringValue;
+    stringValue = "seven";
+    CHECK(validator.validate(integerValue));
+    CHECK(!validator.validate(stringValue));
+}
+
+TEST(schema_draft2020_preset_rejects_meta_schema_violation) {
+    pjson schema = pjson::parse(
+        R"({"$schema":"https://json-schema.org/draft/2020-12/schema","$defs":{"bad":{"type":1}}})");
+    pJsonSchemaValidator validator(schema, pJsonSchemaValidator::Options::draft2020());
+    CHECK(!validator.isSchemaValid());
+    CHECK(!validator.schemaErrors().empty());
+    CHECK_EQ(validator.schemaErrors()[0].category, pJsonSchemaValidator::Error::SchemaCompilation);
+    CHECK(validator.schemaErrors()[0].schemaLocation.find("/$defs/bad/type") != std::string::npos);
+}
+
+TEST(schema_custom_dialect_controls_validation_vocabulary) {
+    const std::string dialect = "https://example.test/meta/no-validation";
+    ResolverFixture fixture;
+    fixture.documents[dialect] = pjson::parse(
+        R"({"$id":"https://example.test/meta/no-validation","$vocabulary":{"https://json-schema.org/draft/2020-12/vocab/core":true,"https://json-schema.org/draft/2020-12/vocab/applicator":true}})");
+    pjson schema = pjson::parse(
+        R"({"$schema":"https://example.test/meta/no-validation","properties":{"blocked":false,"number":{"minimum":10}}})");
+    pJsonSchemaValidator::Options options = pJsonSchemaValidator::Options::draft2020();
+    options.resolver = resolveFixture;
+    options.resolverContext = &fixture;
+    pJsonSchemaValidator validator(schema, options);
+    CHECK(validator.isSchemaValid());
+    CHECK_EQ(fixture.calls, size_t(1));
+    CHECK(!validator.validate(pjson::parse(R"({"blocked":1})")));
+    CHECK(validator.validate(pjson::parse(R"({"number":1})")));
+}
+
 TEST(schema_invalid_root_dialect_does_not_invoke_resolver) {
     ResolverFixture fixture;
     pjson schema =

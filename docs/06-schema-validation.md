@@ -73,19 +73,21 @@ number of instances and is cheap to reuse.
 
 ## Dialect and vocabulary contract
 
-pjson deliberately does not claim the complete JSON Schema 2020-12 dialect. It
-implements one named dialect for the documented subset:
+pjson retains one named dialect for backward-compatible subset behavior and an
+explicit opt-in Draft 2020-12 mode:
 
 ```cpp
 const char* dialect = pJsonSchemaValidator::documentedSubsetDialectUri();
 const char* vocabulary = pJsonSchemaValidator::documentedSubsetVocabularyUri();
+pJsonSchemaValidator::Options draft2020 =
+    pJsonSchemaValidator::Options::draft2020();
 ```
 
-When the root schema contains `$schema`, it must equal that dialect URI. When it
-is absent, `Options::defaultDialectUri` selects the dialect and defaults to the
-same URI. Setting it to another URI, or declaring the official 2020-12 URI,
-makes `isSchemaValid()` false: pjson will not silently interpret a dialect it
-does not completely implement.
+Default options require the subset dialect. `Options::draft2020()` accepts the
+official Draft 2020-12 URI, validates schemas against bundled standard
+meta-schemas, enables modern `$ref` sibling behavior, and applies vocabularies
+per schema resource. Custom meta-schema URIs require an application resolver and
+are accepted only when `resolveCustomDialects` is enabled (as in the preset).
 
 Under this subset dialect, `$vocabulary` is an object mapping vocabulary URIs
 to booleans. The pjson subset vocabulary may be required (`true`); unknown
@@ -217,8 +219,9 @@ the corresponding array positions, but elements beyond the tuple remain
 unconstrained because `additionalItems` is not implemented. `minLength` and
 `maxLength` count Unicode code points, not UTF-8 bytes. Unknown keywords and
 malformed keyword forms are ignored in the default permissive mode. Strict mode
-rejects malformed values for every supported keyword before instance
-validation; pjson does not yet load or validate against standard meta-schemas.
+rejects malformed values for every supported keyword before instance validation.
+Draft 2020 mode additionally validates against the selected standard or resolved
+custom meta-schema.
 
 ## Validation options and resource budgets
 

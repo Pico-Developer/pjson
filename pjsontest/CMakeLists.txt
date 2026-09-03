@@ -75,6 +75,11 @@ target_compile_definitions(${TARGET_NAME} PRIVATE
     PJSON_TEST_DEFAULT_JSON_SCHEMA_TEST_SUITE_DIR="${CMAKE_SOURCE_DIR}/.test-corpora/JSON-Schema-Test-Suite")
 
 enable_testing()
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+    add_test(NAME pjson.benchmark_report_tools
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/test_benchmark_tools.py)
+endif()
 
 # ---- CTest case discovery ----------------------------------------------
 

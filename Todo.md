@@ -64,8 +64,8 @@ PJSON_JSON_SCHEMA_TEST_SUITE_DIR="$PWD/.test-corpora/JSON-Schema-Test-Suite" \
 
 The last complete Debug/ASan/Release runs passed 522/522 tests. The current
 Draft 2020-12 manifest explicitly accounts for all 80 files in the pinned
-corpus. It executes 1,777 official cases across 439 groups with no selected-group
-skips and explicitly defers 14 whole optional files. Those cover unsupported
+corpus. It executes 1,773 official cases across 437 groups with no selected-group
+skips and explicitly defers 15 whole optional files. Those cover unsupported
 big-number/cross-draft behavior and unimplemented format families.
 Also verified: clang-format, clang-tidy, 20,000 schema-fuzzer runs, seven-target
 libFuzzer smoke coverage with inputs above 4 KiB, Doxygen API
@@ -82,7 +82,7 @@ duplicate detection, structured error codes) shipped in 2.0.0. See
 `docs/featurerequest-response.md` for the full per-requirement disposition. The
 remaining, larger items are tracked here.
 
-### [ ] SCHEMA-2020 — Finish remaining JSON Schema dialect gaps
+### [~] SCHEMA-2020 — Optional Draft 2020-12 vocabularies and extensions
 
 **What is done:** `if`/`then`/`else`, `prefixItems`,
 `contains`/`minContains`/`maxContains`, `dependentSchemas`, a strict
@@ -101,7 +101,7 @@ SCHEMA-004 now provide `$id`/URI resources, `$anchor`, `$dynamicAnchor`, `$ref`,
 `$dynamicRef`, an explicit resolver with document/byte/work/depth budgets, and
 annotation propagation for `unevaluatedItems`/`unevaluatedProperties`. The
 official Draft 2020-12 gate now explicitly accounts for all 80 pinned files. It
-runs 1,777 cases across 439 groups with no selected-group skips and defers 14
+runs 1,773 cases across 437 groups with no selected-group skips and defers 15
 whole optional files with concrete reasons.
 
 Strict mode now performs a complete pre-validation pass over the documented
@@ -111,8 +111,9 @@ keyword set and rejects malformed keyword shapes before instance validation.
 email/IDN email, hostname/IDN hostname, IRI/IRI-reference, JSON Pointer/relative
 JSON Pointer, URI/URI-reference, and URI-template. Optional bignum and cross-draft
 suites are outside pjson's explicit numeric/dialect contracts. Do not claim every
-optional Draft 2020-12 behavior until those dispositions are reflected in the
-release's conformance statement.
+optional Draft 2020-12 behavior. The required 2020-12 vocabularies and standard
+meta-schema compilation are implemented by `Options::draft2020()`; the legacy
+default remains pjson's documented subset dialect.
 
 **Implemented direction:** vocabulary activation is stored per compiled schema
 resource. Official 2020-12 meta-schemas are bundled and pinned; custom meta-schemas

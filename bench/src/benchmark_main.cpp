@@ -643,6 +643,7 @@ namespace {
         report["library_version"] = PJSON_VERSION;
 
         report["source"]["commit"] = PJSON_BENCH_GIT_COMMIT;
+        report["source"]["fingerprint"] = PJSON_BENCH_SOURCE_FINGERPRINT;
         report["source"]["dirty_known"] = std::string(PJSON_BENCH_GIT_DIRTY) != "unknown";
         report["source"]["dirty"] = std::string(PJSON_BENCH_GIT_DIRTY) == "true";
 

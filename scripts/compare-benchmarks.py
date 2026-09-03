@@ -33,6 +33,11 @@ def environment_key(report):
     }
 
 
+def source_key(report):
+    source = report.get("source", {})
+    return source.get("fingerprint") or source.get("commit")
+
+
 def indexed(report):
     return {
         (row["library"], row["workload"], row["operation"]): row
@@ -64,6 +69,8 @@ def main():
                 file=sys.stderr,
             )
         return 2
+    if source_key(baseline) == source_key(candidate):
+        print("warning: reports have the same source fingerprint", file=sys.stderr)
 
     before = indexed(baseline)
     after = indexed(candidate)

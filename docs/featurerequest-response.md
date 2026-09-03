@@ -248,11 +248,12 @@ and by adding the manifest-driven conformance gate (SCHEMA-006). SCHEMA-003/004
 now add `$id` resource bases, anchors, dynamic references, explicit no-I/O
 external resolution with document/byte/work/depth budgets, and annotation
 propagation for both `unevaluated*` keywords. The official gate now accounts for
-all 80 files in the pinned Draft 2020-12 corpus: it runs 1,777 cases across 439
-groups with zero selected-group skips and explicitly defers 14 whole optional
+all 80 files in the pinned Draft 2020-12 corpus: it runs 1,773 cases across 437
+groups with zero selected-group skips and explicitly defers 15 whole optional
 files. Official and custom meta-schema validation, per-resource vocabulary
-activation, format-assertion selection, and Unicode ECMAScript regex are now
-implemented. Remaining optional gaps are additional format families;
+activation, annotation-only format behavior, and Unicode ECMAScript regex are
+implemented. Remaining optional gaps are the complete format-assertion vocabulary
+and its additional format families;
 optional big-number and cross-draft behavior are outside pjson's data/dialect
 model. Documentation therefore continues to describe this as a **documented
 subset**, not general 2020-12 conformance.
@@ -323,8 +324,8 @@ gate: supported-keyword files run whole, and each remaining unsupported group
 (official meta-schema behavior and Unicode `\p{}` regex)
 is skipped with a concrete reason so coverage cannot silently shrink. The
 manifest also enumerates every optional file, and a bidirectional filesystem
-check fails on unclassified additions or stale entries. Measured baseline: 1,777
-Draft 2020-12 cases pass across 439 groups with zero selected-group skips and 14
+check fails on unclassified additions or stale entries. Measured baseline: 1,773
+Draft 2020-12 cases pass across 437 groups with zero selected-group skips and 15
 whole optional files explicitly deferred. Full unconditional 2020-12
 conformance remains unclaimed.
 

@@ -54,7 +54,7 @@ namespace ByteDance {
     /// require explicit resolver-based loading. Unknown optional vocabularies are
     /// annotations and unknown required vocabularies fail compilation.
     ///
-    /// Supported keywords (documented subset):
+    /// Supported keywords (subset defaults and required Draft 2020-12 vocabularies):
     ///   type, enum, const, $ref, $dynamicRef, $id, $anchor, $dynamicAnchor;
     ///   properties, patternProperties, propertyNames, required,
     ///     dependentRequired, dependencies, dependentSchemas,

@@ -250,7 +250,7 @@ Validation/reference/work/error/resource budgets remain active.
 | JSON Pointer | RFC 6901 | lookup API only; `-` is Patch syntax, not lookup |
 | JSON Patch | RFC 6902 | bounded and document-atomic |
 | JSON Merge Patch | RFC 7396 | bounded and document-atomic |
-| JSON Schema | pjson documented subset dialect | not full Draft 2020-12 |
+| JSON Schema | pjson subset by default; required Draft 2020-12 vocabularies through `Options::draft2020()` | optional format-assertion, bignum, and cross-draft behavior is not complete |
 
 Stable public enum/code values and documented defaults are behavioral API. Exact error
 messages, private storage, benchmark numbers, and source-file organization may change

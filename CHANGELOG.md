@@ -57,8 +57,8 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases follow
   exposes `isSchemaValid()`, `schemaErrors()`, and `dialect()`. Schema errors are
   categorized as `SchemaCompilation` versus `InstanceValidation`.
 - Added a pinned, manifest-driven Draft 2020-12 conformance gate. It now
-  explicitly accounts for all 80 pinned files, runs 1,777 applicable cases
-  across 439 groups, and records every selected-group and whole-file deferral.
+  explicitly accounts for all 80 pinned files, runs 1,773 applicable cases
+  across 437 groups, and records every selected-group and whole-file deferral.
   A bidirectional manifest check prevents corpus additions from disappearing.
 - Added `$id` resource bases, `$anchor`, `$dynamicAnchor`, `$ref`, `$dynamicRef`,
   and an explicit function-pointer resolver. pjson performs no implicit I/O;
@@ -69,11 +69,12 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases follow
 - Added Draft 2020-12 evaluation-annotation propagation and enforcement for
   `unevaluatedItems` and `unevaluatedProperties` across references, dynamic
   references, combinators, conditionals, `contains`, and container applicators.
-  The official gate now executes 1,777 cases across 439 groups.
+  The official gate now executes 1,773 cases across 437 groups.
 - Added opt-in `Options::draft2020()` with bundled official meta-schemas, schema
-  compilation against the selected meta-schema, and per-resource vocabulary and
-  format-assertion activation. Custom meta-schemas use the explicit resolver and
-  the existing resolution budgets.
+  compilation against the selected meta-schema, and per-resource vocabulary
+  activation. Custom meta-schemas use the explicit resolver and existing
+  resolution budgets. The optional complete format-assertion vocabulary remains
+  unsupported and fails closed when required.
 - Published one versioned pjson 2.0 behavioral contract consolidating ownership,
   parsing, numeric, mutation, invalidation, allocator, thread-safety, error, and
   standards guarantees.

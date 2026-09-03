@@ -162,7 +162,8 @@ namespace {
 
         // Disarms every failure point without disturbing lifetime counters.
         void clearFailures() {
-            for (int i = 0; i < 4; ++i) {
+            for (int i = 0; i <= static_cast<int>(pjson::Allocator::ImplementationAllocation);
+                 ++i) {
                 _armedFailures[static_cast<AllocationKind>(i)] = -1;
             }
         }
@@ -198,6 +199,7 @@ namespace {
         CHECK_EQ(aAlloc.stats(pjson::Allocator::StringAllocation).liveBlocks, size_t(0));
         CHECK_EQ(aAlloc.stats(pjson::Allocator::ArrayAllocation).liveBlocks, size_t(0));
         CHECK_EQ(aAlloc.stats(pjson::Allocator::ObjectAllocation).liveBlocks, size_t(0));
+        CHECK_EQ(aAlloc.stats(pjson::Allocator::ImplementationAllocation).liveBlocks, size_t(0));
     }
 
     // Walks iteratively so allocator-provenance checks remain safe for deeply nested values.
@@ -364,6 +366,34 @@ TEST(allocator_mutation_tracks_nodes_strings_arrays_and_objects) {
         CHECK(alloc.stats(pjson::Allocator::ObjectAllocation).allocations >= size_t(1));
     }
 
+    checkAllocatorHealth(alloc);
+}
+
+TEST(allocator_null_is_allocation_free_and_impl_failure_is_transactional) {
+    TrackingAllocator alloc("impl-lifetime");
+    {
+        pjson value(alloc);
+        CHECK(value.isNull());
+        CHECK_EQ(alloc.stats(pjson::Allocator::ImplementationAllocation).allocations, size_t(0));
+
+        alloc.failAfter(pjson::Allocator::ImplementationAllocation, 0);
+        bool threw = false;
+        try {
+            value = int64_t(42);
+        } catch (const std::bad_alloc&) {
+            threw = true;
+        }
+        CHECK(threw);
+        CHECK(value.isNull());
+        CHECK_EQ(&value.getAllocator(), &alloc);
+
+        alloc.clearFailures();
+        value = int64_t(42);
+        CHECK_EQ(alloc.stats(pjson::Allocator::ImplementationAllocation).liveBlocks, size_t(1));
+        value.reset();
+        CHECK(value.isNull());
+        CHECK_EQ(alloc.stats(pjson::Allocator::ImplementationAllocation).liveBlocks, size_t(0));
+    }
     checkAllocatorHealth(alloc);
 }
 

@@ -31,15 +31,27 @@
 // Library version. PJSON_VERSION is the string form ("MAJOR.MINOR.PATCH");
 // the numeric parts allow compile-time checks, e.g.
 //   #if PJSON_VERSION_MAJOR >= 1
-#define PJSON_VERSION_MAJOR 2
+#define PJSON_VERSION_MAJOR 3
 #define PJSON_VERSION_MINOR 0
 #define PJSON_VERSION_PATCH 0
-#define PJSON_VERSION "2.0.0"
+#define PJSON_VERSION "3.0.0"
+#define PJSON_ABI_VERSION 3
+
+#if defined(_WIN32) && defined(PJSON_SHARED)
+#if defined(PJSON_BUILDING_LIBRARY)
+#define PJSON_API __declspec(dllexport)
+#else
+#define PJSON_API __declspec(dllimport)
+#endif
+#elif defined(PJSON_BUILDING_LIBRARY) && defined(__GNUC__)
+#define PJSON_API __attribute__((visibility("default")))
+#else
+#define PJSON_API
+#endif
 
 #include <cstddef>
 #include <cstdint>
 #include <iosfwd>
-#include <map>
 #include <string>
 #include <vector>
 
@@ -53,7 +65,7 @@ namespace ByteDance {
     /// destroyed, replaced, reset, erased, moved, swapped, cleared, or successfully
     /// patched. Unless an operation is `noexcept` or explicitly reports failures,
     /// allocation and standard-library exceptions may escape.
-    class pjson {
+    class PJSON_API pjson {
     public:
         //== Library version =================================================
         /// Returns the process-lifetime semantic-version string for this library.
@@ -61,38 +73,39 @@ namespace ByteDance {
 
         //== Types ===========================================================
 
-        // JSON value kind. Numbers are stored in one of three representations:
-        // signed whole numbers as a 64-bit signed integer (jsonNumberInt),
-        // explicitly unsigned whole numbers (and parsed tokens above INT64_MAX)
-        // as a 64-bit unsigned integer (jsonNumberUInt), and fractional/exponent
-        // values as a double (jsonNumberDouble).
-        //
-        // jsonNumberUInt is appended at the end so the numeric values of the
-        // pre-existing tags are never renumbered (see VERSIONING.md); code that
-        // switches on jsonType must handle the unsigned kind explicitly.
+        /// JSON value kind.
+        ///
+        /// Numbers are stored in one of three representations: signed whole
+        /// numbers as a 64-bit signed integer (jsonNumberInt), explicitly
+        /// unsigned whole numbers as a 64-bit unsigned integer (jsonNumberUInt),
+        /// and fractional/exponent values as a double (jsonNumberDouble).
         enum jsonType : int64_t {
-            jsonNull = 0, // stable zero-valued discriminator for the default state
-            jsonString,
-            jsonNumberInt,
-            jsonNumberDouble,
-            jsonBoolean,
-            jsonArray,      //[ ] array
-            jsonObject,     // { ... } map
-            jsonNumberUInt, // unsigned 64-bit integer (values above INT64_MAX)
+            jsonNull = 0,     ///< JSON null and the stable default discriminator.
+            jsonString,       ///< UTF-8 string value.
+            jsonNumberInt,    ///< Signed 64-bit integer value.
+            jsonNumberDouble, ///< Binary64 number value.
+            jsonBoolean,      ///< Boolean value.
+            jsonArray,        ///< Ordered array value.
+            jsonObject,       ///< Key-sorted object value.
+            jsonNumberUInt,   ///< Unsigned 64-bit integer value.
         };
 
-        // Runtime allocator for persistent DOM storage. The allocator is
-        // non-owning and must outlive every pjson value that refers to it.
-        // Allocation covers pjson child/root nodes plus the std::string,
-        // array, and object wrapper objects. Storage used internally by those
-        // standard-library objects and transient parser/algorithm scratch space
-        // continues to use the standard allocator.
-        struct Allocator {
+        /// Runtime allocator for persistent DOM storage.
+        ///
+        /// The allocator is non-owning and must outlive every pjson value that
+        /// refers to it. Allocation covers pjson child/root nodes, non-null
+        /// private implementations, and the std::string, array, and object
+        /// wrapper objects. Storage used internally by those standard-library
+        /// objects and transient parser/algorithm scratch space continues to use
+        /// the standard allocator.
+        struct PJSON_API Allocator {
+            /// Identifies the purpose and matching deallocation contract of storage.
             enum AllocationKind {
-                NodeAllocation = 0,
-                StringAllocation = 1,
-                ArrayAllocation = 2,
-                ObjectAllocation = 3
+                NodeAllocation = 0,          ///< Storage for a child or allocator-created root.
+                StringAllocation = 1,        ///< Storage for a std::string wrapper.
+                ArrayAllocation = 2,         ///< Storage for an array-container wrapper.
+                ObjectAllocation = 3,        ///< Storage for an object-container wrapper.
+                ImplementationAllocation = 4 ///< Opaque state of one non-null pjson value.
             };
 
             /// Enables destruction through an Allocator base pointer.
@@ -104,96 +117,110 @@ namespace ByteDance {
                                     AllocationKind aKind) noexcept = 0;
         };
 
-        // Structured JSON Pointer (RFC 6901) lookup failure. `tokenIndex` is
-        // zero-based and `token` is the decoded token that could not be
-        // resolved (or the source token when its escape sequence is invalid).
-        // std::string reporting overloads reset all fields on entry. A C-string
-        // overload can report allocation failure before copying the pointer text.
-        struct PointerError {
+        /// Structured JSON Pointer (RFC 6901) lookup failure.
+        ///
+        /// `tokenIndex` is zero-based and `token` is the decoded token that could
+        /// not be resolved (or the source token when its escape sequence is
+        /// invalid). std::string reporting overloads reset all fields on entry. A
+        /// C-string overload can report allocation failure before copying the
+        /// pointer text.
+        struct PJSON_API PointerError {
+            /// Stable categories for programmatic JSON Pointer failure handling.
             enum Code {
-                Ok,
-                InvalidSyntax,
-                InvalidEscape,
-                MissingTarget,
-                ExpectedContainer,
-                InvalidArrayIndex,
-                ArrayIndexOutOfRange,
-                AppendTokenNotAllowed,
-                AllocationFailure,
-                InternalError
+                Ok,                    ///< Lookup succeeded.
+                InvalidSyntax,         ///< The pointer does not begin with slash or is malformed.
+                InvalidEscape,         ///< A token contains an invalid tilde escape.
+                MissingTarget,         ///< An object member or array element does not exist.
+                ExpectedContainer,     ///< Traversal encountered a scalar before the final token.
+                InvalidArrayIndex,     ///< An array token is not a canonical non-negative index.
+                ArrayIndexOutOfRange,  ///< An array token exceeds the current array bounds.
+                AppendTokenNotAllowed, ///< The append token is invalid for lookup.
+                AllocationFailure,     ///< Diagnostic construction could not allocate.
+                InternalError          ///< An unexpected internal exception was contained.
             };
 
-            bool ok;
-            Code code;
-            std::string pointer;
-            size_t tokenIndex;
-            std::string token;
-            std::string message;
+            bool ok;             ///< True exactly when code is Ok.
+            Code code;           ///< Stable machine-readable result category.
+            std::string pointer; ///< Pointer text supplied by the caller.
+            size_t tokenIndex;   ///< Zero-based index of the failing token.
+            std::string token;   ///< Decoded failing token when available.
+            std::string message; ///< Human-readable diagnostic; wording is not stable.
             /// Constructs a successful lookup state with no pointer or token details.
             PointerError();
         };
 
-        // Structured JSON Patch (RFC 6902) / Merge Patch (RFC 7396) failure.
-        // Patch application is atomic: failure leaves the target unchanged.
-        // Reporting patch APIs reset all fields on entry and on success.
-        struct PatchError {
+        /// Structured JSON Patch (RFC 6902) / Merge Patch (RFC 7396) failure.
+        ///
+        /// Patch application is atomic: failure leaves the target unchanged.
+        /// Reporting patch APIs reset all fields on entry and on success.
+        struct PJSON_API PatchError {
+            /// Stable categories for programmatic JSON Patch failure handling.
             enum Code {
-                Ok,
-                InvalidPatchDocument,
-                OperationNotObject,
-                MissingOp,
-                MissingPath,
-                MissingFrom,
-                MissingValue,
-                InvalidOp,
-                InvalidPath,
-                InvalidFrom,
-                TargetMissing,
-                InvalidArrayIndex,
-                ArrayIndexOutOfRange,
-                MoveRootNotAllowed,
-                MoveIntoDescendant,
-                TestFailed,
-                ResourceLimit,
-                AllocationFailure,
-                InternalError
+                Ok,                   ///< Patch application succeeded.
+                InvalidPatchDocument, ///< The patch document is not an array.
+                OperationNotObject,   ///< An operation entry is not an object.
+                MissingOp,            ///< An operation lacks a string `op` member.
+                MissingPath,          ///< An operation lacks a string `path` member.
+                MissingFrom,          ///< A copy or move lacks a string `from` member.
+                MissingValue,         ///< An add, replace, or test lacks `value`.
+                InvalidOp,            ///< The operation name is unsupported.
+                InvalidPath,          ///< The destination JSON Pointer is invalid.
+                InvalidFrom,          ///< The source JSON Pointer is invalid.
+                TargetMissing,        ///< A required source, parent, or target is absent.
+                InvalidArrayIndex,    ///< An array path token is not a valid index.
+                ArrayIndexOutOfRange, ///< An array path token exceeds valid bounds.
+                MoveRootNotAllowed,   ///< A move attempts to remove the document root.
+                MoveIntoDescendant,   ///< A move destination lies under its source.
+                TestFailed,           ///< A test operation did not compare equal.
+                ResourceLimit,        ///< A configured patch-work limit was reached.
+                AllocationFailure,    ///< Patch application could not allocate.
+                InternalError         ///< An unexpected internal exception was contained.
             };
 
-            bool ok;
-            Code code;
-            size_t opIndex;
-            std::string op;
-            std::string path;
-            std::string from;
-            size_t tokenIndex;
-            std::string token;
-            std::string message;
+            bool ok;             ///< True exactly when code is Ok.
+            Code code;           ///< Stable machine-readable result category.
+            size_t opIndex;      ///< Zero-based index of the failing operation.
+            std::string op;      ///< Operation name when available.
+            std::string path;    ///< Destination pointer when available.
+            std::string from;    ///< Source pointer when available.
+            size_t tokenIndex;   ///< Zero-based index of the failing pointer token.
+            std::string token;   ///< Decoded failing pointer token when available.
+            std::string message; ///< Human-readable diagnostic; wording is not stable.
             /// Constructs a successful patch state with no operation or token details.
             PatchError();
         };
 
-        // Bounds transactional patch amplification. Zero selects the documented
-        // built-in ceiling rather than disabling a safety limit. Clone bytes
-        // include node storage plus string and object-key payload bytes.
-        struct PatchOptions {
-            size_t maxOperations;  // default/hard ceiling: 10,000
-            size_t maxClonedNodes; // default/hard ceiling: 1,000,000
-            size_t maxClonedBytes; // default/hard ceiling: 64 MiB
-            size_t maxWork;        // default/hard ceiling: 1,000,000
+        /// Bounds transactional patch amplification.
+        ///
+        /// Zero selects the documented built-in ceiling rather than disabling a
+        /// safety limit. Clone bytes include node storage plus string and
+        /// object-key payload bytes.
+        struct PJSON_API PatchOptions {
+            size_t maxOperations;  ///< Operation ceiling; zero selects the hard 10,000 limit.
+            size_t maxClonedNodes; ///< Clone-node ceiling; zero selects the hard 1,000,000 limit.
+            size_t maxClonedBytes; ///< Clone-byte ceiling; zero selects the hard 64 MiB limit.
+            size_t maxWork;        ///< Work ceiling; zero selects the hard 1,000,000 limit.
+            /// Selects the documented finite default limits.
             PatchOptions();
         };
 
-        // Controls JSON serialization. The default produces the same compact,
-        // ascending-key output as toString()/write() without options. Pretty
-        // output places each array element/object member on its own line. Only
-        // space and tab are valid indentation characters; any other value is
-        // treated as a space so serialization always remains valid JSON.
-        //
-        // Objects are stored in std::map, so source/insertion order is not
-        // available. Key ordering is therefore explicitly ascending or
-        // descending according to std::map's bytewise std::string ordering.
-        struct SerializeOptions {
-            enum KeyOrder { AscendingKeys, DescendingKeys };
+        /// Controls JSON serialization.
+        ///
+        /// The default produces the same compact, ascending-key output as
+        /// toString()/write() without options. Pretty output places each array
+        /// element/object member on its own line. Only space and tab are valid
+        /// indentation characters; any other value is treated as a space so
+        /// serialization always remains valid JSON.
+        ///
+        /// Objects are stored in std::map, so source/insertion order is not
+        /// available. Key ordering is therefore explicitly ascending or
+        /// descending according to std::map's bytewise std::string ordering.
+        struct PJSON_API SerializeOptions {
+            /// Selects ascending or descending deterministic object-key order.
+            enum KeyOrder {
+                AscendingKeys, ///< Emit keys in ascending std::map order.
+                DescendingKeys ///< Emit keys in descending std::map order.
+            };
 
             // Governs how a stored non-finite double (NaN, +/-infinity) is
             // serialized. JSON has no non-finite literal, so the default fails
@@ -203,15 +230,20 @@ namespace ByteDance {
             // "Infinity", and "-Infinity" for interoperability with permissive
             // consumers. The chosen policy applies identically to compact,
             // pretty, buffered, and streaming output.
-            enum NonFinitePolicy { RejectNonFinite, NonFiniteToNull, NonFiniteToString };
+            /// Selects how stored NaN and infinity values are represented.
+            enum NonFinitePolicy {
+                RejectNonFinite,  ///< Fail because JSON has no non-finite number literal.
+                NonFiniteToNull,  ///< Emit non-finite values as JSON null.
+                NonFiniteToString ///< Emit "NaN" or signed "Infinity" strings.
+            };
 
-            bool pretty;
-            size_t indentWidth;
-            char indentCharacter;
-            bool escapeNonAscii;
-            KeyOrder keyOrder;
-            NonFinitePolicy nonFinite;
-            size_t maxOutputBytes; // default 64 MiB; zero explicitly means unlimited
+            bool pretty;               ///< Enables line breaks and indentation.
+            size_t indentWidth;        ///< Indentation characters per nesting level.
+            char indentCharacter;      ///< Space or tab; invalid values are treated as space.
+            bool escapeNonAscii;       ///< Emits non-ASCII code points as Unicode escapes.
+            KeyOrder keyOrder;         ///< Deterministic object-key ordering.
+            NonFinitePolicy nonFinite; ///< Policy for NaN and infinity values.
+            size_t maxOutputBytes;     ///< Output ceiling; zero explicitly means unlimited.
 
             /// Selects compact output, two-space indentation, ascending keys,
             /// and non-finite rejection.
@@ -221,7 +253,8 @@ namespace ByteDance {
         };
 
         /// Structured outcome for the non-throwing serialization APIs.
-        struct SerializeError {
+        struct PJSON_API SerializeError {
+            /// Stable categories for programmatic serialization failure handling.
             enum Code {
                 None,              ///< Serialization succeeded.
                 InvalidUtf8,       ///< A stored string or object key is not valid UTF-8.
@@ -321,13 +354,14 @@ namespace ByteDance {
         /// Returns whether this node stores an object.
         bool isObject() const;
 
-        // Minimal C++11-compatible, non-owning view of a JSON string. A view
-        // aliases bytes owned by this pjson node and is valid only while that
-        // node remains alive and unchanged. Assignment, reset, swap, move,
-        // destruction, erasing the node, or replacing/resetting an ancestor
-        // invalidates it. Strings may contain embedded NUL bytes; use size()
-        // rather than strlen().
-        class StringView {
+        /// Minimal C++11-compatible, non-owning view of a JSON string.
+        ///
+        /// A view aliases bytes owned by this pjson node and is valid only while
+        /// that node remains alive and unchanged. Assignment, reset, swap, move,
+        /// destruction, erasing the node, or replacing/resetting an ancestor
+        /// invalidates it. Strings may contain embedded NUL bytes; use size()
+        /// rather than strlen().
+        class PJSON_API StringView {
         public:
             /// Constructs an empty view with data() == nullptr.
             StringView() noexcept;
@@ -378,21 +412,21 @@ namespace ByteDance {
         std::vector<std::string> keys() const;
 
         //== Non-allocating traversal =======================================
-        // Direct, non-owning traversal that copies no object names and performs
-        // no per-member lookup. forEachMember visits object members in sorted
-        // key order; forEachElement visits array elements in order. The key view
-        // and value reference passed to the visitor are borrowed and valid only
-        // for the duration of the call. aContext is an opaque pointer forwarded
-        // unchanged to every callback (use it to carry state, since a plain
-        // function pointer cannot capture). Returning false from a visitor stops
-        // the traversal early and makes the call return false. Visitors MUST NOT
-        // insert, erase, clear, or otherwise resize the container being
-        // traversed; doing so invalidates iterators. These are no-ops that
-        // return true for the wrong container type.
+        /// Callback for read-only object-member traversal.
         typedef bool (*ConstMemberVisitor)(StringView aKey, const pjson& aValue, void* aContext);
+        /// Callback for mutable object-member traversal.
         typedef bool (*MemberVisitor)(StringView aKey, pjson& aValue, void* aContext);
+        /// Callback for read-only array-element traversal.
         typedef bool (*ConstElementVisitor)(const pjson& aValue, void* aContext);
+        /// Callback for mutable array-element traversal.
         typedef bool (*ElementVisitor)(pjson& aValue, void* aContext);
+        ///
+        /// Traversal copies no object names and performs no per-member lookup.
+        /// Object members are visited in sorted key order and array elements in
+        /// index order. Borrowed arguments are valid only for the callback. The
+        /// opaque context is forwarded unchanged. Returning false stops early.
+        /// A callback must not resize the traversed container. Calling a traversal
+        /// method on the wrong container type is a no-op that returns true.
         /// Visits each object member as (key view, const value); false stops early.
         bool forEachMember(ConstMemberVisitor aVisitor, void* aContext) const;
         /// Visits each object member as (key view, mutable value); false stops early.
@@ -680,30 +714,10 @@ namespace ByteDance {
         // pjsonImpl is a friend so it can reach the storage union directly; no
         // instance helper methods are declared here.
         friend struct pjsonImpl;
-
-        //== Data ============================================================
-        typedef std::vector<pjson*> ArrayStorage;
-        typedef std::map<std::string, pjson*> ObjectStorage;
-
+        // These two pointers are the stable ABI handle. Null values share a
+        // private implementation sentinel; non-null state belongs to _allocator.
         Allocator* _allocator;
-        bool _allocatorOwnedNode;
-        // Intrusive scratch link used only by allocation-free iterative tree
-        // destruction. It is null during normal object lifetime.
-        pjson* _disposeNext;
-        jsonType _eType = jsonType::jsonNull;
-        union Storage {
-            void* _pValueRaw;
-            ObjectStorage* _pValueMap;
-            ArrayStorage* _pValueArray;
-            int64_t _valueInt;
-            uint64_t _valueUInt;
-            double _valueDouble;
-            bool _valueBool;
-            std::string* _pValueString;
-
-            /// Initializes the raw representation to null.
-            Storage();
-        } _uValue;
+        pjsonImpl* _pImpl;
     };
     //========================================================================
 }; // end namespace ByteDance

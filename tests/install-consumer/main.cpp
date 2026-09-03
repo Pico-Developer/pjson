@@ -20,8 +20,8 @@ int main() {
 
     // The public macro and linked library function must identify the same
     // release; this also detects stale headers paired with a different binary.
-    if (std::strcmp(PJSON_VERSION, "2.0.0") != 0 ||
-        std::strcmp(pjson::getVersion(), "2.0.0") != 0) {
+    if (std::strcmp(PJSON_VERSION, "3.0.0") != 0 ||
+        std::strcmp(pjson::getVersion(), "3.0.0") != 0) {
         std::cerr << "unexpected pjson version" << std::endl;
         return 1;
     }

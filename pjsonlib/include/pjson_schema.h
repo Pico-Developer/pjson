@@ -71,7 +71,7 @@ namespace ByteDance {
     /// standard keywords. External references require an explicit Resolver;
     /// pjson never performs network I/O. Regular expressions use a private Unicode-aware
     /// ECMAScript engine, including property escapes.
-    class pJsonSchemaValidator {
+    class PJSON_API pJsonSchemaValidator {
     public:
         /// Resolves one absolute schema-document URI during construction.
         /// Implementations populate aSchema and return true, or return false
@@ -82,7 +82,7 @@ namespace ByteDance {
 
         //== Diagnostics =====================================================
         /// One schema-compilation or instance-validation failure.
-        struct Error {
+        struct PJSON_API Error {
             /// Distinguishes an instance-validation failure from an invalid or
             /// unsupported schema contract discovered while compiling the validator.
             enum Category {
@@ -133,13 +133,14 @@ namespace ByteDance {
         };
 
         //== Options =========================================================
-        // Bounds schema regular-expression work and controls format checks. By
-        // default only a conservative, non-ambiguous ECMAScript subset is
-        // accepted and both pattern/subject sizes are capped, preventing
-        // catastrophic backtracking. trustedRegex() restores unrestricted
-        // ECMAScript regex behavior for trusted schemas/data; the backend still
-        // enforces its own finite work ceiling.
-        struct Options {
+        /// Bounds schema work and controls dialect, format, and resolver policy.
+        ///
+        /// By default only a conservative, non-ambiguous ECMAScript subset is
+        /// accepted and both pattern/subject sizes are capped, preventing
+        /// catastrophic backtracking. trustedRegex() restores unrestricted
+        /// ECMAScript regex behavior for trusted schemas/data; the backend still
+        /// enforces its own finite work ceiling.
+        struct PJSON_API Options {
             size_t maxRegexPatternBytes; ///< 0 = unlimited (default: 256).
             size_t maxRegexSubjectBytes; ///< 0 = unlimited (default: 4096).
             bool allowUnsafeRegex;       ///< Permits unrestricted ECMAScript regex (default false).

@@ -181,6 +181,7 @@ EXPECTED_PUBLIC_ENUMS = {
         "StringAllocation",
         "ArrayAllocation",
         "ObjectAllocation",
+        "ImplementationAllocation",
     },
     ("ByteDance::pJsonParser::Options", "DuplicateKeyPolicy"): {
         "RejectDuplicateKeys",
@@ -416,6 +417,7 @@ REQUIRED_DEFINES = {
     "PJSON_VERSION_MAJOR",
     "PJSON_VERSION_MINOR",
     "PJSON_VERSION_PATCH",
+    "PJSON_ABI_VERSION",
 }
 REQUIRED_ALLOCATOR_MEMBERS = {
     "AllocationKind": 1,

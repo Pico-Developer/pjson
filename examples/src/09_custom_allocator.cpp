@@ -26,7 +26,7 @@ public:
     // maintaining per-kind lifetime totals and one aggregate live-block count.
     CountingAllocator()
             : _liveBlocks(0) {
-        for (size_t i = 0; i < 4; ++i) {
+        for (size_t i = 0; i < kAllocationKindCount; ++i) {
             _allocations[i] = 0;
             _deallocations[i] = 0;
         }
@@ -61,13 +61,16 @@ public:
     size_t liveBlocks() const { return _liveBlocks; }
 
 private:
+    static const size_t kAllocationKindCount =
+        static_cast<size_t>(pjson::Allocator::ImplementationAllocation) + size_t(1);
+
     // AllocationKind is deliberately contiguous, so it is a safe statistics index.
     static size_t index(AllocationKind kind) { return static_cast<size_t>(kind); }
 
     // Keep allocation and deallocation totals even after all live blocks have
     // been released so the example can report lifetime activity separately.
-    size_t _allocations[4];
-    size_t _deallocations[4];
+    size_t _allocations[kAllocationKindCount];
+    size_t _deallocations[kAllocationKindCount];
     size_t _liveBlocks;
 };
 

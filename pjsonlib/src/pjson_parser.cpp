@@ -22,6 +22,16 @@ namespace {
         return configured < pJsonParserImpl::DepthHardLimit ? configured
                                                             : pJsonParserImpl::DepthHardLimit;
     }
+
+    const pJsonParser::Options& effectiveOptions(const pJsonParserImpl* implementation) noexcept {
+        static const pJsonParser::Options defaults;
+        return implementation == nullptr ? defaults : implementation->options;
+    }
+
+    pjson::Allocator& effectiveAllocator(const pJsonParserImpl* implementation) noexcept {
+        return implementation == nullptr ? pjsonImpl::_defaultAllocator()
+                                         : *implementation->allocator;
+    }
 } // namespace
 
 namespace ByteDance {
@@ -75,62 +85,97 @@ namespace ByteDance {
     }
 
     pJsonParser::pJsonParser(const Options& options)
-            : _allocator(&pjsonImpl::_defaultAllocator())
-            , _options(options) {}
+            : _impl(new pJsonParserImpl(pjsonImpl::_defaultAllocator(), options)) {}
 
     pJsonParser::pJsonParser(pjson::Allocator& allocator, const Options& options)
-            : _allocator(&allocator)
-            , _options(options) {}
+            : _impl(new pJsonParserImpl(allocator, options)) {}
+
+    pJsonParser::~pJsonParser() {
+        delete _impl;
+    }
+
+    pJsonParser::pJsonParser(const pJsonParser& other)
+            : _impl(new pJsonParserImpl(effectiveAllocator(other._impl),
+                                        effectiveOptions(other._impl))) {}
+
+    pJsonParser::pJsonParser(pJsonParser&& other) noexcept
+            : _impl(other._impl) {
+        other._impl = nullptr;
+    }
+
+    pJsonParser& pJsonParser::operator=(const pJsonParser& other) {
+        if (this == &other)
+            return *this;
+        pJsonParserImpl* replacement =
+            new pJsonParserImpl(effectiveAllocator(other._impl), effectiveOptions(other._impl));
+        delete _impl;
+        _impl = replacement;
+        return *this;
+    }
+
+    pJsonParser& pJsonParser::operator=(pJsonParser&& other) noexcept {
+        if (this == &other)
+            return *this;
+        delete _impl;
+        _impl = other._impl;
+        other._impl = nullptr;
+        return *this;
+    }
 
     const pJsonParser::Options& pJsonParser::options() const noexcept {
-        return _options;
+        return effectiveOptions(_impl);
     }
     pjson::Allocator& pJsonParser::allocator() const noexcept {
-        return *_allocator;
+        return effectiveAllocator(_impl);
     }
 
     pjson pJsonParser::parse(const std::string& input) const {
-        return pJsonParserImpl::parseTop(input.c_str(), input.size(), _options, nullptr,
-                                         *_allocator);
+        return pJsonParserImpl::parseTop(input.c_str(), input.size(), effectiveOptions(_impl),
+                                         nullptr, effectiveAllocator(_impl));
     }
     pjson pJsonParser::parse(const char* input, size_t size) const {
-        return pJsonParserImpl::parseTop(input, size, _options, nullptr, *_allocator);
+        return pJsonParserImpl::parseTop(input, size, effectiveOptions(_impl), nullptr,
+                                         effectiveAllocator(_impl));
     }
     pjson pJsonParser::parse(const std::string& input, Error& error) const {
-        return pJsonParserImpl::parseTop(input.c_str(), input.size(), _options, &error,
-                                         *_allocator);
+        return pJsonParserImpl::parseTop(input.c_str(), input.size(), effectiveOptions(_impl),
+                                         &error, effectiveAllocator(_impl));
     }
     pjson pJsonParser::parse(const char* input, size_t size, Error& error) const {
-        return pJsonParserImpl::parseTop(input, size, _options, &error, *_allocator);
+        return pJsonParserImpl::parseTop(input, size, effectiveOptions(_impl), &error,
+                                         effectiveAllocator(_impl));
     }
     pjson pJsonParser::parseStream(std::istream& input) const {
-        return pJsonParserImpl::parseStream(input, _options, nullptr, *_allocator);
+        return pJsonParserImpl::parseStream(input, effectiveOptions(_impl), nullptr,
+                                            effectiveAllocator(_impl));
     }
     pjson pJsonParser::parseStream(std::istream& input, Error& error) const {
-        return pJsonParserImpl::parseStream(input, _options, &error, *_allocator);
+        return pJsonParserImpl::parseStream(input, effectiveOptions(_impl), &error,
+                                            effectiveAllocator(_impl));
     }
     bool pJsonParser::parseSax(const std::string& input, pJsonParser::SaxHandler& handler) const {
-        return pJsonParserImpl::parseSaxTop(input.c_str(), input.size(), handler, _options,
-                                            nullptr);
+        return pJsonParserImpl::parseSaxTop(input.c_str(), input.size(), handler,
+                                            effectiveOptions(_impl), nullptr);
     }
     bool pJsonParser::parseSax(const char* input, size_t size,
                                pJsonParser::SaxHandler& handler) const {
-        return pJsonParserImpl::parseSaxTop(input, size, handler, _options, nullptr);
+        return pJsonParserImpl::parseSaxTop(input, size, handler, effectiveOptions(_impl), nullptr);
     }
     bool pJsonParser::parseSax(const std::string& input, pJsonParser::SaxHandler& handler,
                                Error& error) const {
-        return pJsonParserImpl::parseSaxTop(input.c_str(), input.size(), handler, _options, &error);
+        return pJsonParserImpl::parseSaxTop(input.c_str(), input.size(), handler,
+                                            effectiveOptions(_impl), &error);
     }
     bool pJsonParser::parseSax(const char* input, size_t size, pJsonParser::SaxHandler& handler,
                                Error& error) const {
-        return pJsonParserImpl::parseSaxTop(input, size, handler, _options, &error);
+        return pJsonParserImpl::parseSaxTop(input, size, handler, effectiveOptions(_impl), &error);
     }
     bool pJsonParser::parseSaxStream(std::istream& input, pJsonParser::SaxHandler& handler) const {
-        return pJsonParserImpl::parseSaxStream(input, handler, _options, nullptr);
+        return pJsonParserImpl::parseSaxStream(input, handler, effectiveOptions(_impl), nullptr);
     }
     bool pJsonParser::parseSaxStream(std::istream& input, pJsonParser::SaxHandler& handler,
                                      Error& error) const {
-        return pJsonParserImpl::parseSaxStream(input, handler, _options, &error);
+        return pJsonParserImpl::parseSaxStream(input, handler, effectiveOptions(_impl), &error);
     }
 } // namespace ByteDance
 bool pJsonParserImpl::isWhitespace(char c) {

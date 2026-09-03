@@ -52,16 +52,21 @@ add_library(pjson::pjson ALIAS ${TARGET_NAME})
 
 target_compile_features(${TARGET_NAME} PUBLIC cxx_std_11)
 target_compile_options(${TARGET_NAME} PRIVATE ${PJSON_WARN_FLAGS})
+target_compile_definitions(${TARGET_NAME} PRIVATE PJSON_BUILDING_LIBRARY)
+if(BUILD_SHARED_LIBS)
+    target_compile_definitions(${TARGET_NAME} PUBLIC PJSON_SHARED)
+endif()
 target_include_directories(${TARGET_NAME} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
 target_include_directories(${TARGET_NAME} SYSTEM PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/third_party
     ${CMAKE_CURRENT_SOURCE_DIR}/src/third_party/ryu)
 set_target_properties(${TARGET_NAME} PROPERTIES
     VERSION "${PROJECT_VERSION}"
-    SOVERSION "${PROJECT_VERSION_MAJOR}"
+    SOVERSION "${PJSON_ABI_VERSION}"
     CXX_EXTENSIONS OFF
     EXPORT_NAME pjson
-    WINDOWS_EXPORT_ALL_SYMBOLS ON
+    CXX_VISIBILITY_PRESET hidden
+    VISIBILITY_INLINES_HIDDEN YES
 )
 
 # Consumers get the include dir whether they build in-tree or install.

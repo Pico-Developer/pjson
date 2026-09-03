@@ -10,11 +10,11 @@ not applicable). The requirements themselves are a well-constructed, largely
 accurate audit; a small number rest on assumptions that did not match the
 1.0.0 baseline, and those are called out explicitly.
 
-Work landed in this pass targets the release now versioned **2.0.0** (the
-unsigned-integer numeric model and the non-finite serialization default are
-breaking changes, so the major version was bumped per SemVer). The unit suite
-grew from 431 to 522 cases; all pass under normal Debug and Release builds and
-under AddressSanitizer + UndefinedBehaviorSanitizer.
+The production-readiness work first targeted 2.0.0. The subsequent opaque-state
+ABI migration targets **3.0.0** because it intentionally replaces the public
+object layout and establishes a new ABI baseline. The current suite contains
+536 compiled cases plus the benchmark-tool regression and is exercised under
+normal Debug and Release builds and AddressSanitizer + UndefinedBehaviorSanitizer.
 
 ## Legend
 
@@ -307,8 +307,9 @@ The baseline is a well-behaved CMake subproject (namespaced `pjson::pjson`,
 developer targets off when embedded), supports static/shared install and
 build-tree consumers, ships relocatable CMake + pkg-config + Conan/vcpkg
 recipes, publishes a CI platform matrix (GCC/Clang/AppleClang/MSVC), and keeps
-optional features modular. Version fields were bumped to 2.0.0 across the header,
-CMake, Conan, and vcpkg manifests (a configure-time mismatch is a hard error).
+optional features modular. Version fields are 3.0.0 across the header, CMake,
+Conan, and vcpkg manifests (a configure-time mismatch is a hard error), with
+shared-library `SOVERSION` derived from `PJSON_ABI_VERSION`.
 
 ## 12. Verification
 
@@ -334,12 +335,11 @@ vocabulary remains unclaimed.
 ### PJSON-DOC-001..004 — Implemented
 README, `CHANGELOG.md`, and `Todo.md` are updated for the new numeric model,
 non-finite policy, error codes, traversal/factory/checked APIs, and schema
-additions, and the 2.0.0 compatibility impact is called out (ABI break +
-behavioral changes) per DOC-004. `SECURITY.md`/`GOVERNANCE.md` cover DOC-003.
-`docs/behavioral-contract-2.0.md` is the single versioned contract for value and
-numeric representation, strictness/budgets, error and exception boundaries,
-mutation/invalidation, copy/move/allocator/aliasing behavior, serialization,
-thread safety, and each optional standard's exact conformance scope.
+additions. The 2.0.0 behavioral changes and the 3.0.0 ABI break are called out
+per DOC-004. `SECURITY.md`/`GOVERNANCE.md` cover DOC-003. The 2.0 behavioral
+contract remains normative for value behavior, while
+`docs/behavioral-contract-3.0.md` defines the opaque handle layouts, symbol
+visibility, allocator-backed implementation state, and same-major ABI policy.
 
 ## 14. Maintainability
 
@@ -355,23 +355,18 @@ Schema validation is external to `pjson`, and stateless value/numeric, format,
 and URI helpers use focused private translation units behind the one public
 `pjson_schema.h` surface. All components remain in one library target.
 
-A conventional per-node `Impl*` was evaluated and rejected. It would add another
-allocation and indirection to every value (including scalar roots and every child),
-complicate the runtime allocator and allocation-failure contracts, and optimize for
-ABI stability that pjson explicitly does not promise. The existing `pjsonImpl` keeps
-private algorithms out of the public API without that cost. The two small inline
-ownership fields are not redundant: every node has `_allocator`, while only
-allocator-created outer node objects set `_allocatorOwnedNode`; `_disposeNext` is a
-temporary allocation-free destruction work-list link, not persistent parent state.
-A parent link would require mutation-wide maintenance and would not itself provide
-allocation-free deep teardown.
+A two-pointer PImpl now establishes the 3.0 ABI baseline. `pjson` retains only its
+borrowed allocator and opaque implementation pointer; a shared private sentinel
+represents null without allocation. This preserves `noexcept` move construction and
+moved-from allocator identity while allowing type/storage changes without changing
+`sizeof(pjson)`. Non-null implementations use
+`Allocator::ImplementationAllocation`. `_disposeNext` remains private implementation
+state and preserves allocation-free iterative teardown; a parent pointer would not
+replace that requirement. `pJsonParser` is also a one-pointer PImpl.
 
-`ArrayStorage` and `ObjectStorage` likewise remain private because their exact
-types expose both the container choice and raw owning child pointers. Their concrete
-definitions now exist only once in `pjson`; `pjsonImpl` reuses those private aliases
-through friendship, and the former file-scope `PJSONARRAY`/`PJSONMAP` aliases are
-removed. This reduces declaration drift without turning storage representation into
-a supported public API.
+`ArrayStorage` and `ObjectStorage` remain private because their exact types expose
+both the container choice and raw owning child pointers. They now exist only in
+`pjsonImpl`; the public DOM header contains neither alias nor container storage.
 
 Further DOM/SAX unification and stateful schema-dispatch splitting were also reviewed
 and deliberately left incremental. The parser fronts have different streaming,

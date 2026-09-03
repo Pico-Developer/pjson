@@ -895,7 +895,18 @@ run_fuzz_smoke() {
         corpus_dir="${OUT_DIR}/fuzz-corpus/${target}"
         mkdir -p "${corpus_dir}" "${OUT_DIR}/fuzz-artifacts/${target}"
         echo ">> Fuzz corpus smoke: pjson_fuzz_${target}"
-        "${fuzz_build_dir}/fuzz/pjson_fuzz_${target}" \
+        # Homebrew LLVM's libFuzzer runtime can be built against libc++ with
+        # container annotations that differ from the active macOS SDK headers.
+        # That mismatch produces a false container-overflow while libFuzzer
+        # scans its corpus, before LLVMFuzzerTestOneInput is called. Disable
+        # only container annotation checking on macOS; ordinary ASan and UBSan
+        # instrumentation remain enabled for pjson and the fuzz harnesses.
+        local fuzz_asan_options="${ASAN_OPTIONS:-}"
+        if [ "$(uname -s)" = "Darwin" ]; then
+            fuzz_asan_options="${fuzz_asan_options:+${fuzz_asan_options}:}detect_container_overflow=0"
+        fi
+        ASAN_OPTIONS="${fuzz_asan_options}" \
+            "${fuzz_build_dir}/fuzz/pjson_fuzz_${target}" \
             -runs=1000 -seed=1337 -max_len=65536 -timeout=5 -verbosity=0 \
             -dict="${SCRIPT_DIR}/fuzz/json.dict" \
             -artifact_prefix="${OUT_DIR}/fuzz-artifacts/${target}/" \

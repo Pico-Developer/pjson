@@ -71,7 +71,7 @@ PJSON_JSON_SCHEMA_TEST_SUITE_DIR="$PWD/.test-corpora/JSON-Schema-Test-Suite" \
 ```
 
 The last complete contributor gate built Release and ASan/UBSan Debug, then
-passed all 535 CTest checks in sanitized Debug (534 compiled C++ cases plus the
+passed all 537 CTest checks in sanitized Debug (536 compiled C++ cases plus the
 benchmark-tool regression suite). The current
 Draft 2020-12 manifest explicitly accounts for all 80 files in the pinned
 corpus. It executes 1,773 official cases across 437 groups with no selected-group
@@ -80,7 +80,7 @@ big-number/cross-draft behavior and unimplemented format families.
 Also verified: clang-format, clang-tidy, 20,000 schema-fuzzer runs, seven-target
 libFuzzer smoke coverage with inputs above 4 KiB, Doxygen API
 validation, relocatable static/shared CMake and pkg-config consumers, REUSE
-licensing (210/210 files), GCC, and a direct ThreadSanitizer concurrency probe.
+licensing (211/211 files), GCC, and a direct ThreadSanitizer concurrency probe.
 The 2026-09-03 full-churn audit also hardened move assignment and generic
 insertion against ancestor/descendant aliasing, made `canSwap()` accurately
 reject overlapping nodes without violating its `noexcept` contract, fixed
@@ -160,7 +160,7 @@ about 88% while preserving all serialization and randomized bit-round-trip tests
 ### [ ] MAINT-1 — Further unify DOM and SAX parser grammar code
 
 **Where:** DOM parsing and SAX parsing currently use separate recursive-descent
-implementations in `pjson.cpp`, with differential conformance tests guarding
+implementations in `pjson_parser.cpp`, with differential conformance tests guarding
 their behavior.
 
 **Progress:** number grammar scanning plus token classification/conversion now use
@@ -197,20 +197,17 @@ stateful dispatcher together: moving them would spread the same mutable budget,
 diagnostic, annotation, reference-cycle, and dynamic-scope state across more files
 without reducing coupling.
 
-### [~] MAINT-3 — Keep implementation details out of the public DOM API
+### [x] MAINT-3 — Keep implementation details out of the public DOM API
 
-Private algorithms already live behind the non-installed `pjsonImpl` friend, but
-the compact per-node allocator/type/storage fields remain inline. Replacing them
-with a conventional owning `Impl*` is deliberately rejected for now: it adds an
-allocation and pointer indirection to every scalar and child, complicates allocator
-failure/destruction invariants, and buys ABI stability the project explicitly does
-not promise. `_allocatorOwnedNode` cannot be inferred from `_allocator`: stack roots
-and allocator-created children both have an allocator, but only the latter's outer
-object is allocator-owned. `_disposeNext` is a transient intrusive work-list link
-that makes deep destruction allocation-free; a parent pointer would not replace that
-requirement and would add reparenting bookkeeping to all mutations. Reconsider only
-with a measured ABI requirement or a representation design that avoids per-node
-allocation regressions.
+`pjson` is now a stable two-pointer handle: a borrowed allocator pointer plus an
+opaque implementation pointer. A process-lifetime sentinel represents null without
+allocation, preserving `noexcept` null and move construction as well as moved-from
+allocator identity. Non-null private state uses the appended
+`Allocator::ImplementationAllocation` category. Container types, scalar storage,
+and the intrusive allocation-free destruction link live entirely in `pjsonImpl`.
+`pJsonParser` is likewise a one-pointer PImpl. ABI generation 3 is pinned by
+`PJSON_ABI_VERSION`, shared-library `SOVERSION`, layout assertions, explicit symbol
+visibility, and the versioning contract.
 
 ### [ ] FEAT-3 — Preserve object key insertion order
 

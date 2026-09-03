@@ -34,7 +34,6 @@ const char* pjson::getVersion() {
     return PJSON_VERSION;
 }
 
-// _destroyNode can also destroy ordinary `new pjson` roots safely.
 namespace {
     // Adapts the process-wide operator new/delete pair to the allocator API.
     class DefaultPjsonAllocator : public pjson::Allocator {
@@ -81,30 +80,43 @@ pjson::Allocator& pjsonImpl::_defaultAllocator() noexcept {
     return allocator;
 }
 /*static*/
-// Constructs a node in allocator storage and marks its outer allocation so the
-// deleter never mismatches allocator storage with operator delete.
+// Returns the immutable-by-convention process-lifetime representation shared by
+// every null value. Mutating paths materialize a private implementation first.
+pjsonImpl& pjsonImpl::_nullImpl() noexcept {
+    static pjsonImpl nullValue;
+    return nullValue;
+}
+/*static*/
+bool pjsonImpl::_isNullImpl(const pjsonImpl* aImpl) noexcept {
+    return aImpl == &_nullImpl();
+}
+/*static*/
+pjsonImpl* pjsonImpl::_allocateImpl(pjson::Allocator& aAlloc) {
+    return allocateDomObject<pjsonImpl>(aAlloc, pjson::Allocator::ImplementationAllocation);
+}
+/*static*/
+void pjsonImpl::_destroyImpl(pjson::Allocator& aAlloc, pjsonImpl* aImpl) noexcept {
+    if (!_isNullImpl(aImpl))
+        destroyDomObject(aAlloc, aImpl, pjson::Allocator::ImplementationAllocation);
+}
+/*static*/
+// Constructs a child node in allocator storage. _destroyNode is used only for
+// nodes created here; caller-created roots are destroyed with normal delete.
 pjson* pjsonImpl::_allocateNode(pjson::Allocator& aAlloc) {
     void* storage =
         aAlloc.allocate(sizeof(pjson), alignof(pjson), pjson::Allocator::NodeAllocation);
     try {
-        pjson* value = new (storage) pjson(aAlloc);
-        value->_allocatorOwnedNode = true;
-        return value;
+        return new (storage) pjson(aAlloc);
     } catch (...) {
         aAlloc.deallocate(storage, sizeof(pjson), alignof(pjson), pjson::Allocator::NodeAllocation);
         throw;
     }
 }
 /*static*/
-// Destroys a node through the mechanism that created its outer object. Child
-// storage is released first by ~pjson using the node's retained allocator.
+// Destroys a library-created child node through its retained allocator.
 void pjsonImpl::_destroyNode(pjson* aValue) noexcept {
     if (aValue == nullptr)
         return;
-    if (!aValue->_allocatorOwnedNode) {
-        delete aValue;
-        return;
-    }
     pjson::Allocator& allocator = *aValue->_allocator;
     aValue->~pjson();
     allocator.deallocate(aValue, sizeof(pjson), alignof(pjson), pjson::Allocator::NodeAllocation);
@@ -118,24 +130,14 @@ void pjsonImpl::_destroyNode(pjson* aValue) noexcept {
 // moves become deep copies so every descendant remains owned consistently.
 //===----------------------------------------------------------------------===//
 
-// Initializes the inactive union representation before a type is selected.
-pjson::Storage::Storage()
-        : _pValueRaw(nullptr) {}
-
-// Constructs a non-allocator-owned null root using the default allocator.
+// Constructs an allocation-free null root using the default allocator.
 pjson::pjson()
         : _allocator(&pjsonImpl::_defaultAllocator())
-        , _allocatorOwnedNode(false)
-        , _disposeNext(nullptr)
-        , _eType(pjson::jsonType::jsonNull)
-        , _uValue() {}
-// Constructs a non-allocator-owned null root backed by a caller allocator.
+        , _pImpl(&pjsonImpl::_nullImpl()) {}
+// Constructs an allocation-free null root backed by a caller allocator.
 pjson::pjson(Allocator& aAlloc) noexcept
         : _allocator(&aAlloc)
-        , _allocatorOwnedNode(false)
-        , _disposeNext(nullptr)
-        , _eType(pjson::jsonType::jsonNull)
-        , _uValue() {}
+        , _pImpl(&pjsonImpl::_nullImpl()) {}
 // Releases the active value and all descendants through their retained allocator.
 pjson::~pjson() {
     reset();
@@ -143,48 +145,29 @@ pjson::~pjson() {
 // Deep-copies a value while preserving its allocator identity.
 pjson::pjson(const pjson& aFrom)
         : _allocator(aFrom._allocator)
-        , _allocatorOwnedNode(false)
-        , _disposeNext(nullptr)
-        , _eType(pjson::jsonType::jsonNull)
-        , _uValue() {
+        , _pImpl(&pjsonImpl::_nullImpl()) {
     pjsonImpl::_copyContentsInto(*this, aFrom);
 }
 // Deep-copies a value into a specifically selected allocator domain.
 pjson::pjson(const pjson& aFrom, Allocator& aAlloc)
         : _allocator(&aAlloc)
-        , _allocatorOwnedNode(false)
-        , _disposeNext(nullptr)
-        , _eType(pjson::jsonType::jsonNull)
-        , _uValue() {
+        , _pImpl(&pjsonImpl::_nullImpl()) {
     pjsonImpl::_copyContentsInto(*this, aFrom);
 }
 // Steals storage from a same-allocator source and leaves it as null.
 pjson::pjson(pjson&& aFrom) noexcept
         : _allocator(aFrom._allocator)
-        , _allocatorOwnedNode(false)
-        , _disposeNext(nullptr)
-        , _eType(pjson::jsonType::jsonNull)
-        , _uValue() {
-    static_assert(std::is_trivially_copyable<Storage>::value,
-                  "pjson storage must remain safe for bytewise transfer");
-    _eType = aFrom._eType;
-    std::memcpy(&_uValue, &aFrom._uValue, sizeof(_uValue));
-    aFrom._uValue._pValueRaw = nullptr;
-    aFrom._eType = pjson::jsonType::jsonNull;
+        , _pImpl(aFrom._pImpl) {
+    aFrom._pImpl = &pjsonImpl::_nullImpl();
 }
 // Steals when allocator domains match; otherwise deep-copies into aAlloc and
 // resets the source only after the copy succeeds.
 pjson::pjson(pjson&& aFrom, Allocator& aAlloc)
         : _allocator(&aAlloc)
-        , _allocatorOwnedNode(false)
-        , _disposeNext(nullptr)
-        , _eType(pjson::jsonType::jsonNull)
-        , _uValue() {
+        , _pImpl(&pjsonImpl::_nullImpl()) {
     if (_allocator == aFrom._allocator) {
-        _eType = aFrom._eType;
-        std::memcpy(&_uValue, &aFrom._uValue, sizeof(_uValue));
-        aFrom._uValue._pValueRaw = nullptr;
-        aFrom._eType = pjson::jsonType::jsonNull;
+        _pImpl = aFrom._pImpl;
+        aFrom._pImpl = &pjsonImpl::_nullImpl();
     } else {
         pjsonImpl::_copyContentsInto(*this, aFrom);
         aFrom.reset();
@@ -224,7 +207,7 @@ pjson& pjson::operator=(pjson&& aFrom) {
 
     return *this;
 }
-// O(1) exchange of two nodes' contents (type tag + inline storage). noexcept,
+// O(1) exchange of two nodes' private representations. noexcept,
 // which is what lets the move operations and copy-and-swap assignment below
 // offer their exception guarantees.
 //
@@ -243,13 +226,7 @@ void pjson::swap(pjson& aOther) noexcept {
 // distinct, non-overlapping, and share an allocator domain.
 /*static*/
 void pjsonImpl::_swapStorage(pjson& aLeft, pjson& aRight) noexcept {
-    static_assert(std::is_trivially_copyable<pjson::Storage>::value,
-                  "pjson storage must remain safe for bytewise swap");
-    std::swap(aLeft._eType, aRight._eType);
-    pjson::Storage temp;
-    std::memcpy(&temp, &aLeft._uValue, sizeof(temp));
-    std::memcpy(&aLeft._uValue, &aRight._uValue, sizeof(aLeft._uValue));
-    std::memcpy(&aRight._uValue, &temp, sizeof(aRight._uValue));
+    std::swap(aLeft._pImpl, aRight._pImpl);
 }
 // Reports whether aNode is aRoot or a descendant of it. The walk is iterative so
 // it stays stack-safe on deep documents. Allocation failure is treated
@@ -266,12 +243,12 @@ bool pjsonImpl::_containsNode(const pjson& aRoot, const pjson* aNode) noexcept {
             work.pop_back();
             if (cur == aNode)
                 return true;
-            if (cur->_eType == pjson::jsonType::jsonArray) {
-                const pjsonImpl::ArrayStorage& arr = *cur->_uValue._pValueArray;
+            if (cur->_pImpl->_eType == pjson::jsonType::jsonArray) {
+                const pjsonImpl::ArrayStorage& arr = *cur->_pImpl->_pValueArray;
                 for (size_t i = 0; i < arr.size(); ++i)
                     work.push_back(arr[i]);
-            } else if (cur->_eType == pjson::jsonType::jsonObject) {
-                const pjsonImpl::ObjectStorage& obj = *cur->_uValue._pValueMap;
+            } else if (cur->_pImpl->_eType == pjson::jsonType::jsonObject) {
+                const pjsonImpl::ObjectStorage& obj = *cur->_pImpl->_pValueMap;
                 for (pjsonImpl::ObjectStorage::const_iterator it = obj.begin(); it != obj.end();
                      ++it)
                     work.push_back(it->second);
@@ -304,38 +281,39 @@ pjson& pjson::operator=(const pjson& aFrom) {
 }
 // Returns the active storage tag.
 pjson::jsonType pjson::getType() const {
-    return _eType;
+    return _pImpl->_eType;
 };
 // Type predicates inspect the tag only and never coerce the stored value.
 bool pjson::isNull() const {
-    return _eType == jsonNull;
+    return _pImpl->_eType == jsonNull;
 }
 bool pjson::isString() const {
-    return _eType == jsonString;
+    return _pImpl->_eType == jsonString;
 }
 bool pjson::isNumber() const {
-    return _eType == jsonNumberInt || _eType == jsonNumberUInt || _eType == jsonNumberDouble;
+    return _pImpl->_eType == jsonNumberInt || _pImpl->_eType == jsonNumberUInt ||
+           _pImpl->_eType == jsonNumberDouble;
 }
 bool pjson::isInt() const {
-    return _eType == jsonNumberInt;
+    return _pImpl->_eType == jsonNumberInt;
 }
 bool pjson::isUInt() const {
-    return _eType == jsonNumberUInt;
+    return _pImpl->_eType == jsonNumberUInt;
 }
 bool pjson::isInteger() const {
-    return _eType == jsonNumberInt || _eType == jsonNumberUInt;
+    return _pImpl->_eType == jsonNumberInt || _pImpl->_eType == jsonNumberUInt;
 }
 bool pjson::isDouble() const {
-    return _eType == jsonNumberDouble;
+    return _pImpl->_eType == jsonNumberDouble;
 }
 bool pjson::isBool() const {
-    return _eType == jsonBoolean;
+    return _pImpl->_eType == jsonBoolean;
 }
 bool pjson::isArray() const {
-    return _eType == jsonArray;
+    return _pImpl->_eType == jsonArray;
 }
 bool pjson::isObject() const {
-    return _eType == jsonObject;
+    return _pImpl->_eType == jsonObject;
 }
 // Constructs an empty non-owning view.
 pjson::StringView::StringView() noexcept
@@ -362,69 +340,90 @@ bool pjson::StringView::empty() const noexcept {
 // unsigned read accepts a signed value only when it is non-negative; a double
 // read widens either integer representation.
 bool pjson::tryGet(int64_t& aResult) const noexcept {
-    if (_eType == pjson::jsonType::jsonNumberInt) {
-        aResult = _uValue._valueInt;
+    if (_pImpl->_eType == pjson::jsonType::jsonNumberInt) {
+        aResult = _pImpl->_valueInt;
         return true;
     }
-    if (_eType == pjson::jsonType::jsonNumberUInt &&
-        _uValue._valueUInt <= static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
-        aResult = static_cast<int64_t>(_uValue._valueUInt);
+    if (_pImpl->_eType == pjson::jsonType::jsonNumberUInt &&
+        _pImpl->_valueUInt <= static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
+        aResult = static_cast<int64_t>(_pImpl->_valueUInt);
         return true;
     }
     return false;
 }
 bool pjson::tryGet(uint64_t& aResult) const noexcept {
-    if (_eType == pjson::jsonType::jsonNumberUInt) {
-        aResult = _uValue._valueUInt;
+    if (_pImpl->_eType == pjson::jsonType::jsonNumberUInt) {
+        aResult = _pImpl->_valueUInt;
         return true;
     }
-    if (_eType == pjson::jsonType::jsonNumberInt && _uValue._valueInt >= 0) {
-        aResult = static_cast<uint64_t>(_uValue._valueInt);
+    if (_pImpl->_eType == pjson::jsonType::jsonNumberInt && _pImpl->_valueInt >= 0) {
+        aResult = static_cast<uint64_t>(_pImpl->_valueInt);
         return true;
     }
     return false;
 }
 bool pjson::tryGet(double& aResult) const noexcept {
-    if (_eType == pjson::jsonType::jsonNumberInt) {
-        aResult = static_cast<double>(_uValue._valueInt);
+    if (_pImpl->_eType == pjson::jsonType::jsonNumberInt) {
+        aResult = static_cast<double>(_pImpl->_valueInt);
         return true;
     }
-    if (_eType == pjson::jsonType::jsonNumberUInt) {
-        aResult = static_cast<double>(_uValue._valueUInt);
+    if (_pImpl->_eType == pjson::jsonType::jsonNumberUInt) {
+        aResult = static_cast<double>(_pImpl->_valueUInt);
         return true;
     }
-    if (_eType != pjson::jsonType::jsonNumberDouble)
+    if (_pImpl->_eType != pjson::jsonType::jsonNumberDouble)
         return false;
-    aResult = _uValue._valueDouble;
+    aResult = _pImpl->_valueDouble;
     return true;
 }
 bool pjson::tryGet(bool& aResult) const noexcept {
-    if (_eType != pjson::jsonType::jsonBoolean)
+    if (_pImpl->_eType != pjson::jsonType::jsonBoolean)
         return false;
-    aResult = _uValue._valueBool;
+    aResult = _pImpl->_valueBool;
     return true;
 }
 bool pjson::tryGet(std::string& aResult) const {
-    if (_eType != pjson::jsonType::jsonString)
+    if (_pImpl->_eType != pjson::jsonType::jsonString)
         return false;
-    aResult = *_uValue._pValueString;
+    aResult = *_pImpl->_pValueString;
     return true;
 }
 bool pjson::tryGet(StringView& aResult) const noexcept {
-    if (_eType != pjson::jsonType::jsonString)
+    if (_pImpl->_eType != pjson::jsonType::jsonString)
         return false;
-    const std::string& value = *_uValue._pValueString;
+    const std::string& value = *_pImpl->_pValueString;
     aResult = StringView(value.data(), value.size());
     return true;
 }
 // Resets to the canonical null state, releasing any owned subtree.
 void pjson::reset() {
-    resetTo(pjson::jsonType::jsonNull);
+    if (pjsonImpl::_isNullImpl(_pImpl))
+        return;
+
+    switch (_pImpl->_eType) {
+        case pjson::jsonType::jsonString:
+            destroyDomObject(*_allocator, _pImpl->_pValueString, Allocator::StringAllocation);
+            break;
+        case pjson::jsonType::jsonArray:
+            pjsonImpl::_disposeChildren(*this);
+            destroyDomObject(*_allocator, _pImpl->_pValueArray, Allocator::ArrayAllocation);
+            break;
+        case pjson::jsonType::jsonObject:
+            pjsonImpl::_disposeChildren(*this);
+            destroyDomObject(*_allocator, _pImpl->_pValueMap, Allocator::ObjectAllocation);
+            break;
+        default:
+            break;
+    }
+
+    pjsonImpl* implementation = _pImpl;
+    _pImpl = &pjsonImpl::_nullImpl();
+    pjsonImpl::_destroyImpl(*_allocator, implementation);
 }
 // Idempotent reset: rebuild as an empty value of aeType only when the node is
 // not already that type, so an existing array/object keeps its contents.
 void pjson::resetIfNeeded(jsonType aeType) {
-    if (_eType != aeType) {
+    if (_pImpl->_eType != aeType) {
         resetTo(aeType);
     }
 }
@@ -437,87 +436,51 @@ void pjson::resetTo(pjson::jsonType aeType) {
     if (aeType < pjson::jsonType::jsonNull || aeType > pjson::jsonType::jsonNumberUInt)
         throw std::invalid_argument("invalid pjson::jsonType");
 
-    // Allocate the replacement before destroying the current value. If an
-    // allocation fails, *this remains unchanged and internally valid.
-    void* replacement = nullptr;
-    switch (aeType) {
-        case pjson::jsonType::jsonString:
-            replacement = allocateDomObject<std::string>(*_allocator, Allocator::StringAllocation);
-            break;
-        case pjson::jsonType::jsonArray:
-            replacement =
-                allocateDomObject<pjsonImpl::ArrayStorage>(*_allocator, Allocator::ArrayAllocation);
-            break;
-        case pjson::jsonType::jsonObject:
-            replacement = allocateDomObject<pjsonImpl::ObjectStorage>(*_allocator,
-                                                                      Allocator::ObjectAllocation);
-            break;
-        default:
-            break;
+    if (aeType == pjson::jsonNull) {
+        reset();
+        return;
     }
 
-    switch (_eType) {
-        case pjson::jsonType::jsonNull: {
-            _uValue._pValueRaw = nullptr;
-            break;
+    // Build a complete replacement before publishing it. This includes both
+    // the opaque implementation and any wrapper object required by the type.
+    pjson replacement(*_allocator);
+    pjsonImpl* implementation = pjsonImpl::_allocateImpl(*_allocator);
+    try {
+        switch (aeType) {
+            case pjson::jsonType::jsonString:
+                implementation->_pValueString =
+                    allocateDomObject<std::string>(*_allocator, Allocator::StringAllocation);
+                break;
+            case pjson::jsonType::jsonArray:
+                implementation->_pValueArray = allocateDomObject<pjsonImpl::ArrayStorage>(
+                    *_allocator, Allocator::ArrayAllocation);
+                break;
+            case pjson::jsonType::jsonObject:
+                implementation->_pValueMap = allocateDomObject<pjsonImpl::ObjectStorage>(
+                    *_allocator, Allocator::ObjectAllocation);
+                break;
+            case pjson::jsonType::jsonNumberInt:
+                implementation->_valueInt = 0;
+                break;
+            case pjson::jsonType::jsonNumberUInt:
+                implementation->_valueUInt = 0;
+                break;
+            case pjson::jsonType::jsonNumberDouble:
+                implementation->_valueDouble = 0.0;
+                break;
+            case pjson::jsonType::jsonBoolean:
+                implementation->_valueBool = false;
+                break;
+            default:
+                break;
         }
-        case pjson::jsonType::jsonString: {
-            destroyDomObject(*_allocator, _uValue._pValueString, Allocator::StringAllocation);
-            break;
-        }
-        case pjson::jsonType::jsonNumberInt:
-        case pjson::jsonType::jsonNumberUInt:
-        case pjson::jsonType::jsonNumberDouble:
-        case pjson::jsonType::jsonBoolean:
-            break;
-        case pjson::jsonType::jsonArray: {
-            // Free descendants iteratively (safe on deep trees), then the vector.
-            pjsonImpl::_disposeChildren(*this);
-            destroyDomObject(*_allocator, _uValue._pValueArray, Allocator::ArrayAllocation);
-            break;
-        }
-        case pjson::jsonType::jsonObject: {
-            pjsonImpl::_disposeChildren(*this);
-            destroyDomObject(*_allocator, _uValue._pValueMap, Allocator::ObjectAllocation);
-            break;
-        }
-    } // end switch
-    _uValue._pValueRaw = nullptr;
-
-    switch (aeType) {
-        case pjson::jsonType::jsonNull: { /* _uValue._pValueRaw = nullptr; */
-            break;
-        }
-        case pjson::jsonType::jsonString: {
-            _uValue._pValueString = static_cast<std::string*>(replacement);
-            break;
-        }
-        case pjson::jsonType::jsonNumberInt: {
-            _uValue._valueInt = 0;
-            break;
-        }
-        case pjson::jsonType::jsonNumberUInt: {
-            _uValue._valueUInt = 0;
-            break;
-        }
-        case pjson::jsonType::jsonNumberDouble: {
-            _uValue._valueDouble = 0.0;
-            break;
-        }
-        case pjson::jsonType::jsonBoolean: {
-            _uValue._valueBool = false;
-            break;
-        }
-        case pjson::jsonType::jsonArray: {
-            _uValue._pValueArray = static_cast<pjsonImpl::ArrayStorage*>(replacement);
-            break;
-        }
-        case pjson::jsonType::jsonObject: {
-            _uValue._pValueMap = static_cast<pjsonImpl::ObjectStorage*>(replacement);
-            break;
-        }
-    } // end switch
-    _eType = aeType;
+    } catch (...) {
+        pjsonImpl::_destroyImpl(*_allocator, implementation);
+        throw;
+    }
+    implementation->_eType = aeType;
+    replacement._pImpl = implementation;
+    pjsonImpl::_swapStorage(*this, replacement);
 }
 // Replaces this value with a deep copy allocated in this value's allocator.
 // Building the replacement first gives the operation a strong guarantee.
@@ -537,23 +500,23 @@ void pjsonImpl::_copyContentsInto(pjson& aDst, const pjson& aFrom) {
     // copied immediately; array/map children are queued.
     try {
         aDst.resetTo(aFrom.getType());
-        if (aDst._eType != pjson::jsonType::jsonArray &&
-            aDst._eType != pjson::jsonType::jsonObject) {
-            switch (aDst._eType) {
+        if (aDst._pImpl->_eType != pjson::jsonType::jsonArray &&
+            aDst._pImpl->_eType != pjson::jsonType::jsonObject) {
+            switch (aDst._pImpl->_eType) {
                 case pjson::jsonType::jsonString:
-                    *aDst._uValue._pValueString = *(aFrom._uValue._pValueString);
+                    *aDst._pImpl->_pValueString = *(aFrom._pImpl->_pValueString);
                     break;
                 case pjson::jsonType::jsonNumberInt:
-                    aDst._uValue._valueInt = aFrom._uValue._valueInt;
+                    aDst._pImpl->_valueInt = aFrom._pImpl->_valueInt;
                     break;
                 case pjson::jsonType::jsonNumberUInt:
-                    aDst._uValue._valueUInt = aFrom._uValue._valueUInt;
+                    aDst._pImpl->_valueUInt = aFrom._pImpl->_valueUInt;
                     break;
                 case pjson::jsonType::jsonNumberDouble:
-                    aDst._uValue._valueDouble = aFrom._uValue._valueDouble;
+                    aDst._pImpl->_valueDouble = aFrom._pImpl->_valueDouble;
                     break;
                 case pjson::jsonType::jsonBoolean:
-                    aDst._uValue._valueBool = aFrom._uValue._valueBool;
+                    aDst._pImpl->_valueBool = aFrom._pImpl->_valueBool;
                     break;
                 default:
                     break; // null: nothing to copy
@@ -576,15 +539,15 @@ void pjsonImpl::_copyContentsInto(pjson& aDst, const pjson& aFrom) {
             pjson& dst = *cur.dst;
 
             // dst has already been resetTo(src type) by the parent (or caller).
-            if (src._eType == pjson::jsonType::jsonArray) {
-                dst._uValue._pValueArray->reserve(src._uValue._pValueArray->size());
-                for (const pjson* elem : *src._uValue._pValueArray) {
+            if (src._pImpl->_eType == pjson::jsonType::jsonArray) {
+                dst._pImpl->_pValueArray->reserve(src._pImpl->_pValueArray->size());
+                for (const pjson* elem : *src._pImpl->_pValueArray) {
                     pjsonImpl::OwnedNode child = pjsonImpl::_makeNode(*dst._allocator);
                     child->resetTo(elem->getType());
-                    dst._uValue._pValueArray->push_back(child.get());
+                    dst._pImpl->_pValueArray->push_back(child.get());
                     pjson* attached = child.release();
-                    if (elem->_eType == pjson::jsonType::jsonArray ||
-                        elem->_eType == pjson::jsonType::jsonObject) {
+                    if (elem->_pImpl->_eType == pjson::jsonType::jsonArray ||
+                        elem->_pImpl->_eType == pjson::jsonType::jsonObject) {
                         Item it = {elem, attached};
                         work.push_back(it);
                     } else {
@@ -592,18 +555,18 @@ void pjsonImpl::_copyContentsInto(pjson& aDst, const pjson& aFrom) {
                     }
                 }
             } else { // jsonObject
-                for (const auto& kv : *src._uValue._pValueMap) {
+                for (const auto& kv : *src._pImpl->_pValueMap) {
                     pjsonImpl::OwnedNode child = pjsonImpl::_makeNode(*dst._allocator);
                     child->resetTo(kv.second->getType());
                     const std::pair<pjsonImpl::ObjectStorage::iterator, bool> inserted =
-                        dst._uValue._pValueMap->insert(
+                        dst._pImpl->_pValueMap->insert(
                             std::make_pair(kv.first, static_cast<pjson*>(nullptr)));
                     if (!inserted.second)
                         throw std::logic_error("duplicate key while copying pjson object");
                     pjson* attached = child.release();
                     inserted.first->second = attached;
-                    if (kv.second->_eType == pjson::jsonType::jsonArray ||
-                        kv.second->_eType == pjson::jsonType::jsonObject) {
+                    if (kv.second->_pImpl->_eType == pjson::jsonType::jsonArray ||
+                        kv.second->_pImpl->_eType == pjson::jsonType::jsonObject) {
                         Item it = {kv.second, attached};
                         work.push_back(it);
                     } else {
@@ -622,44 +585,61 @@ void pjsonImpl::_copyContentsInto(pjson& aDst, const pjson& aFrom) {
 // Leaves node's own top-level array/map allocated but empty.
 /*static*/
 void pjsonImpl::_disposeChildren(pjson& node) noexcept {
-    if (node._eType != pjson::jsonType::jsonArray && node._eType != pjson::jsonType::jsonObject) {
+    if (node._pImpl->_eType != pjson::jsonType::jsonArray &&
+        node._pImpl->_eType != pjson::jsonType::jsonObject) {
         return;
     }
     // Use an intrusive pending list so teardown never allocates and therefore
     // remains noexcept even for very deep trees or an exhausted heap.
     pjson* pending = nullptr;
-    if (node._eType == pjson::jsonType::jsonArray) {
-        for (pjson* c : *node._uValue._pValueArray) {
-            c->_disposeNext = pending;
-            pending = c;
+    if (node._pImpl->_eType == pjson::jsonType::jsonArray) {
+        for (pjson* c : *node._pImpl->_pValueArray) {
+            if (pjsonImpl::_isNullImpl(c->_pImpl)) {
+                pjsonImpl::_destroyNode(c);
+            } else {
+                c->_pImpl->_disposeNext = pending;
+                pending = c;
+            }
         }
-        node._uValue._pValueArray->clear();
+        node._pImpl->_pValueArray->clear();
     } else {
-        for (const auto& kv : *node._uValue._pValueMap) {
-            kv.second->_disposeNext = pending;
-            pending = kv.second;
+        for (const auto& kv : *node._pImpl->_pValueMap) {
+            if (pjsonImpl::_isNullImpl(kv.second->_pImpl)) {
+                pjsonImpl::_destroyNode(kv.second);
+            } else {
+                kv.second->_pImpl->_disposeNext = pending;
+                pending = kv.second;
+            }
         }
-        node._uValue._pValueMap->clear();
+        node._pImpl->_pValueMap->clear();
     }
 
     while (pending != nullptr) {
         pjson* p = pending;
-        pending = p->_disposeNext;
-        p->_disposeNext = nullptr;
+        pending = p->_pImpl->_disposeNext;
+        p->_pImpl->_disposeNext = nullptr;
         // Move this node's children into the work-list, then detach so its own
         // destructor has nothing left to recurse into.
-        if (p->_eType == pjson::jsonType::jsonArray) {
-            for (pjson* c : *p->_uValue._pValueArray) {
-                c->_disposeNext = pending;
-                pending = c;
+        if (p->_pImpl->_eType == pjson::jsonType::jsonArray) {
+            for (pjson* c : *p->_pImpl->_pValueArray) {
+                if (pjsonImpl::_isNullImpl(c->_pImpl)) {
+                    pjsonImpl::_destroyNode(c);
+                } else {
+                    c->_pImpl->_disposeNext = pending;
+                    pending = c;
+                }
             }
-            p->_uValue._pValueArray->clear();
-        } else if (p->_eType == pjson::jsonType::jsonObject) {
-            for (const auto& kv : *p->_uValue._pValueMap) {
-                kv.second->_disposeNext = pending;
-                pending = kv.second;
+            p->_pImpl->_pValueArray->clear();
+        } else if (p->_pImpl->_eType == pjson::jsonType::jsonObject) {
+            for (const auto& kv : *p->_pImpl->_pValueMap) {
+                if (pjsonImpl::_isNullImpl(kv.second->_pImpl)) {
+                    pjsonImpl::_destroyNode(kv.second);
+                } else {
+                    kv.second->_pImpl->_disposeNext = pending;
+                    pending = kv.second;
+                }
             }
-            p->_uValue._pValueMap->clear();
+            p->_pImpl->_pValueMap->clear();
         }
         pjsonImpl::_destroyNode(p); // now a leaf (or emptied container)
     }
@@ -729,7 +709,7 @@ pjsonImpl::OwnedNode pjsonImpl::_cloneNode(const pjson& aValue, pjson::Allocator
 // Replaces the current value with a copied JSON string.
 pjson& pjson::operator=(const std::string& aString) {
     resetIfNeeded(pjson::jsonType::jsonString);
-    *_uValue._pValueString = aString;
+    *_pImpl->_pValueString = aString;
     return *this;
 }
 // Replaces the current value with the null-terminated string's bytes.
@@ -737,32 +717,32 @@ pjson& pjson::operator=(const char* aCString) {
     if (aCString == nullptr)
         throw std::invalid_argument("pjson string assignment requires non-null input");
     resetIfNeeded(pjson::jsonType::jsonString);
-    *_uValue._pValueString = aCString;
+    *_pImpl->_pValueString = aCString;
     return *this;
 }
 // Replaces the current value with a JSON boolean.
 pjson& pjson::operator=(const bool aBool) {
     resetIfNeeded(pjson::jsonType::jsonBoolean);
-    _uValue._valueBool = aBool;
+    _pImpl->_valueBool = aBool;
     return *this;
 }
 // Replaces the current value with a JSON integer.
 pjson& pjson::operator=(const int64_t aInt) {
     resetIfNeeded(pjson::jsonType::jsonNumberInt);
-    _uValue._valueInt = aInt;
+    _pImpl->_valueInt = aInt;
     return *this;
 }
 // Replaces the current value with an unsigned JSON integer, retaining unsigned
 // type identity even when the value would also fit in int64_t.
 pjson& pjson::operator=(const uint64_t aUInt) {
     resetIfNeeded(pjson::jsonType::jsonNumberUInt);
-    _uValue._valueUInt = aUInt;
+    _pImpl->_valueUInt = aUInt;
     return *this;
 }
 // Replaces the current value with a JSON double.
 pjson& pjson::operator=(const double aDouble) {
     resetIfNeeded(pjson::jsonType::jsonNumberDouble);
-    _uValue._valueDouble = aDouble;
+    _pImpl->_valueDouble = aDouble;
     return *this;
 }
 namespace {
@@ -947,14 +927,14 @@ const pjson& pjson::at(const std::string& aKey) const {
 // Checked, non-vivifying array access using a non-negative index. Throws
 // std::out_of_range for a non-array receiver or an out-of-range index.
 pjson& pjson::at(size_t aIndex) {
-    if (_eType != pjson::jsonType::jsonArray || aIndex >= _uValue._pValueArray->size())
+    if (_pImpl->_eType != pjson::jsonType::jsonArray || aIndex >= _pImpl->_pValueArray->size())
         throw std::out_of_range("pjson::at: array index out of range");
-    return *(*_uValue._pValueArray)[aIndex];
+    return *(*_pImpl->_pValueArray)[aIndex];
 }
 const pjson& pjson::at(size_t aIndex) const {
-    if (_eType != pjson::jsonType::jsonArray || aIndex >= _uValue._pValueArray->size())
+    if (_pImpl->_eType != pjson::jsonType::jsonArray || aIndex >= _pImpl->_pValueArray->size())
         throw std::out_of_range("pjson::at: array index out of range");
-    return *(*_uValue._pValueArray)[aIndex];
+    return *(*_pImpl->_pValueArray)[aIndex];
 }
 
 // Generic child append. Promotes a non-array target to an array, then attaches
@@ -963,7 +943,7 @@ pjson& pjson::pushBack(const pjson& aValue) {
     // When converting a container that owns aValue, build the complete
     // replacement before destroying the old tree. This also gives all
     // non-array promotions a strong exception guarantee.
-    if (_eType != pjson::jsonType::jsonArray) {
+    if (_pImpl->_eType != pjson::jsonType::jsonArray) {
         pjson replacement(*_allocator);
         replacement.resetTo(pjson::jsonType::jsonArray);
         replacement.pushBack(aValue);
@@ -972,8 +952,8 @@ pjson& pjson::pushBack(const pjson& aValue) {
     }
     pjsonImpl::OwnedNode child = pjsonImpl::_makeNode(*_allocator);
     pjsonImpl::_copyContentsInto(*child, aValue);
-    _uValue._pValueArray->push_back(nullptr);
-    _uValue._pValueArray->back() = child.release();
+    _pImpl->_pValueArray->push_back(nullptr);
+    _pImpl->_pValueArray->back() = child.release();
     return *this;
 }
 pjson& pjson::pushBack(pjson&& aValue) {
@@ -983,7 +963,7 @@ pjson& pjson::pushBack(pjson&& aValue) {
     // snapshot rather than creating an ownership cycle.
     if (pjsonImpl::_containsNode(aValue, this))
         return pushBack(static_cast<const pjson&>(aValue));
-    if (_eType != pjson::jsonType::jsonArray) {
+    if (_pImpl->_eType != pjson::jsonType::jsonArray) {
         pjson replacement(*_allocator);
         replacement.resetTo(pjson::jsonType::jsonArray);
         replacement.pushBack(std::move(aValue));
@@ -994,7 +974,7 @@ pjson& pjson::pushBack(pjson&& aValue) {
     // Reserve before consuming aValue so allocation failure leaves both values
     // logically unchanged. Child nodes are separately allocated, so a vector
     // reallocation cannot invalidate an aliased descendant source.
-    _uValue._pValueArray->reserve(_uValue._pValueArray->size() + 1);
+    _pImpl->_pValueArray->reserve(_pImpl->_pValueArray->size() + 1);
     if (child->_allocator == aValue._allocator) {
         pjsonImpl::_swapStorage(*child, aValue);
         aValue.reset();
@@ -1002,8 +982,8 @@ pjson& pjson::pushBack(pjson&& aValue) {
         pjsonImpl::_copyContentsInto(*child, aValue);
         aValue.reset();
     }
-    _uValue._pValueArray->push_back(nullptr);
-    _uValue._pValueArray->back() = child.release();
+    _pImpl->_pValueArray->push_back(nullptr);
+    _pImpl->_pValueArray->back() = child.release();
     return *this;
 }
 // Insert-or-assign an object member from an arbitrary pjson value.
@@ -1014,14 +994,14 @@ pjson& pjson::insertOrAssign(const std::string& aKey, const pjson& aValue) {
         pjson sourceCopy(aValue, *_allocator);
         return insertOrAssign(aKey, std::move(sourceCopy));
     }
-    if (_eType != pjson::jsonType::jsonObject) {
+    if (_pImpl->_eType != pjson::jsonType::jsonObject) {
         pjson replacement(*_allocator);
         replacement.resetTo(pjson::jsonType::jsonObject);
         replacement.insertOrAssign(aKey, aValue);
         pjsonImpl::_swapStorage(*this, replacement);
         return *this;
     }
-    pjsonImpl::ObjectStorage& object = *_uValue._pValueMap;
+    pjsonImpl::ObjectStorage& object = *_pImpl->_pValueMap;
     pjsonImpl::ObjectStorage::iterator existing = object.find(aKey);
     if (existing != object.end()) {
         existing->second->copyFrom(aValue);
@@ -1042,14 +1022,14 @@ pjson& pjson::insertOrAssign(const std::string& aKey, pjson&& aValue) {
         pjson sourceCopy(aValue, *_allocator);
         return insertOrAssign(aKey, std::move(sourceCopy));
     }
-    if (_eType != pjson::jsonType::jsonObject) {
+    if (_pImpl->_eType != pjson::jsonType::jsonObject) {
         pjson replacement(*_allocator);
         replacement.resetTo(pjson::jsonType::jsonObject);
         replacement.insertOrAssign(aKey, std::move(aValue));
         pjsonImpl::_swapStorage(*this, replacement);
         return *this;
     }
-    pjsonImpl::ObjectStorage& object = *_uValue._pValueMap;
+    pjsonImpl::ObjectStorage& object = *_pImpl->_pValueMap;
     pjsonImpl::ObjectStorage::iterator existing = object.find(aKey);
     if (existing != object.end()) {
         *existing->second = std::move(aValue);
@@ -1082,9 +1062,9 @@ pjson& pjson::insertOrAssign(const std::string& aKey, pjson&& aValue) {
 // Reserves array capacity. Promotes a non-array to an empty array first so the
 // reservation is always meaningful; a no-op count of zero still normalizes type.
 pjson& pjson::reserve(size_t aCount) {
-    if (_eType != pjson::jsonType::jsonArray)
+    if (_pImpl->_eType != pjson::jsonType::jsonArray)
         resetTo(pjson::jsonType::jsonArray);
-    _uValue._pValueArray->reserve(aCount);
+    _pImpl->_pValueArray->reserve(aCount);
     return *this;
 }
 // contains() is a readable alias for hasKey().
@@ -1104,10 +1084,10 @@ bool pjson::contains(const char* aKey) const {
 // capture. Returning false stops early and propagates as the call's result.
 //===----------------------------------------------------------------------===//
 bool pjson::forEachMember(ConstMemberVisitor aVisitor, void* aContext) const {
-    if (_eType != pjson::jsonType::jsonObject || aVisitor == nullptr)
+    if (_pImpl->_eType != pjson::jsonType::jsonObject || aVisitor == nullptr)
         return true;
-    for (pjsonImpl::ObjectStorage::const_iterator it = _uValue._pValueMap->begin();
-         it != _uValue._pValueMap->end(); ++it) {
+    for (pjsonImpl::ObjectStorage::const_iterator it = _pImpl->_pValueMap->begin();
+         it != _pImpl->_pValueMap->end(); ++it) {
         StringView keyView(it->first.data(), it->first.size());
         if (!aVisitor(keyView, static_cast<const pjson&>(*it->second), aContext))
             return false;
@@ -1115,10 +1095,10 @@ bool pjson::forEachMember(ConstMemberVisitor aVisitor, void* aContext) const {
     return true;
 }
 bool pjson::forEachMember(MemberVisitor aVisitor, void* aContext) {
-    if (_eType != pjson::jsonType::jsonObject || aVisitor == nullptr)
+    if (_pImpl->_eType != pjson::jsonType::jsonObject || aVisitor == nullptr)
         return true;
-    for (pjsonImpl::ObjectStorage::iterator it = _uValue._pValueMap->begin();
-         it != _uValue._pValueMap->end(); ++it) {
+    for (pjsonImpl::ObjectStorage::iterator it = _pImpl->_pValueMap->begin();
+         it != _pImpl->_pValueMap->end(); ++it) {
         StringView keyView(it->first.data(), it->first.size());
         if (!aVisitor(keyView, *it->second, aContext))
             return false;
@@ -1126,9 +1106,9 @@ bool pjson::forEachMember(MemberVisitor aVisitor, void* aContext) {
     return true;
 }
 bool pjson::forEachElement(ConstElementVisitor aVisitor, void* aContext) const {
-    if (_eType != pjson::jsonType::jsonArray || aVisitor == nullptr)
+    if (_pImpl->_eType != pjson::jsonType::jsonArray || aVisitor == nullptr)
         return true;
-    const pjsonImpl::ArrayStorage& arr = *_uValue._pValueArray;
+    const pjsonImpl::ArrayStorage& arr = *_pImpl->_pValueArray;
     for (size_t i = 0; i < arr.size(); ++i) {
         if (!aVisitor(static_cast<const pjson&>(*arr[i]), aContext))
             return false;
@@ -1136,9 +1116,9 @@ bool pjson::forEachElement(ConstElementVisitor aVisitor, void* aContext) const {
     return true;
 }
 bool pjson::forEachElement(ElementVisitor aVisitor, void* aContext) {
-    if (_eType != pjson::jsonType::jsonArray || aVisitor == nullptr)
+    if (_pImpl->_eType != pjson::jsonType::jsonArray || aVisitor == nullptr)
         return true;
-    pjsonImpl::ArrayStorage& arr = *_uValue._pValueArray;
+    pjsonImpl::ArrayStorage& arr = *_pImpl->_pValueArray;
     for (size_t i = 0; i < arr.size(); ++i) {
         if (!aVisitor(*arr[i], aContext))
             return false;
@@ -1159,25 +1139,25 @@ bool pjson::forEachElement(ElementVisitor aVisitor, void* aContext) {
 // containing embedded U+0000 are preserved byte-for-byte; the const char*
 // overload deliberately keeps conventional NUL-terminated semantics.
 pjson& pjson::operator[](const std::string& aString) {
-    if (_eType != pjson::jsonType::jsonObject) {
+    if (_pImpl->_eType != pjson::jsonType::jsonObject) {
         pjson replacement(*_allocator);
         replacement.resetTo(pjson::jsonType::jsonObject);
         pjsonImpl::OwnedNode child = pjsonImpl::_makeNode(*_allocator);
         const std::pair<pjsonImpl::ObjectStorage::iterator, bool> inserted =
-            replacement._uValue._pValueMap->insert(
+            replacement._pImpl->_pValueMap->insert(
                 std::make_pair(aString, static_cast<pjson*>(nullptr)));
         pjson* result = child.release();
         inserted.first->second = result;
         pjsonImpl::_swapStorage(*this, replacement);
         return *result;
     }
-    pjsonImpl::ObjectStorage::iterator it = _uValue._pValueMap->find(aString);
-    if (it != _uValue._pValueMap->end()) {
+    pjsonImpl::ObjectStorage::iterator it = _pImpl->_pValueMap->find(aString);
+    if (it != _pImpl->_pValueMap->end()) {
         return *(it->second);
     }
     pjsonImpl::OwnedNode child = pjsonImpl::_makeNode(*_allocator);
     const std::pair<pjsonImpl::ObjectStorage::iterator, bool> inserted =
-        _uValue._pValueMap->insert(std::make_pair(aString, static_cast<pjson*>(nullptr)));
+        _pImpl->_pValueMap->insert(std::make_pair(aString, static_cast<pjson*>(nullptr)));
     pjson* result = inserted.first->second;
     if (inserted.second) {
         result = child.release();
@@ -1194,9 +1174,9 @@ pjson& pjson::operator[](const char* aSkey) {
 // growth destroys every node appended by this call before rethrowing.
 pjson& pjson::operator[](int index) {
     if (index < 0) {
-        if (_eType != pjson::jsonType::jsonArray)
+        if (_pImpl->_eType != pjson::jsonType::jsonArray)
             throw std::out_of_range("pjson array negative index requires an existing array");
-        pjsonImpl::ArrayStorage& array = *_uValue._pValueArray;
+        pjsonImpl::ArrayStorage& array = *_pImpl->_pValueArray;
         const size_t fromEnd = static_cast<size_t>(-(index + 1)) + size_t(1);
         if (fromEnd > array.size())
             throw std::out_of_range("pjson array negative index out of range");
@@ -1208,7 +1188,7 @@ pjson& pjson::operator[](int index) {
 // Returns or creates an array element at a non-negative index, filling gaps
 // with null nodes. Any failed growth destroys nodes appended by this call.
 pjson& pjson::operator[](size_t index) {
-    if (_eType != pjson::jsonType::jsonArray) {
+    if (_pImpl->_eType != pjson::jsonType::jsonArray) {
         pjson replacement(*_allocator);
         replacement.resetTo(pjson::jsonType::jsonArray);
         pjson& result = replacement[index];
@@ -1216,7 +1196,7 @@ pjson& pjson::operator[](size_t index) {
         pjsonImpl::_swapStorage(*this, replacement);
         return *resultPtr;
     }
-    pjsonImpl::ArrayStorage& array = *_uValue._pValueArray;
+    pjsonImpl::ArrayStorage& array = *_pImpl->_pValueArray;
     const size_t position = index;
 
     if (position >= array.size()) {
@@ -1251,9 +1231,9 @@ pjson& pjson::operator[](size_t index) {
 // keys containing embedded U+0000 resolve on their full byte sequence. The
 // const char* overloads keep conventional NUL-terminated behavior.
 pjson* pjson::find(const std::string& aKey) {
-    if (_eType == pjson::jsonType::jsonObject) {
-        auto it = _uValue._pValueMap->find(aKey);
-        if (it != _uValue._pValueMap->end()) {
+    if (_pImpl->_eType == pjson::jsonType::jsonObject) {
+        auto it = _pImpl->_pValueMap->find(aKey);
+        if (it != _pImpl->_pValueMap->end()) {
             return it->second;
         }
     }
@@ -1278,10 +1258,10 @@ pjson* pjson::find(int aIndex) noexcept {
 }
 // Finds an array element with end-relative negative-index support.
 const pjson* pjson::find(int aIndex) const noexcept {
-    if (_eType != pjson::jsonType::jsonArray)
+    if (_pImpl->_eType != pjson::jsonType::jsonArray)
         return nullptr;
 
-    const pjsonImpl::ArrayStorage& values = *_uValue._pValueArray;
+    const pjsonImpl::ArrayStorage& values = *_pImpl->_pValueArray;
     size_t position = 0;
     if (aIndex >= 0) {
         position = static_cast<size_t>(aIndex);
@@ -1378,9 +1358,9 @@ bool pjson::tryGet(int aIndex, StringView& aResult) const noexcept {
 //===----------------------------------------------------------------------===//
 
 bool pjson::hasKey(const std::string& aKey) const {
-    if (_eType == pjson::jsonType::jsonObject) {
-        auto it = _uValue._pValueMap->find(aKey);
-        return (it != _uValue._pValueMap->end());
+    if (_pImpl->_eType == pjson::jsonType::jsonObject) {
+        auto it = _pImpl->_pValueMap->find(aKey);
+        return (it != _pImpl->_pValueMap->end());
     }
     return false;
 }
@@ -1396,11 +1376,11 @@ bool pjson::hasIndex(int aIndex) const noexcept {
 }
 // Returns the member/element count for containers and zero for scalars.
 size_t pjson::size() const {
-    if (_eType == pjson::jsonType::jsonArray) {
-        return _uValue._pValueArray->size();
+    if (_pImpl->_eType == pjson::jsonType::jsonArray) {
+        return _pImpl->_pValueArray->size();
     }
-    if (_eType == pjson::jsonType::jsonObject) {
-        return _uValue._pValueMap->size();
+    if (_pImpl->_eType == pjson::jsonType::jsonObject) {
+        return _pImpl->_pValueMap->size();
     }
     return 0;
 }
@@ -1412,15 +1392,15 @@ bool pjson::empty() const {
 void pjson::clear() {
     // Arrays and maps become empty containers of the same type; anything else
     // resets to null.
-    switch (_eType) {
+    switch (_pImpl->_eType) {
         case pjson::jsonType::jsonArray: {
             pjsonImpl::_disposeChildren(*this);
-            _uValue._pValueArray->clear();
+            _pImpl->_pValueArray->clear();
             break;
         }
         case pjson::jsonType::jsonObject: {
             pjsonImpl::_disposeChildren(*this);
-            _uValue._pValueMap->clear();
+            _pImpl->_pValueMap->clear();
             break;
         }
         default:
@@ -1431,20 +1411,20 @@ void pjson::clear() {
 // Returns object keys in the map's deterministic sorted iteration order.
 std::vector<std::string> pjson::keys() const {
     std::vector<std::string> result;
-    if (_eType == pjson::jsonType::jsonObject) {
-        result.reserve(_uValue._pValueMap->size());
-        for (const auto& kv : *_uValue._pValueMap) {
+    if (_pImpl->_eType == pjson::jsonType::jsonObject) {
+        result.reserve(_pImpl->_pValueMap->size());
+        for (const auto& kv : *_pImpl->_pValueMap) {
             result.push_back(kv.first);
         }
     }
     return result;
 }
 bool pjson::erase(const std::string& aKey) {
-    if (_eType == pjson::jsonType::jsonObject) {
-        auto it = _uValue._pValueMap->find(aKey);
-        if (it != _uValue._pValueMap->end()) {
+    if (_pImpl->_eType == pjson::jsonType::jsonObject) {
+        auto it = _pImpl->_pValueMap->find(aKey);
+        if (it != _pImpl->_pValueMap->end()) {
             pjsonImpl::_destroyNode(it->second);
-            _uValue._pValueMap->erase(it);
+            _pImpl->_pValueMap->erase(it);
             return true;
         }
     }
@@ -1458,9 +1438,9 @@ bool pjson::erase(const char* aKey) {
 }
 // Removes an array element and destroys its owned subtree, shifting later indices.
 bool pjson::erase(size_t aIndex) {
-    if (_eType == pjson::jsonType::jsonArray && aIndex < _uValue._pValueArray->size()) {
-        pjsonImpl::_destroyNode((*_uValue._pValueArray)[aIndex]);
-        _uValue._pValueArray->erase(_uValue._pValueArray->begin() +
+    if (_pImpl->_eType == pjson::jsonType::jsonArray && aIndex < _pImpl->_pValueArray->size()) {
+        pjsonImpl::_destroyNode((*_pImpl->_pValueArray)[aIndex]);
+        _pImpl->_pValueArray->erase(_pImpl->_pValueArray->begin() +
                                     static_cast<std::ptrdiff_t>(aIndex));
         return true;
     }
@@ -1470,26 +1450,26 @@ bool pjson::erase(size_t aIndex) {
 // representations without rounding an integer through binary64. The result is
 // -1/0/1, or 2 when a NaN makes the ordering unordered.
 int pjsonImpl::_compareNumbers(const pjson& aLeft, const pjson& aRight) {
-    const pjson::jsonType lt = aLeft._eType;
-    const pjson::jsonType rt = aRight._eType;
+    const pjson::jsonType lt = aLeft._pImpl->_eType;
+    const pjson::jsonType rt = aRight._pImpl->_eType;
 
     // ---- integer vs integer (any signedness) ----
     if (lt != pjson::jsonNumberDouble && rt != pjson::jsonNumberDouble) {
         const bool lu = lt == pjson::jsonNumberUInt;
         const bool ru = rt == pjson::jsonNumberUInt;
         if (!lu && !ru) {
-            const int64_t l = aLeft._uValue._valueInt;
-            const int64_t r = aRight._uValue._valueInt;
+            const int64_t l = aLeft._pImpl->_valueInt;
+            const int64_t r = aRight._pImpl->_valueInt;
             return l < r ? -1 : (l > r ? 1 : 0);
         }
         if (lu && ru) {
-            const uint64_t l = aLeft._uValue._valueUInt;
-            const uint64_t r = aRight._uValue._valueUInt;
+            const uint64_t l = aLeft._pImpl->_valueUInt;
+            const uint64_t r = aRight._pImpl->_valueUInt;
             return l < r ? -1 : (l > r ? 1 : 0);
         }
         // One signed, one unsigned. A negative signed value is always smaller.
-        const int64_t s = lu ? aRight._uValue._valueInt : aLeft._uValue._valueInt;
-        const uint64_t u = lu ? aLeft._uValue._valueUInt : aRight._uValue._valueUInt;
+        const int64_t s = lu ? aRight._pImpl->_valueInt : aLeft._pImpl->_valueInt;
+        const uint64_t u = lu ? aLeft._pImpl->_valueUInt : aRight._pImpl->_valueUInt;
         int cmp;
         if (s < 0) {
             cmp = -1; // signed < unsigned
@@ -1504,8 +1484,8 @@ int pjsonImpl::_compareNumbers(const pjson& aLeft, const pjson& aRight) {
 
     // ---- double vs double ----
     if (lt == pjson::jsonNumberDouble && rt == pjson::jsonNumberDouble) {
-        const double left = aLeft._uValue._valueDouble;
-        const double right = aRight._uValue._valueDouble;
+        const double left = aLeft._pImpl->_valueDouble;
+        const double right = aRight._pImpl->_valueDouble;
         if (std::isnan(left) || std::isnan(right))
             return 2;
         if (left < right)
@@ -1516,15 +1496,15 @@ int pjsonImpl::_compareNumbers(const pjson& aLeft, const pjson& aRight) {
     // ---- integer vs double ----
     const bool intOnLeft = lt != pjson::jsonNumberDouble;
     const pjson& intNode = intOnLeft ? aLeft : aRight;
-    const double floating = intOnLeft ? aRight._uValue._valueDouble : aLeft._uValue._valueDouble;
+    const double floating = intOnLeft ? aRight._pImpl->_valueDouble : aLeft._pImpl->_valueDouble;
     if (std::isnan(floating))
         return 2;
 
     // Compare the integer against the double exactly. Represent the integer's
     // value and compare via a double truncation plus fractional tiebreak.
     int intVsDouble = 0;
-    if (intNode._eType == pjson::jsonNumberUInt) {
-        const uint64_t integer = intNode._uValue._valueUInt;
+    if (intNode._pImpl->_eType == pjson::jsonNumberUInt) {
+        const uint64_t integer = intNode._pImpl->_valueUInt;
         if (floating >= 18446744073709551616.0) { // 2^64
             intVsDouble = -1;
         } else if (floating < 0.0) {
@@ -1540,7 +1520,7 @@ int pjsonImpl::_compareNumbers(const pjson& aLeft, const pjson& aRight) {
             }
         }
     } else {
-        const int64_t integer = intNode._uValue._valueInt;
+        const int64_t integer = intNode._pImpl->_valueInt;
         if (floating >= 9223372036854775808.0) { // exact 2^63
             intVsDouble = -1;
         } else if (floating < -9223372036854775808.0) {
@@ -1599,50 +1579,50 @@ bool pjson::operator==(const pjson& aOther) const {
             continue;
         }
 
-        if (lhs._eType != rhs._eType) {
+        if (lhs._pImpl->_eType != rhs._pImpl->_eType) {
             return false;
         }
 
-        switch (lhs._eType) {
+        switch (lhs._pImpl->_eType) {
             case pjson::jsonType::jsonNull:
                 break;
             case pjson::jsonType::jsonString:
-                if (*lhs._uValue._pValueString != *rhs._uValue._pValueString)
+                if (*lhs._pImpl->_pValueString != *rhs._pImpl->_pValueString)
                     return false;
                 break;
             case pjson::jsonType::jsonBoolean:
-                if (lhs._uValue._valueBool != rhs._uValue._valueBool)
+                if (lhs._pImpl->_valueBool != rhs._pImpl->_valueBool)
                     return false;
                 break;
             case pjson::jsonType::jsonNumberInt:
-                if (lhs._uValue._valueInt != rhs._uValue._valueInt)
+                if (lhs._pImpl->_valueInt != rhs._pImpl->_valueInt)
                     return false;
                 break;
             case pjson::jsonType::jsonNumberUInt:
-                if (lhs._uValue._valueUInt != rhs._uValue._valueUInt)
+                if (lhs._pImpl->_valueUInt != rhs._pImpl->_valueUInt)
                     return false;
                 break;
             case pjson::jsonType::jsonNumberDouble:
-                if (lhs._uValue._valueDouble != rhs._uValue._valueDouble)
+                if (lhs._pImpl->_valueDouble != rhs._pImpl->_valueDouble)
                     return false;
                 break;
             case pjson::jsonType::jsonArray: {
-                if (lhs._uValue._pValueArray->size() != rhs._uValue._pValueArray->size()) {
+                if (lhs._pImpl->_pValueArray->size() != rhs._pImpl->_pValueArray->size()) {
                     return false;
                 }
-                for (size_t i = 0; i < lhs._uValue._pValueArray->size(); ++i) {
-                    Pair p = {(*lhs._uValue._pValueArray)[i], (*rhs._uValue._pValueArray)[i]};
+                for (size_t i = 0; i < lhs._pImpl->_pValueArray->size(); ++i) {
+                    Pair p = {(*lhs._pImpl->_pValueArray)[i], (*rhs._pImpl->_pValueArray)[i]};
                     work.push_back(p);
                 }
                 break;
             }
             case pjson::jsonType::jsonObject: {
-                if (lhs._uValue._pValueMap->size() != rhs._uValue._pValueMap->size()) {
+                if (lhs._pImpl->_pValueMap->size() != rhs._pImpl->_pValueMap->size()) {
                     return false;
                 }
-                auto a = lhs._uValue._pValueMap->begin();
-                auto b = rhs._uValue._pValueMap->begin();
-                for (; a != lhs._uValue._pValueMap->end(); ++a, ++b) {
+                auto a = lhs._pImpl->_pValueMap->begin();
+                auto b = rhs._pImpl->_pValueMap->begin();
+                for (; a != lhs._pImpl->_pValueMap->end(); ++a, ++b) {
                     if (a->first != b->first) {
                         return false; // keys (sorted) differ
                     }

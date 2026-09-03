@@ -58,8 +58,11 @@ The contract is:
 | `StringAllocation` | The `std::string` wrapper for a string-valued node |
 | `ArrayAllocation` | The internal wrapper for an array-valued node |
 | `ObjectAllocation` | The internal wrapper for an object-valued node |
+| `ImplementationAllocation` | The private representation of a non-null `pjson` value |
 
-The hook deliberately does not replace every allocation in the process. The
+`ImplementationAllocation` was appended in ABI generation 3; custom allocators
+must accept every defined kind and should avoid fixed-size tables that assume only
+the original four values. The hook deliberately does not replace every allocation in the process. The
 internal buffers/nodes allocated by `std::string`, `std::vector`, and `std::map`,
 and transient parsing, serialization, pointer, patch, and validation workspaces,
 continue to use the standard allocator.

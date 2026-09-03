@@ -53,11 +53,12 @@ namespace {
 // Library version.
 //===----------------------------------------------------------------------===//
 TEST(version_string) {
-    CHECK_EQ(std::string(pjson::getVersion()), std::string("2.0.0"));
-    CHECK_EQ(std::string(PJSON_VERSION), std::string("2.0.0"));
-    CHECK_EQ(PJSON_VERSION_MAJOR, 2);
+    CHECK_EQ(std::string(pjson::getVersion()), std::string("3.0.0"));
+    CHECK_EQ(std::string(PJSON_VERSION), std::string("3.0.0"));
+    CHECK_EQ(PJSON_VERSION_MAJOR, 3);
     CHECK_EQ(PJSON_VERSION_MINOR, 0);
     CHECK_EQ(PJSON_VERSION_PATCH, 0);
+    CHECK_EQ(PJSON_ABI_VERSION, 3);
 }
 
 //===----------------------------------------------------------------------===//

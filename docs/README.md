@@ -52,9 +52,11 @@ flowchart LR
 
 ## Reference and migration
 
-- [pjson 2.0 behavioral contract](behavioral-contract-2.0.md) — consolidated
-  normative ownership, parsing, numeric, mutation, error, allocator, thread, and
-  standards guarantees.
+- [pjson 3.0 behavioral and ABI contract](behavioral-contract-3.0.md) — current
+  ownership, behavior, and binary-compatibility guarantees
+- [pjson 2.0 behavioral contract](behavioral-contract-2.0.md) — prior major
+  version contract and its normative ownership, parsing, numeric, mutation,
+  error, allocator, thread, and standards guarantees.
 - [Browsable API reference](https://pico-developer.github.io/pjson/) — generated
   per-symbol documentation (its [source page](reference/mainpage.md) is kept in
   this repository).

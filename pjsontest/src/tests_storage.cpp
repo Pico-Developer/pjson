@@ -29,6 +29,8 @@ using namespace ByteDance;
 
 static_assert(std::is_nothrow_move_constructible<pjson>::value,
               "pjson move construction must remain noexcept");
+static_assert(sizeof(pjson) == sizeof(void*) * 2, "pjson ABI must remain a two-pointer handle");
+static_assert(alignof(pjson) == alignof(void*), "pjson ABI alignment must remain pointer-aligned");
 static_assert(noexcept(std::declval<pjson&>().swap(std::declval<pjson&>())),
               "pjson::swap must remain noexcept");
 

@@ -10,6 +10,13 @@ namespace ByteDance {
     struct pJsonParserImpl {
         static const int DepthHardLimit = 1024;
 
+        pjson::Allocator* allocator;
+        pJsonParser::Options options;
+
+        pJsonParserImpl(pjson::Allocator& aAllocator, const pJsonParser::Options& aOptions)
+                : allocator(&aAllocator)
+                , options(aOptions) {}
+
         struct ParseCtx {
             const char* src;
             size_t pos;

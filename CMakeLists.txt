@@ -3,7 +3,7 @@
 
 cmake_minimum_required (VERSION 3.21)
 
-project(pjson VERSION 2.0.0 DESCRIPTION "Praveen's JSON library for C++" LANGUAGES CXX)
+project(pjson VERSION 3.0.0 DESCRIPTION "Praveen's JSON library for C++" LANGUAGES CXX)
 
 # Keep package/runtime version authorities synchronized at configure time. The
 # release process updates them together; a mismatch is a hard configuration
@@ -13,6 +13,15 @@ file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/pjsonlib/include/pjson.h"
 string(REGEX REPLACE "^#define PJSON_VERSION \"([^\"]+)\"$" "\\1"
        PJSON_HEADER_VERSION "${PJSON_HEADER_VERSION_LINE}")
 set(PJSON_VERSION_SOURCES PJSON_HEADER_VERSION)
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/pjsonlib/include/pjson.h"
+     PJSON_ABI_VERSION_LINE REGEX "^#define PJSON_ABI_VERSION [0-9]+$")
+string(REGEX REPLACE "^#define PJSON_ABI_VERSION ([0-9]+)$" "\\1"
+       PJSON_ABI_VERSION "${PJSON_ABI_VERSION_LINE}")
+if(NOT "${PJSON_ABI_VERSION}" STREQUAL "${PROJECT_VERSION_MAJOR}")
+    message(FATAL_ERROR
+        "ABI version mismatch: PJSON_ABI_VERSION=${PJSON_ABI_VERSION}, "
+        "project major=${PROJECT_VERSION_MAJOR}")
+endif()
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/conanfile.py")
     file(READ "${CMAKE_CURRENT_SOURCE_DIR}/conanfile.py" PJSON_CONAN_RECIPE)
     string(REGEX MATCH "version = \"([^\"]+)\"" PJSON_CONAN_VERSION_MATCH

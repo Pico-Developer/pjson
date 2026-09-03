@@ -15,6 +15,9 @@
 /** @def PJSON_VERSION
  * @brief The complete library version as a string literal.
  */
+/** @def PJSON_ABI_VERSION
+ * @brief The major ABI generation implemented by the public binary interfaces.
+ */
 
 /**
  * @class ByteDance::pjson

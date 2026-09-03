@@ -7,7 +7,7 @@
   number, string, array, or object) and provides an ergonomic
   `obj["key"][i] = value` style API.
 - Licensed under Apache-2.0;
-- Current source version: **2.0.0** (`pjson::getVersion()` / the
+- Current source version: **3.0.0** (`pjson::getVersion()` / the
   `PJSON_VERSION` macro).
 
 ---
@@ -116,7 +116,7 @@ cmake --install build --config Release
 Consumers use the same target after pointing CMake at that prefix:
 
 ```cmake
-find_package(pjson 2.0 CONFIG REQUIRED)
+find_package(pjson 3.0 CONFIG REQUIRED)
 target_link_libraries(myapp PRIVATE pjson::pjson)
 ```
 
@@ -1337,7 +1337,7 @@ the exact timed work, dependency versions, methodology, and sample output.
 ## Documentation & project resources
 
 - [Tutorials](docs/README.md) and [streaming guide](docs/11-streaming.md)
-- [pjson 2.0 behavioral contract](docs/behavioral-contract-2.0.md)
+- [pjson 3.0 behavioral and ABI contract](docs/behavioral-contract-3.0.md)
 - [Browsable API reference](https://pico-developer.github.io/pjson/) and its
   [source landing page](docs/reference/mainpage.md)
 - Migration guides for [nlohmann/json](docs/migration-from-nlohmann-json.md) and

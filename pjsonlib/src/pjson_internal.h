@@ -27,6 +27,7 @@
 
 #include "pjson.h"
 
+#include <map>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -40,11 +41,8 @@
 // invariants. pJsonSchemaValidator does not include this header.
 //===----------------------------------------------------------------------===//
 struct ByteDance::pjsonImpl {
-    // Reuse pjson's canonical private storage aliases. pjsonImpl is a friend,
-    // so the raw-pointer ownership representation remains hidden from consumers
-    // and is not independently declared here.
-    typedef pjson::ArrayStorage ArrayStorage;
-    typedef pjson::ObjectStorage ObjectStorage;
+    typedef std::vector<pjson*> ArrayStorage;
+    typedef std::map<std::string, pjson*> ObjectStorage;
 
     // One suspended container in the iterative serializer. Exactly one of
     // array/object is active according to isObject; the associated cursor
@@ -78,22 +76,22 @@ struct ByteDance::pjsonImpl {
 
     // Internal typed/storage access keeps representation and permissive
     // conversion helpers out of the public API. Callers first establish type.
-    static ArrayStorage& _array(pjson& aValue) { return *aValue._uValue._pValueArray; }
-    static const ArrayStorage& _array(const pjson& aValue) { return *aValue._uValue._pValueArray; }
-    static ObjectStorage& _object(pjson& aValue) { return *aValue._uValue._pValueMap; }
-    static const ObjectStorage& _object(const pjson& aValue) { return *aValue._uValue._pValueMap; }
-    static int64_t _integer(const pjson& aValue) { return aValue._uValue._valueInt; }
-    static uint64_t _unsigned(const pjson& aValue) { return aValue._uValue._valueUInt; }
-    static double _floating(const pjson& aValue) { return aValue._uValue._valueDouble; }
+    static ArrayStorage& _array(pjson& aValue) { return *aValue._pImpl->_pValueArray; }
+    static const ArrayStorage& _array(const pjson& aValue) { return *aValue._pImpl->_pValueArray; }
+    static ObjectStorage& _object(pjson& aValue) { return *aValue._pImpl->_pValueMap; }
+    static const ObjectStorage& _object(const pjson& aValue) { return *aValue._pImpl->_pValueMap; }
+    static int64_t _integer(const pjson& aValue) { return aValue._pImpl->_valueInt; }
+    static uint64_t _unsigned(const pjson& aValue) { return aValue._pImpl->_valueUInt; }
+    static double _floating(const pjson& aValue) { return aValue._pImpl->_valueDouble; }
     static double _numberAsDouble(const pjson& aValue) {
-        if (aValue._eType == pjson::jsonNumberInt)
-            return static_cast<double>(aValue._uValue._valueInt);
-        if (aValue._eType == pjson::jsonNumberUInt)
-            return static_cast<double>(aValue._uValue._valueUInt);
-        return aValue._uValue._valueDouble;
+        if (aValue._pImpl->_eType == pjson::jsonNumberInt)
+            return static_cast<double>(aValue._pImpl->_valueInt);
+        if (aValue._pImpl->_eType == pjson::jsonNumberUInt)
+            return static_cast<double>(aValue._pImpl->_valueUInt);
+        return aValue._pImpl->_valueDouble;
     }
-    static bool _boolean(const pjson& aValue) { return aValue._uValue._valueBool; }
-    static const std::string& _string(const pjson& aValue) { return *aValue._uValue._pValueString; }
+    static bool _boolean(const pjson& aValue) { return aValue._pImpl->_valueBool; }
+    static const std::string& _string(const pjson& aValue) { return *aValue._pImpl->_pValueString; }
     // Returns -1, 0, or 1, and 2 when either floating operand is NaN.
     static int _compareNumbers(const pjson& aLeft, const pjson& aRight);
 
@@ -105,14 +103,18 @@ struct ByteDance::pjsonImpl {
     // escaping a destructor.
     static void _disposeChildren(pjson& node) noexcept;
     static pjson::Allocator& _defaultAllocator() noexcept;
+    static pjsonImpl& _nullImpl() noexcept;
+    static bool _isNullImpl(const pjsonImpl* aImpl) noexcept;
+    static pjsonImpl* _allocateImpl(pjson::Allocator& aAlloc);
+    static void _destroyImpl(pjson::Allocator& aAlloc, pjsonImpl* aImpl) noexcept;
     static pjson* _allocateNode(pjson::Allocator& aAlloc);
     static void _destroyNode(pjson* aValue) noexcept;
 
     // Internal origin-aware owning pointer. Replaces the former public
     // pjsonImpl::OwnedNode/ValueDeleter: parser and mutation helpers still get
     // RAII cleanup during construction, but no smart pointer leaks into the
-    // public API. Destruction routes through _destroyNode so allocator-backed
-    // and ordinary `new` roots are both freed correctly.
+    // public API. Destruction routes through _destroyNode for library-created,
+    // allocator-backed child nodes. Caller-created roots use normal delete.
     struct NodeDeleter {
         void operator()(pjson* aValue) const noexcept { pjsonImpl::_destroyNode(aValue); }
     };
@@ -123,7 +125,7 @@ struct ByteDance::pjsonImpl {
 
     // Instance behavior that must touch pjson's private storage lives here rather
     // than as private methods on pjson, so the public header carries no instance
-    // helper declarations. pjsonImpl is a friend, so these reach _eType/_uValue
+    // helper declarations. pjsonImpl is a friend, so these reach private state
     // directly. Keeping them static and .cpp-local means a future data-member
     // change is contained to this file.
     //
@@ -135,6 +137,26 @@ struct ByteDance::pjsonImpl {
     static void _swapStorage(pjson& aLeft, pjson& aRight) noexcept;
     // Returns whether aNode is aRoot or lies within aRoot's subtree.
     static bool _containsNode(const pjson& aRoot, const pjson* aNode) noexcept;
+
+    //== Data ===============================================================
+    // Intrusive scratch link used only by allocation-free iterative tree
+    // destruction. It is null during normal object lifetime.
+    pjson* _disposeNext;
+    pjson::jsonType _eType;
+    union {
+        ObjectStorage* _pValueMap;
+        ArrayStorage* _pValueArray;
+        int64_t _valueInt;
+        uint64_t _valueUInt;
+        double _valueDouble;
+        bool _valueBool;
+        std::string* _pValueString;
+    };
+
+    pjsonImpl()
+            : _disposeNext(nullptr)
+            , _eType(pjson::jsonNull)
+            , _valueUInt(0) {}
 };
 
 #endif /* !PRAVEENJSON_INTERNAL_H */

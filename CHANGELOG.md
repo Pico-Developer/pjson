@@ -9,6 +9,8 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases follow
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-09-03
+
 ### Changed
 
 - **BREAKING (API):** parsing is now provided by the standalone
@@ -21,6 +23,14 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases follow
 - Split the implementation into focused DOM, parser, serializer, JSON Pointer,
   JSON Patch/Merge Patch, and existing schema translation units while retaining
   one `pjson::pjson` library target.
+- **BREAKING (ABI):** `pjson` is now a fixed two-pointer handle containing its
+  allocator identity and an opaque implementation pointer. Null values share an
+  allocation-free private sentinel; non-null representation changes no longer
+  alter `sizeof(pjson)`. `pJsonParser` is likewise a one-pointer PImpl. Explicit
+  symbol visibility replaces automatic Windows export, and ABI generation 3 is
+  declared by `PJSON_ABI_VERSION` and shared-library `SOVERSION`.
+- Added `Allocator::ImplementationAllocation` for non-null `pjson` private-state
+  allocation. Custom allocators must accept the appended allocation kind.
 - **BREAKING (behavior):** mutable array subscripting no longer clamps a
   negative index before the beginning to element zero. It now throws
   `std::out_of_range` without mutation; valid negative indexes still count from
@@ -306,7 +316,8 @@ numeric-model change, and new APIs, so it is a major version bump.
 
 - Initial pjson source release.
 
-[Unreleased]: https://github.com/Pico-Developer/pjson/compare/2.0.0...HEAD
+[Unreleased]: https://github.com/Pico-Developer/pjson/compare/3.0.0...HEAD
+[3.0.0]: https://github.com/Pico-Developer/pjson/compare/2.0.0...3.0.0
 [2.0.0]: https://github.com/Pico-Developer/pjson/compare/1.0.0...2.0.0
 [1.0.0]: https://github.com/Pico-Developer/pjson/compare/release-0.0.3...1.0.0
 [0.0.3]: https://github.com/Pico-Developer/pjson/compare/release-0.0.2...release-0.0.3

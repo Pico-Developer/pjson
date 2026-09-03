@@ -4,7 +4,7 @@
 # Versioning Policy
 
 pjson uses [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html). The
-current stable version is **2.0.0**. Historical `0.0.x` releases used a
+current stable version is **3.0.0**. Historical `0.0.x` releases used a
 `release-` tag prefix and predate this stability policy.
 
 ## Version meaning
@@ -32,10 +32,16 @@ Private implementation details, tests, benchmarks, examples, diagnostics not
 documented as stable, and repository layout outside installed artifacts are not
 public API.
 
-Semantic versioning describes source and behavioral compatibility. pjson does
-not currently promise a stable C++ ABI across releases, compilers, standard
-libraries, compiler flags, or build configurations. Rebuild pjson and dependent
-C++ binaries together when upgrading.
+Beginning with 3.0.0, pjson also maintains ABI compatibility within a major
+release for the same compiler ABI, standard-library ABI, architecture, and
+compatible build settings. `PJSON_ABI_VERSION` identifies that ABI generation.
+The `pjson`, `pJsonParser`, and `pJsonSchemaValidator` object layouts are fixed
+opaque handles; their private implementations may change without changing those
+layouts. Public option/error structures, virtual interfaces, enum values, function
+signatures, and exported symbols remain ABI-bearing and must not be reordered,
+removed, or changed within the major release. A new compiler runtime, incompatible
+standard library mode, architecture, or compile-time ABI switch remains a rebuild
+boundary.
 
 ## Deprecation
 
@@ -51,6 +57,7 @@ For each release, the following values must agree:
 - the top-level CMake project version;
 - `PJSON_VERSION`, `PJSON_VERSION_MAJOR`, `PJSON_VERSION_MINOR`, and
   `PJSON_VERSION_PATCH` in `pjson.h`;
+- `PJSON_ABI_VERSION` in `pjson.h` and the shared-library `SOVERSION`;
 - package-manager or distribution metadata; and
 - the release heading in `CHANGELOG.md`.
 

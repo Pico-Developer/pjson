@@ -6,15 +6,16 @@
 #include "pjson.h"
 
 namespace ByteDance {
+    struct pJsonParserImpl;
     /// Configured, reusable JSON parser for DOM and SAX input.
     ///
     /// The parser depends on the pjson DOM, while pjson itself has no parser
     /// dependency. A parser borrows its allocator, owns a copy of its options,
     /// and keeps no mutable per-call state, so it may be reused for many inputs.
-    class pJsonParser {
+    class PJSON_API pJsonParser {
     public:
         /// Bounds parsing work and selects duplicate-key and number policies.
-        struct Options {
+        struct PJSON_API Options {
             /// Controls how repeated object member names are handled.
             enum DuplicateKeyPolicy {
                 RejectDuplicateKeys, ///< Fail when a name occurs more than once.
@@ -37,7 +38,7 @@ namespace ByteDance {
         };
 
         /// Structured result for DOM and SAX parsing.
-        struct Error {
+        struct PJSON_API Error {
             /// Stable categories for programmatic parse-failure handling.
             enum Code {
                 None = 0,          ///< Parsing succeeded.
@@ -65,7 +66,7 @@ namespace ByteDance {
         };
 
         /// Event sink for non-owning SAX parsing.
-        struct SaxHandler {
+        struct PJSON_API SaxHandler {
             /// Enables destruction through a handler base pointer.
             virtual ~SaxHandler();
             /// Receives null; return false to cancel.
@@ -96,6 +97,16 @@ namespace ByteDance {
         explicit pJsonParser(const Options& aOptions = Options());
         /// Uses borrowed aAllocator, which must outlive this parser and its DOM results.
         explicit pJsonParser(pjson::Allocator& aAllocator, const Options& aOptions = Options());
+        /// Releases the private parser configuration.
+        ~pJsonParser();
+        /// Copies the parser configuration while borrowing the same allocator.
+        pJsonParser(const pJsonParser& aOther);
+        /// Transfers parser configuration and leaves aOther usable with defaults.
+        pJsonParser(pJsonParser&& aOther) noexcept;
+        /// Copies parser configuration while borrowing aOther's allocator.
+        pJsonParser& operator=(const pJsonParser& aOther);
+        /// Transfers parser configuration and leaves aOther usable with defaults.
+        pJsonParser& operator=(pJsonParser&& aOther) noexcept;
 
         /// Returns the immutable options used by every parse call.
         const Options& options() const noexcept;
@@ -129,8 +140,7 @@ namespace ByteDance {
         bool parseSaxStream(std::istream& aInput, SaxHandler& aHandler, Error& aError) const;
 
     private:
-        pjson::Allocator* _allocator;
-        Options _options;
+        pJsonParserImpl* _impl;
     };
 } // namespace ByteDance
 

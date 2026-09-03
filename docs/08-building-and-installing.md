@@ -118,7 +118,7 @@ the platform's GNU install-directory convention. Consume them with a versioned
 config-package lookup:
 
 ```cmake
-find_package(pjson 2.0 CONFIG REQUIRED)
+find_package(pjson 3.0 CONFIG REQUIRED)
 target_link_libraries(my_app PRIVATE pjson::pjson)
 ```
 
@@ -134,7 +134,7 @@ Installation also writes a relocatable `pjson.pc` under
 
 ```sh
 pkg-config --modversion pjson
-c++ -std=c++11 your_app.cpp $(pkg-config --cflags --libs 'pjson >= 2.0') \
+c++ -std=c++11 your_app.cpp $(pkg-config --cflags --libs 'pjson >= 3.0') \
     -o your_app
 ```
 

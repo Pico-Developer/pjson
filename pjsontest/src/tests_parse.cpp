@@ -23,6 +23,8 @@
 #include "test_util.h"
 
 #include <string>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 using namespace ByteDance;
@@ -31,6 +33,13 @@ using pjson_test::valueBool;
 using pjson_test::valueDouble;
 using pjson_test::valueInt;
 using pjson_test::valueString;
+
+static_assert(sizeof(pJsonParser) == sizeof(void*),
+              "pJsonParser ABI must remain a one-pointer handle");
+static_assert(alignof(pJsonParser) == alignof(void*),
+              "pJsonParser ABI alignment must remain pointer-aligned");
+static_assert(std::is_nothrow_move_constructible<pJsonParser>::value,
+              "pJsonParser move construction must remain noexcept");
 
 //===----------------------------------------------------------------------===//
 // Valid top-level scalars
@@ -234,6 +243,28 @@ TEST(parser_retains_configuration_and_is_reusable) {
     CHECK(error.ok);
     CHECK_EQ(valueBool(second), true);
     CHECK(&second.getAllocator() == &parser.allocator());
+}
+
+TEST(parser_copy_and_move_preserve_configuration) {
+    pJsonParser::Options options;
+    options.maxDepth = 9;
+    options.duplicateKeys = pJsonParser::Options::KeepLastDuplicate;
+    pJsonParser parser(options);
+
+    pJsonParser copy(parser);
+    CHECK_EQ(copy.options().maxDepth, 9);
+    CHECK_EQ(copy.options().duplicateKeys, pJsonParser::Options::KeepLastDuplicate);
+
+    pJsonParser moved(std::move(copy));
+    pJsonParser::Error error;
+    pjson value = moved.parse(R"({"a":1,"a":2})", error);
+    CHECK(error.ok);
+    CHECK_EQ(valueInt(value["a"]), int64_t(2));
+
+    // A moved-from parser remains usable with default configuration.
+    pjson rejected = copy.parse(R"({"a":1,"a":2})", error);
+    CHECK(!error.ok);
+    CHECK(rejected.isNull());
 }
 
 //===----------------------------------------------------------------------===//

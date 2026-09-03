@@ -25,6 +25,11 @@
 
 using namespace ByteDance;
 
+static_assert(sizeof(pJsonSchemaValidator) == sizeof(void*),
+              "pJsonSchemaValidator ABI must remain a one-pointer handle");
+static_assert(alignof(pJsonSchemaValidator) == alignof(void*),
+              "pJsonSchemaValidator ABI alignment must remain pointer-aligned");
+
 namespace {
 
     pjson_test::Parsed parseJson(const char* text) {

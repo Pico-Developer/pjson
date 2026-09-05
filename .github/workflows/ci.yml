@@ -159,8 +159,11 @@ jobs:
         run: |
           registered=$(ctest --test-dir out/build-debug -N | sed -n 's/Total Tests: //p')
           discovered=$(./out/debug/bin/pjsontest --list-tests | wc -l | tr -d ' ')
+          benchmark_tools=$(ctest --test-dir out/build-debug -N \
+            -R '^pjson\.benchmark_report_tools$' | sed -n 's/Total Tests: //p')
           test "$registered" -gt 0
-          test "$registered" = "$discovered"
+          test "$benchmark_tools" = 1
+          test "$registered" = "$((discovered + benchmark_tools))"
 
   msvc:
     name: Build and test (Windows / MSVC)

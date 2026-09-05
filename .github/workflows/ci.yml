@@ -189,9 +189,13 @@ jobs:
             Select-Object -First 1
           if (-not $runner) { throw "pjsontest.exe was not produced" }
           $discovered = (& $runner.FullName --list-tests | Measure-Object -Line).Lines
+          $benchmarkTools = (ctest --test-dir out/build-msvc -C Debug -N `
+            -R '^pjson\.benchmark_report_tools$' |
+            Select-String 'Total Tests: (\d+)').Matches.Groups[1].Value
           if ([int]$registered -le 0) { throw "No CTest cases were registered" }
-          if ([int]$registered -ne [int]$discovered) {
-            throw "CTest registered $registered cases, harness discovered $discovered"
+          if ([int]$benchmarkTools -ne 1) { throw "Benchmark tool test was not registered" }
+          if ([int]$registered -ne ([int]$discovered + [int]$benchmarkTools)) {
+            throw "CTest registered $registered cases, harness discovered $discovered plus $benchmarkTools tool test"
           }
 
   format:

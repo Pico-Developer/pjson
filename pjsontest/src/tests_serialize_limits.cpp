@@ -1,0 +1,171 @@
+//
+// Copyright 2025 ByteDance Ltd. and/or its affiliates. All rights reserved.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+//===----------------------------------------------------------------------===//
+// PJSON-SER-001: valid output and an
+// overflow-safe output-size limit tested at limit-1, limit, and limit+1.
+//
+#include "pjson.h"
+#include "test_harness.h"
+#include "test_util.h"
+
+#include <limits>
+#include <sstream>
+#include <string>
+
+using namespace ByteDance;
+
+//===----------------------------------------------------------------------===//
+// The output-size limit is exact: exactly-limit succeeds, limit-plus-one fails,
+// both for toString() and write(). This confirms the boundary arithmetic is
+// off-by-one-safe.
+//===----------------------------------------------------------------------===//
+TEST(output_size_limit_boundary) {
+    // A five-element array of single-digit ints serializes to "[1,2,3,4,5]" (11 bytes).
+    pjson arr;
+    for (int64_t i = 1; i <= 5; ++i)
+        arr += i;
+    const std::string full = arr.toString();
+    const size_t exact = full.size();
+    CHECK_EQ(exact, size_t(11));
+
+    pjson::SerializeOptions atLimit;
+    atLimit.maxOutputBytes = exact; // limit == output size: succeeds
+    CHECK_EQ(arr.toString(atLimit), full);
+
+    pjson::SerializeOptions belowLimit;
+    belowLimit.maxOutputBytes = exact - 1; // limit-1: must fail
+    bool threw = false;
+    try {
+        (void)arr.toString(belowLimit);
+    } catch (const std::length_error&) {
+        threw = true;
+    }
+    CHECK(threw);
+
+    pjson::SerializeOptions abovePlusOne;
+    abovePlusOne.maxOutputBytes = exact + 1; // limit+1: comfortably succeeds
+    CHECK_EQ(arr.toString(abovePlusOne), full);
+
+    // write() enforces the same budget through failbit.
+    std::ostringstream tooSmall;
+    arr.write(tooSmall, belowLimit);
+    CHECK(tooSmall.fail());
+
+    std::ostringstream justRight;
+    arr.write(justRight, atLimit);
+    CHECK(!justRight.fail());
+    CHECK_EQ(justRight.str(), full);
+}
+
+//===----------------------------------------------------------------------===//
+// toString() and write() are byte-for-byte equivalent for the same options.
+//===----------------------------------------------------------------------===//
+TEST(tostring_and_write_are_equivalent) {
+    pjson_test::Parsed doc =
+        pjson_test::parse("{\"b\":[1,2,{\"x\":true}],\"a\":\"hi\",\"n\":18446744073709551615}");
+    CHECK(doc != nullptr);
+    if (!doc)
+        return;
+
+    const pjson::SerializeOptions options[] = {
+        pjson::SerializeOptions(),
+        pjson::SerializeOptions::prettyPrinted(),
+    };
+    for (const pjson::SerializeOptions& opt : options) {
+        const std::string viaString = doc->toString(opt);
+        std::ostringstream viaStream;
+        doc->write(viaStream, opt);
+        CHECK(!viaStream.fail());
+        CHECK_EQ(viaString, viaStream.str());
+    }
+}
+
+//===----------------------------------------------------------------------===//
+// Native object order is unspecified, but output remains valid and reparses to
+// a structurally equal document.
+//===----------------------------------------------------------------------===//
+TEST(native_object_order_round_trips) {
+    pjson obj = pjson::object();
+    obj["c"] = int64_t(3);
+    obj["a"] = int64_t(1);
+    obj["b"] = int64_t(2);
+
+    const std::string text = obj.toString();
+    pjson_test::Parsed reparsed = pjson_test::parse(text);
+    CHECK(reparsed != nullptr);
+    if (reparsed)
+        CHECK(*reparsed == obj);
+}
+
+TEST(structured_serialization_success_and_output_limit) {
+    pjson value;
+    value["answer"] = int64_t(42);
+
+    pjson::SerializeError error;
+    std::string output = "old";
+    CHECK(value.toString(output, error));
+    CHECK_EQ(error.code, pjson::SerializeError::None);
+    CHECK(error.message.empty());
+    CHECK_EQ(output, std::string("{\"answer\":42}"));
+
+    pjson::SerializeOptions limited;
+    limited.maxOutputBytes = output.size() - 1;
+    output = "preserved";
+    CHECK(!value.toString(output, error, limited));
+    CHECK_EQ(error.code, pjson::SerializeError::OutputLimit);
+    CHECK(!error.message.empty());
+    CHECK_EQ(output, std::string("preserved"));
+}
+
+TEST(structured_serialization_classifies_invalid_utf8_and_nonfinite) {
+    pjson::SerializeError error;
+    std::string output = "unchanged";
+
+    pjson invalidUtf8;
+    invalidUtf8 = std::string("\xC0\xAF", 2);
+    CHECK(!invalidUtf8.toString(output, error));
+    CHECK_EQ(error.code, pjson::SerializeError::InvalidUtf8);
+    CHECK_EQ(output, std::string("unchanged"));
+
+    pjson nonFinite;
+    nonFinite = std::numeric_limits<double>::infinity();
+    CHECK(!nonFinite.toString(output, error));
+    CHECK_EQ(error.code, pjson::SerializeError::NonFiniteNumber);
+    CHECK_EQ(output, std::string("unchanged"));
+}
+
+TEST(structured_stream_serialization_reports_logical_and_physical_failure) {
+    pjson value;
+    value["key"] = "value";
+    pjson::SerializeError error;
+
+    pjson::SerializeOptions limited;
+    limited.maxOutputBytes = 1;
+    std::ostringstream logical;
+    CHECK(!value.write(logical, error, limited));
+    CHECK_EQ(error.code, pjson::SerializeError::OutputLimit);
+    CHECK(logical.str().empty());
+
+    std::ostringstream throwingLogical;
+    throwingLogical.exceptions(std::ios::failbit);
+    CHECK(!value.write(throwingLogical, error, limited));
+    CHECK_EQ(error.code, pjson::SerializeError::OutputLimit);
+    CHECK(throwingLogical.str().empty());
+
+    std::ostringstream physical;
+    physical.setstate(std::ios::badbit);
+    CHECK(!value.write(physical, error));
+    CHECK_EQ(error.code, pjson::SerializeError::StreamFailure);
+}

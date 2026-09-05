@@ -159,8 +159,11 @@ jobs:
         run: |
           registered=$(ctest --test-dir out/build-debug -N | sed -n 's/Total Tests: //p')
           discovered=$(./out/debug/bin/pjsontest --list-tests | wc -l | tr -d ' ')
+          benchmark_tools=$(ctest --test-dir out/build-debug -N \
+            -R '^pjson\.benchmark_report_tools$' | sed -n 's/Total Tests: //p')
           test "$registered" -gt 0
-          test "$registered" = "$discovered"
+          test "$benchmark_tools" = 1
+          test "$registered" = "$((discovered + benchmark_tools))"
 
   msvc:
     name: Build and test (Windows / MSVC)
@@ -186,9 +189,13 @@ jobs:
             Select-Object -First 1
           if (-not $runner) { throw "pjsontest.exe was not produced" }
           $discovered = (& $runner.FullName --list-tests | Measure-Object -Line).Lines
+          $benchmarkTools = (ctest --test-dir out/build-msvc -C Debug -N `
+            -R '^pjson\.benchmark_report_tools$' |
+            Select-String 'Total Tests: (\d+)').Matches.Groups[1].Value
           if ([int]$registered -le 0) { throw "No CTest cases were registered" }
-          if ([int]$registered -ne [int]$discovered) {
-            throw "CTest registered $registered cases, harness discovered $discovered"
+          if ([int]$benchmarkTools -ne 1) { throw "Benchmark tool test was not registered" }
+          if ([int]$registered -ne ([int]$discovered + [int]$benchmarkTools)) {
+            throw "CTest registered $registered cases, harness discovered $discovered plus $benchmarkTools tool test"
           }
 
   format:
@@ -228,7 +235,17 @@ jobs:
 
       - name: Build and run baseline benchmarks
         shell: bash
-        run: ./build.sh --clean --bench --release-only --auto
+        env:
+          PJSON_BENCH_ENVIRONMENT: github-hosted-ubuntu-latest
+        run: ./build.sh --clean --bench --release-only --auto --bench-json out/benchmark-baseline.json
+
+      - name: Retain baseline benchmark report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: benchmark-baseline-${{ github.sha }}
+          path: out/benchmark-baseline.json
+          if-no-files-found: error
+          retention-days: 30
 
   benchmark-compare:
     name: Benchmark comparison smoke test
@@ -244,7 +261,17 @@ jobs:
 
       - name: Build and run comparison benchmarks
         shell: bash
-        run: ./build.sh --clean --bench-compare --release-only --auto
+        env:
+          PJSON_BENCH_ENVIRONMENT: github-hosted-ubuntu-latest
+        run: ./build.sh --clean --bench-compare --release-only --auto --bench-json out/benchmark-compare.json
+
+      - name: Retain comparison benchmark report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: benchmark-compare-${{ github.sha }}
+          path: out/benchmark-compare.json
+          if-no-files-found: error
+          retention-days: 30
 
   conformance:
     name: Conformance corpus

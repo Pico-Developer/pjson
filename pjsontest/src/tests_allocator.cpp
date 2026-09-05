@@ -31,32 +31,27 @@
 //                               AllocationKind aKind) noexcept = 0;
 //   };
 //
-//   struct pjson::ValueDeleter {
-//       void operator()(pjson* aValue) const noexcept;
-//   };
-//   typedef std::unique_ptr<pjson, ValueDeleter> unique_ptr;
-//
 //   explicit pjson(Allocator& aAlloc) noexcept;
 //   pjson(const pjson& aFrom, Allocator& aAlloc);
 //   pjson(pjson&& aFrom, Allocator& aAlloc);
 //   Allocator& getAllocator() const noexcept;
 //   bool canSwap(const pjson& aOther) const noexcept;
 //
-//   static unique_ptr parse(const std::string& aStr, Allocator& aAlloc,
-//                           const ParseOptions& aOpts = ParseOptions());
-//   static unique_ptr parse(const char* aSrc, size_t aSize, Allocator& aAlloc,
-//                           const ParseOptions& aOpts = ParseOptions());
-//   static unique_ptr parse(const std::string& aStr, ParseError& aError,
-//                           Allocator& aAlloc,
-//                           const ParseOptions& aOpts = ParseOptions());
-//   static unique_ptr parse(const char* aSrc, size_t aSize, ParseError& aError,
-//                           Allocator& aAlloc,
-//                           const ParseOptions& aOpts = ParseOptions());
-//   static unique_ptr parseStream(std::istream& aIn, Allocator& aAlloc,
-//                                 const ParseOptions& aOpts = ParseOptions());
-//   static unique_ptr parseStream(std::istream& aIn, ParseError& aError,
-//                                 Allocator& aAlloc,
-//                                 const ParseOptions& aOpts = ParseOptions());
+//   static pjson parse(const std::string& aStr, Allocator& aAlloc,
+//                      const pJsonParser::Options& aOpts = pJsonParser::Options());
+//   static pjson parse(const char* aSrc, size_t aSize, Allocator& aAlloc,
+//                      const pJsonParser::Options& aOpts = pJsonParser::Options());
+//   static pjson parse(const std::string& aStr, pJsonParser::Error& aError,
+//                      Allocator& aAlloc,
+//                      const pJsonParser::Options& aOpts = pJsonParser::Options());
+//   static pjson parse(const char* aSrc, size_t aSize, pJsonParser::Error& aError,
+//                      Allocator& aAlloc,
+//                      const pJsonParser::Options& aOpts = pJsonParser::Options());
+//   static pjson parseStream(std::istream& aIn, Allocator& aAlloc,
+//                            const pJsonParser::Options& aOpts = pJsonParser::Options());
+//   static pjson parseStream(std::istream& aIn, pJsonParser::Error& aError,
+//                            Allocator& aAlloc,
+//                            const pJsonParser::Options& aOpts = pJsonParser::Options());
 //
 // Semantics covered here:
 //   - every node stores allocator provenance and children inherit it
@@ -67,7 +62,9 @@
 //   - cross-allocator swap is explicitly rejected via canSwap()==false
 //
 #include "pjson.h"
+#include "pjson_parser.h"
 #include "test_harness.h"
+#include "test_util.h"
 
 #include <cstddef>
 #include <map>
@@ -165,7 +162,8 @@ namespace {
 
         // Disarms every failure point without disturbing lifetime counters.
         void clearFailures() {
-            for (int i = 0; i < 4; ++i) {
+            for (int i = 0; i <= static_cast<int>(pjson::Allocator::ImplementationAllocation);
+                 ++i) {
                 _armedFailures[static_cast<AllocationKind>(i)] = -1;
             }
         }
@@ -201,6 +199,7 @@ namespace {
         CHECK_EQ(aAlloc.stats(pjson::Allocator::StringAllocation).liveBlocks, size_t(0));
         CHECK_EQ(aAlloc.stats(pjson::Allocator::ArrayAllocation).liveBlocks, size_t(0));
         CHECK_EQ(aAlloc.stats(pjson::Allocator::ObjectAllocation).liveBlocks, size_t(0));
+        CHECK_EQ(aAlloc.stats(pjson::Allocator::ImplementationAllocation).liveBlocks, size_t(0));
     }
 
     // Walks iteratively so allocator-provenance checks remain safe for deeply nested values.
@@ -213,7 +212,7 @@ namespace {
             CHECK_EQ(&cur->getAllocator(), &aExpected);
             if (cur->isArray()) {
                 for (size_t i = 0; i < cur->size(); ++i) {
-                    const pjson* child = cur->find(static_cast<int>(i));
+                    const pjson* child = cur->findIndex(i);
                     CHECK(child != nullptr);
                     if (child != nullptr)
                         work.push_back(child);
@@ -305,14 +304,14 @@ namespace {
     }
 
     // Preserve the custom-deleter return type while keeping parse-overload tests concise.
-    static pjson::unique_ptr parseWithAllocator(const std::string& aText,
-                                                TrackingAllocator& aAlloc) {
-        return pjson::parse(aText, aAlloc);
+    static pjson_test::Parsed parseWithAllocator(const std::string& aText,
+                                                 TrackingAllocator& aAlloc) {
+        return pjson_test::parse(aText, aAlloc);
     }
 
-    static pjson::unique_ptr parseWithAllocator(const std::string& aText, pjson::ParseError& aErr,
-                                                TrackingAllocator& aAlloc) {
-        return pjson::parse(aText, aErr, aAlloc);
+    static pjson_test::Parsed parseWithAllocator(const std::string& aText, pJsonParser::Error& aErr,
+                                                 TrackingAllocator& aAlloc) {
+        return pjson_test::parse(aText, aErr, aAlloc);
     }
 
 } // namespace
@@ -370,6 +369,34 @@ TEST(allocator_mutation_tracks_nodes_strings_arrays_and_objects) {
     checkAllocatorHealth(alloc);
 }
 
+TEST(allocator_null_is_allocation_free_and_impl_failure_is_transactional) {
+    TrackingAllocator alloc("impl-lifetime");
+    {
+        pjson value(alloc);
+        CHECK(value.isNull());
+        CHECK_EQ(alloc.stats(pjson::Allocator::ImplementationAllocation).allocations, size_t(0));
+
+        alloc.failAfter(pjson::Allocator::ImplementationAllocation, 0);
+        bool threw = false;
+        try {
+            value = int64_t(42);
+        } catch (const std::bad_alloc&) {
+            threw = true;
+        }
+        CHECK(threw);
+        CHECK(value.isNull());
+        CHECK_EQ(&value.getAllocator(), &alloc);
+
+        alloc.clearFailures();
+        value = int64_t(42);
+        CHECK_EQ(alloc.stats(pjson::Allocator::ImplementationAllocation).liveBlocks, size_t(1));
+        value.reset();
+        CHECK(value.isNull());
+        CHECK_EQ(alloc.stats(pjson::Allocator::ImplementationAllocation).liveBlocks, size_t(0));
+    }
+    checkAllocatorHealth(alloc);
+}
+
 //===----------------------------------------------------------------------===//
 // DOM parsing, teardown, and allocator-aware erase/reset
 //===----------------------------------------------------------------------===//
@@ -377,7 +404,7 @@ TEST(allocator_mutation_tracks_nodes_strings_arrays_and_objects) {
 TEST(allocator_parse_success_uses_supplied_allocator_for_dom) {
     TrackingAllocator alloc("parse-ok");
     {
-        pjson::unique_ptr doc =
+        pjson_test::Parsed doc =
             parseWithAllocator(R"({"name":"ada","list":[1,2,3],"obj":{"flag":true}})", alloc);
         CHECK(doc != nullptr);
         std::string name;
@@ -402,8 +429,8 @@ TEST(allocator_parse_success_uses_supplied_allocator_for_dom) {
 
 TEST(allocator_parse_failure_unwinds_partials_and_keeps_balance) {
     TrackingAllocator alloc("parse-fail");
-    pjson::ParseError err;
-    pjson::unique_ptr doc = parseWithAllocator(R"({"a":[1,2,{"b":[3,4,})", err, alloc);
+    pJsonParser::Error err;
+    pjson_test::Parsed doc = parseWithAllocator(R"({"a":[1,2,{"b":[3,4,})", err, alloc);
     CHECK(doc == nullptr);
     CHECK(!err.ok);
     CHECK(!err.message.empty());
@@ -415,8 +442,8 @@ TEST(allocator_parse_bad_alloc_returns_null_and_reports_error) {
     TrackingAllocator alloc("parse-oom");
     alloc.failAfter(pjson::Allocator::NodeAllocation, 2);
 
-    pjson::ParseError err;
-    pjson::unique_ptr doc = parseWithAllocator(R"({"a":[1,2,3],"b":{"c":"text"}})", err, alloc);
+    pJsonParser::Error err;
+    pjson_test::Parsed doc = parseWithAllocator(R"({"a":[1,2,3],"b":{"c":"text"}})", err, alloc);
     CHECK(doc == nullptr);
     CHECK(!err.ok);
     CHECK(err.message.find("memory") != std::string::npos ||
@@ -707,17 +734,17 @@ TEST(allocator_string_assignment_failure_keeps_old_value) {
 TEST(allocator_default_and_custom_root_deleters_match_allocation_origin) {
     TrackingAllocator alloc("root-delete");
     {
-        pjson::unique_ptr doc = pjson::parse(R"({"default":[1,2]})");
+        pjson_test::Parsed doc = pjson_test::parse(R"({"default":[1,2]})");
         CHECK(doc != nullptr);
         CHECK(&doc->getAllocator() != &alloc);
     }
     {
-        pjson::unique_ptr ordinaryNode(new pjson());
+        std::unique_ptr<pjson> ordinaryNode(new pjson());
         (*ordinaryNode)["value"] = int64_t(1);
     }
 
     {
-        pjson::unique_ptr doc = pjson::parse(R"({"custom":[1,2]})", alloc);
+        pjson_test::Parsed doc = pjson_test::parse(R"({"custom":[1,2]})", alloc);
         CHECK(doc != nullptr);
         CHECK_EQ(&doc->getAllocator(), &alloc);
         checkTreeAllocator(*doc, alloc);
@@ -757,29 +784,51 @@ TEST(allocator_all_dom_parse_overloads_use_custom_root_deletion) {
     TrackingAllocator alloc("parse-overloads");
     {
         const std::string text = R"({"value":[1,2,3]})";
-        pjson::ParseOptions opts;
-        pjson::ParseError error;
+        pJsonParser::Options opts;
+        pJsonParser::Error error;
 
-        pjson::unique_ptr fromBuffer = pjson::parse(text.data(), text.size(), alloc, opts);
+        pjson_test::Parsed fromBuffer = pjson_test::parse(text.data(), text.size(), alloc, opts);
         CHECK(fromBuffer != nullptr);
         checkTreeAllocator(*fromBuffer, alloc);
 
-        pjson::unique_ptr fromBufferError =
-            pjson::parse(text.data(), text.size(), error, alloc, opts);
+        pjson_test::Parsed fromBufferError =
+            pjson_test::parse(text.data(), text.size(), error, alloc, opts);
         CHECK(fromBufferError != nullptr);
         CHECK(error.ok);
         checkTreeAllocator(*fromBufferError, alloc);
 
         std::istringstream firstStream(text);
-        pjson::unique_ptr fromStream = pjson::parseStream(firstStream, alloc, opts);
+        pjson_test::Parsed fromStream = pjson_test::parseStream(firstStream, alloc, opts);
         CHECK(fromStream != nullptr);
         checkTreeAllocator(*fromStream, alloc);
 
         std::istringstream secondStream(text);
-        pjson::unique_ptr fromStreamError = pjson::parseStream(secondStream, error, alloc, opts);
+        pjson_test::Parsed fromStreamError =
+            pjson_test::parseStream(secondStream, error, alloc, opts);
         CHECK(fromStreamError != nullptr);
         CHECK(error.ok);
         checkTreeAllocator(*fromStreamError, alloc);
+    }
+    checkAllocatorHealth(alloc);
+}
+
+TEST(allocator_parser_exposes_and_reuses_selected_allocator) {
+    TrackingAllocator alloc("parser-instance");
+    {
+        pJsonParser::Options options;
+        options.maxNodes = 8;
+        pJsonParser parser(alloc, options);
+        CHECK(&parser.allocator() == &alloc);
+        CHECK_EQ(parser.options().maxNodes, size_t(8));
+
+        pJsonParser::Error error;
+        pjson first = parser.parse(R"({"a":[1,2]})", error);
+        CHECK(error.ok);
+        checkTreeAllocator(first, alloc);
+
+        pjson second = parser.parse(R"({"b":true})", error);
+        CHECK(error.ok);
+        checkTreeAllocator(second, alloc);
     }
     checkAllocatorHealth(alloc);
 }

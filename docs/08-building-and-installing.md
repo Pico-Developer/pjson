@@ -4,16 +4,23 @@ There are several ways to use pjson in your project, from compiling its
 canonical sources directly to consuming an installed package. Pick whichever
 fits.
 
-## Option 1 — Compile the canonical sources directly
+## Option 1 — Compile sources directly
 
-pjson has **no dependencies** beyond the C++ standard library. For a vendored
-copy, use the canonical header and implementation from the repository:
+pjson has **no public dependencies** beyond the C++ standard library. The
+implementation is intentionally split by responsibility. A DOM-only build needs:
 
 - `pjsonlib/include/pjson.h`
 - `pjsonlib/src/pjson.cpp`
 
-Compile `pjsonlib/src/pjson.cpp` alongside your own sources and add
-`pjsonlib/include` to the include path:
+Parsing additionally needs `pjsonlib/include/pjson_parser.h` and
+`pjsonlib/src/pjson_parser.cpp`; serialization needs `pjson_serialize.cpp`; JSON
+Pointer and Patch need `pjson_pointer.cpp` and `pjson_patch.cpp`. Serialization
+also requires the vendored Ryu source and its private include paths. Because
+these details are easy to omit, the single `pjson::pjson` CMake target is the
+recommended integration whenever more than the DOM-only core is used.
+
+For a DOM-only program, compile `pjson.cpp` alongside your source and add the
+public include directory:
 
 ```sh
 c++ -std=c++11 -I path/to/pjson/pjsonlib/include \
@@ -27,7 +34,9 @@ In code:
 using namespace ByteDance;
 ```
 
-This is the recommended path for small projects and for trying pjson out.
+Applications that parse, serialize, apply Pointer/Patch operations, or use
+`pJsonSchemaValidator` should consume the CMake target, which already includes
+all required translation units and private dependencies.
 
 ```mermaid
 flowchart LR
@@ -57,7 +66,9 @@ Resulting layout:
 
 ```
 out/
-  include/pjson.h              public header
+  include/pjson.h              DOM public header
+  include/pjson_parser.h       parser public header
+  include/pjson_schema.h       schema-validator public header
   release/lib/libpjson.a       Release static library
   release/bin/pjsontest        Release test runner
   release/bin/pjsonbench       Release benchmark runner
@@ -100,14 +111,14 @@ cmake --build build --config Release
 cmake --install build --config Release --prefix /path/to/pjson-prefix
 ```
 
-The install contains `pjson.h`, the library, `pjsonConfig.cmake`,
+The install contains `pjson.h`, `pjson_parser.h`, `pjson_schema.h`, the library, `pjsonConfig.cmake`,
 `pjsonConfigVersion.cmake`, and `pjsonTargets.cmake`. The CMake package files
 normally live under `<prefix>/<libdir>/cmake/pjson`; the exact `<libdir>` follows
 the platform's GNU install-directory convention. Consume them with a versioned
 config-package lookup:
 
 ```cmake
-find_package(pjson 1.0 CONFIG REQUIRED)
+find_package(pjson 2.0 CONFIG REQUIRED)
 target_link_libraries(my_app PRIVATE pjson::pjson)
 ```
 
@@ -123,7 +134,7 @@ Installation also writes a relocatable `pjson.pc` under
 
 ```sh
 pkg-config --modversion pjson
-c++ -std=c++11 your_app.cpp $(pkg-config --cflags --libs 'pjson >= 1.0') \
+c++ -std=c++11 your_app.cpp $(pkg-config --cflags --libs 'pjson >= 2.0') \
     -o your_app
 ```
 
@@ -161,7 +172,7 @@ Configure consumers with the usual vcpkg toolchain file, then use the same
 | `BUILD_SHARED_LIBS` | `OFF` | Build a shared library instead of the default static library |
 | `PJSON_SANITIZE` | `OFF` | Enable AddressSanitizer and UndefinedBehaviorSanitizer with GCC or Clang |
 | `PJSON_BUILD_DOCS` | `OFF` | Build the Doxygen reference; requires Doxygen and Python 3 |
-| `PJSON_BUILD_FUZZERS` | `OFF` | Build the four coverage-guided fuzz targets |
+| `PJSON_BUILD_FUZZERS` | `OFF` | Build the seven coverage-guided fuzz targets |
 | `PJSON_BENCH_COMPARE` | `OFF` | Add pinned nlohmann/json, RapidJSON, and simdjson comparisons to `pjsonbench` |
 | `PJSON_BENCH_DEPS_DIR` | `.benchmark-deps` | Locate the pinned comparison sources |
 | `PJSON_FUZZING_ENGINE` | empty | Supply an external fuzz-engine linker command instead of built-in libFuzzer |
@@ -169,6 +180,11 @@ Configure consumers with the usual vcpkg toolchain file, then use the same
 These defaults describe a normal configure with no pre-seeded cache values.
 Use the three explicit pjson component switches in scripts so the selected
 target set does not depend on surrounding project configuration.
+
+Shared consumers should use the exported `pjson::pjson` CMake target or the
+installed `pjson.pc` file. Both propagate the private `PJSON_SHARED` import-mode
+definition required by the public visibility macro; consumers should not define
+`PJSON_BUILDING_LIBRARY`.
 
 With an empty `PJSON_FUZZING_ENGINE`, `PJSON_BUILD_FUZZERS=ON` requires Clang
 with libFuzzer on Linux/macOS. An external engine can instead be supplied
@@ -196,8 +212,9 @@ developer components default to `OFF` automatically.
 
 ## What you learned
 
-- The simplest integration is to compile `pjsonlib/src/pjson.cpp` with your app
-  and point `-I` at `pjsonlib/include` — no build system required.
+- The simplest full-featured integration is the `pjson::pjson` CMake target;
+  direct source compilation is practical only when its complete feature-specific
+  source list and private include paths are maintained by the embedding project.
 - `build.sh` builds everything into `out/`; CMake integration exposes the
   `pjson::pjson` target.
 - Installed CMake and pkg-config metadata are relocatable, and Conan 2 and an

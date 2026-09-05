@@ -11,4 +11,4 @@ Name: pjson
 Description: @PROJECT_DESCRIPTION@
 Version: @PROJECT_VERSION@
 Libs: -L${libdir} -lpjson
-Cflags: -I${includedir}
+Cflags: -I${includedir} @PJSON_PC_COMPILE_FLAGS@

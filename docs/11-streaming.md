@@ -12,23 +12,31 @@ Follow along with
 
 ## Define an event handler
 
-Derive from `pjson::SaxHandler` and override only the events you need. Every
+Derive from `pJsonParser::SaxHandler` and override only the events you need. Every
 callback returns `bool`; return `false` for controlled early termination.
 
 ```cpp
 #include "pjson.h"
+#include "pjson_parser.h"
 
 #include <cstdint>
 #include <fstream>
 #include <iostream>
 
 using ByteDance::pjson;
+using ByteDance::pJsonParser;
 
-struct NumberSummary : pjson::SaxHandler {
+struct NumberSummary : pJsonParser::SaxHandler {
     uint64_t count = 0;
     double total = 0.0;
 
     bool onInt(int64_t value) override {
+        ++count;
+        total += static_cast<double>(value);
+        return true;
+    }
+
+    bool onUInt(uint64_t value) override {
         ++count;
         total += static_cast<double>(value);
         return true;
@@ -42,18 +50,19 @@ struct NumberSummary : pjson::SaxHandler {
 };
 ```
 
-Available callbacks are `onNull`, `onBool`, `onInt`, `onDouble`, `onString`,
-`onStartArray`, `onEndArray`, `onStartObject`, `onKey`, and `onEndObject`. They
-arrive in source order.
+Available callbacks are `onNull`, `onBool`, `onInt`, `onUInt`, `onDouble`,
+`onString`, `onStartArray`, `onEndArray`, `onStartObject`, `onKey`, and
+`onEndObject`. They arrive in source order. `onUInt` receives integer tokens
+above `INT64_MAX`; handlers that only care about smaller integers may ignore it.
 
 ## Parse the stream
 
 ```cpp
 std::ifstream input("huge.json", std::ios::binary);
 NumberSummary summary;
-pjson::ParseError error;
+pJsonParser::Error error;
 
-if (!pjson::parseSaxStream(input, summary, error)) {
+if (!pJsonParser().parseSaxStream(input, summary, error)) {
     std::cerr << "JSON error at " << error.line << ':' << error.column
               << " (byte " << error.offset << "): " << error.message << '\n';
     return 1;
@@ -68,7 +77,7 @@ constructing the tree. Only `parseSaxStream()` provides true incremental input.
 
 ## Limits and duplicate keys
 
-All `ParseOptions` apply to streaming input. Their defaults are `maxDepth =
+All `pJsonParser::Options` apply to streaming input. Their defaults are `maxDepth =
 512`, `maxNodes = 1,000,000`, and `maxInputBytes = 64 MiB`. `maxNodes` counts
 JSON values even without a DOM, providing a predictable work limit. Zero makes
 `maxNodes` or `maxInputBytes` unlimited; a non-positive `maxDepth` is instead
@@ -83,7 +92,7 @@ occurrences because a stream cannot retract an event already delivered.
 
 Returning `false` from a callback stops parsing and reports `SAX parse aborted`.
 If a callback throws, pjson catches it and reports a handler exception in
-`ParseError`; exceptions do not escape `parseSax*()`.
+`pJsonParser::Error`; exceptions do not escape `parseSax*()`.
 
 ## Streaming output
 
@@ -96,7 +105,6 @@ pjson::SerializeOptions options = pjson::SerializeOptions::prettyPrinted();
 options.indentWidth = 4;
 options.indentCharacter = ' ';
 options.escapeNonAscii = true;
-options.keyOrder = pjson::SerializeOptions::AscendingKeys;
 options.maxOutputBytes = size_t(64) * 1024 * 1024;
 document.write(output, options);
 if (!output) {
@@ -104,11 +112,12 @@ if (!output) {
 }
 ```
 
-This avoids a whole-document output buffer; traversal state scales with nesting
-depth, while escaping a key or string can use temporary memory proportional to
-that token. `SerializeOptions` controls indentation, non-ASCII escaping, and
-ascending or descending key traversal for both output APIs. The default output
-limit is 64 MiB; zero explicitly means unlimited. `write()` returns `void`, so
+This avoids a whole-document output buffer. Traversal state scales with nesting
+depth; escaping a key or string can use temporary memory proportional to that
+token. Object members are emitted in unspecified native storage order.
+`SerializeOptions` controls indentation, non-ASCII escaping, non-finite values,
+and output limits for both output APIs. The default output limit is 64 MiB; zero
+explicitly means unlimited. `write()` returns `void`, so
 check the stream state. Invalid stored UTF-8, crossing the configured byte
 limit, and indentation/size overflow are logical preflight failures: they set
 `failbit` before any bytes are emitted. The corresponding `toString()` call

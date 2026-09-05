@@ -7,6 +7,7 @@
 // Referenced by docs/11-streaming.md.
 //
 #include "pjson.h"
+#include "pjson_parser.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -17,7 +18,7 @@ using namespace ByteDance;
 
 // SAX handler that summarizes every JSON number encountered anywhere in the
 // stream. Unoverridden callbacks accept and ignore non-numeric events.
-struct NumberSummary : pjson::SaxHandler {
+struct NumberSummary : pJsonParser::SaxHandler {
     size_t count = 0;
     double total = 0.0;
 
@@ -42,8 +43,8 @@ int main() {
     // --- Incremental input -------------------------------------------------
     std::istringstream input(R"({"readings":[10,12.5,8,9.5]})");
     NumberSummary summary;
-    pjson::ParseError error;
-    if (!pjson::parseSaxStream(input, summary, error)) {
+    pJsonParser::Error error;
+    if (!pJsonParser().parseSaxStream(input, summary, error)) {
         std::cerr << error.line << ':' << error.column << ": " << error.message << '\n';
         return 1;
     }

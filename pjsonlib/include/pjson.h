@@ -16,9 +16,11 @@
 // pjson — Praveen's JSON: an ultra-simple JSON value type for C++.
 //
 // A single class, ByteDance::pjson, represents any JSON value and offers an
-// ergonomic obj["key"][i] = value building style plus parsing, serialization,
-// lookup, mutation, equality, and JSON-Schema-subset validation. All method
-// bodies live in pjson.cpp; this header only declares the interface.
+// ergonomic obj["key"][i] = value building style plus serialization, lookup,
+// mutation, and equality. Parsing lives in the separate ByteDance::pJsonParser
+// helper declared by <pjson_parser.h>; the DOM does not depend on that parser.
+// JSON Schema validation similarly lives in ByteDance::pJsonSchemaValidator in
+// <pjson_schema.h>, which consumes only the public DOM API.
 //
 // Author: Praveen Babu J D
 // License: Apache 2.0
@@ -29,18 +31,28 @@
 // Library version. PJSON_VERSION is the string form ("MAJOR.MINOR.PATCH");
 // the numeric parts allow compile-time checks, e.g.
 //   #if PJSON_VERSION_MAJOR >= 1
-#define PJSON_VERSION_MAJOR 1
+#define PJSON_VERSION_MAJOR 2
 #define PJSON_VERSION_MINOR 0
 #define PJSON_VERSION_PATCH 0
-#define PJSON_VERSION "1.0.0"
+#define PJSON_VERSION "2.0.0"
+#define PJSON_ABI_VERSION 2
+
+#if defined(_WIN32) && defined(PJSON_SHARED)
+#if defined(PJSON_BUILDING_LIBRARY)
+#define PJSON_API __declspec(dllexport)
+#else
+#define PJSON_API __declspec(dllimport)
+#endif
+#elif defined(PJSON_SHARED) && (defined(__GNUC__) || defined(__clang__))
+#define PJSON_API __attribute__((visibility("default")))
+#else
+#define PJSON_API
+#endif
 
 #include <cstddef>
 #include <cstdint>
 #include <iosfwd>
-#include <map>
-#include <memory>
 #include <string>
-#include <type_traits>
 #include <vector>
 
 namespace ByteDance {
@@ -53,7 +65,7 @@ namespace ByteDance {
     /// destroyed, replaced, reset, erased, moved, swapped, cleared, or successfully
     /// patched. Unless an operation is `noexcept` or explicitly reports failures,
     /// allocation and standard-library exceptions may escape.
-    class pjson {
+    class PJSON_API pjson {
     public:
         //== Library version =================================================
         /// Returns the process-lifetime semantic-version string for this library.
@@ -61,31 +73,39 @@ namespace ByteDance {
 
         //== Types ===========================================================
 
-        // JSON value kind. Numbers are stored in one of two representations:
-        // whole numbers as a 64-bit signed integer (jsonNumberInt) and
-        // everything else as a double (jsonNumberDouble).
+        /// JSON value kind.
+        ///
+        /// Numbers are stored in one of three representations: signed whole
+        /// numbers as a 64-bit signed integer (jsonNumberInt), explicitly
+        /// unsigned whole numbers as a 64-bit unsigned integer (jsonNumberUInt),
+        /// and fractional/exponent values as a double (jsonNumberDouble).
         enum jsonType : int64_t {
-            jsonNull = 0, // stable zero-valued discriminator for the default state
-            jsonString,
-            jsonNumberInt,
-            jsonNumberDouble,
-            jsonBoolean,
-            jsonArray,  //[ ] array
-            jsonObject, // { ... } map
+            jsonNull = 0,     ///< JSON null and the stable default discriminator.
+            jsonString,       ///< UTF-8 string value.
+            jsonNumberInt,    ///< Signed 64-bit integer value.
+            jsonNumberDouble, ///< Binary64 number value.
+            jsonBoolean,      ///< Boolean value.
+            jsonArray,        ///< Ordered array value.
+            jsonObject,       ///< Object with unique string keys.
+            jsonNumberUInt,   ///< Unsigned 64-bit integer value.
         };
 
-        // Runtime allocator for persistent DOM storage. The allocator is
-        // non-owning and must outlive every pjson value that refers to it.
-        // Allocation covers pjson child/root nodes plus the std::string,
-        // array, and object wrapper objects. Storage used internally by those
-        // standard-library objects and transient parser/algorithm scratch space
-        // continues to use the standard allocator.
-        struct Allocator {
+        /// Runtime allocator for persistent DOM storage.
+        ///
+        /// The allocator is non-owning and must outlive every pjson value that
+        /// refers to it. Allocation covers pjson child/root nodes, non-null
+        /// private implementations, and the std::string, array, and object
+        /// wrapper objects. Storage used internally by those standard-library
+        /// objects and transient parser/algorithm scratch space continues to use
+        /// the standard allocator.
+        struct PJSON_API Allocator {
+            /// Identifies the purpose and matching deallocation contract of storage.
             enum AllocationKind {
-                NodeAllocation = 0,
-                StringAllocation = 1,
-                ArrayAllocation = 2,
-                ObjectAllocation = 3
+                NodeAllocation = 0,          ///< Storage for a child or allocator-created root.
+                StringAllocation = 1,        ///< Storage for a std::string wrapper.
+                ArrayAllocation = 2,         ///< Storage for an array-container wrapper.
+                ObjectAllocation = 3,        ///< Storage for an object-container wrapper.
+                ImplementationAllocation = 4 ///< Opaque state of one non-null pjson value.
             };
 
             /// Enables destruction through an Allocator base pointer.
@@ -97,230 +117,155 @@ namespace ByteDance {
                                     AllocationKind aKind) noexcept = 0;
         };
 
-        // Stateless ownership for allocator-created nodes. Provenance is read
-        // from the node itself, so moving this pointer never transfers or owns
-        // the Allocator object.
-        struct ValueDeleter {
-            /// Destroys aValue's tree through its originating allocator; accepts null.
-            void operator()(pjson* aValue) const noexcept;
-        };
-        typedef std::unique_ptr<pjson, ValueDeleter> unique_ptr;
-
-        // Bounds how much work a parse may do. Parsing always enforces RFC 8259
-        // conformance and rejects:
-        //   - unknown escapes (e.g. "\q")
-        //   - lone/unpaired \u surrogates
-        //   - upper/mixed-case keywords (NULL, True, FALSE)
-        //   - raw control characters inside strings
-        //   - malformed UTF-8 bytes
-        struct ParseOptions {
-            enum DuplicateKeyPolicy { RejectDuplicateKeys, KeepFirstDuplicate, KeepLastDuplicate };
-
-            int maxDepth;         // nesting limit; values <= 0 enforce a one-level limit
-            size_t maxNodes;      // max JSON values created (0 = unlimited)
-            size_t maxInputBytes; // max input length in bytes (0 = unlimited)
-            DuplicateKeyPolicy duplicateKeys;
-            /// Selects duplicate rejection, depth 512, one million nodes, and a
-            /// 64 MiB input limit.
-            ParseOptions();
-        };
-
-        // Filled in by the error-reporting parse() overloads. `ok` is true when
-        // parsing succeeded; otherwise `offset` is the zero-based byte position,
-        // `line` is one-based, `column` is a one-based byte column, and
-        // `message` describes the first failure. Reporting parse APIs reset all
-        // fields on entry and leave this success state after a successful parse.
-        struct ParseError {
-            bool ok;
-            size_t offset;
-            size_t line;
-            size_t column;
-            std::string message;
-            /// Constructs a success state at the beginning of an input.
-            ParseError();
-        };
-
-        // Structured JSON Pointer (RFC 6901) lookup failure. `tokenIndex` is
-        // zero-based and `token` is the decoded token that could not be
-        // resolved (or the source token when its escape sequence is invalid).
-        // std::string reporting overloads reset all fields on entry. A C-string
-        // overload can report allocation failure before copying the pointer text.
-        struct PointerError {
+        /// Structured JSON Pointer (RFC 6901) lookup failure.
+        ///
+        /// `tokenIndex` is zero-based and `token` is the decoded token that could
+        /// not be resolved (or the source token when its escape sequence is
+        /// invalid). std::string reporting overloads reset all fields on entry. A
+        /// C-string overload can report allocation failure before copying the
+        /// pointer text.
+        struct PJSON_API PointerError {
+            /// Stable categories for programmatic JSON Pointer failure handling.
             enum Code {
-                Ok,
-                InvalidSyntax,
-                InvalidEscape,
-                MissingTarget,
-                ExpectedContainer,
-                InvalidArrayIndex,
-                ArrayIndexOutOfRange,
-                AppendTokenNotAllowed,
-                AllocationFailure,
-                InternalError
+                Ok,                    ///< Lookup succeeded.
+                InvalidSyntax,         ///< The pointer does not begin with slash or is malformed.
+                InvalidEscape,         ///< A token contains an invalid tilde escape.
+                MissingTarget,         ///< An object member or array element does not exist.
+                ExpectedContainer,     ///< Traversal encountered a scalar before the final token.
+                InvalidArrayIndex,     ///< An array token is not a canonical non-negative index.
+                ArrayIndexOutOfRange,  ///< An array token exceeds the current array bounds.
+                AppendTokenNotAllowed, ///< The append token is invalid for lookup.
+                AllocationFailure,     ///< Diagnostic construction could not allocate.
+                InternalError          ///< An unexpected internal exception was contained.
             };
 
-            bool ok;
-            Code code;
-            std::string pointer;
-            size_t tokenIndex;
-            std::string token;
-            std::string message;
+            bool ok;             ///< True exactly when code is Ok.
+            Code code;           ///< Stable machine-readable result category.
+            std::string pointer; ///< Pointer text supplied by the caller.
+            size_t tokenIndex;   ///< Zero-based index of the failing token.
+            std::string token;   ///< Decoded failing token when available.
+            std::string message; ///< Human-readable diagnostic; wording is not stable.
             /// Constructs a successful lookup state with no pointer or token details.
             PointerError();
         };
 
-        // Structured JSON Patch (RFC 6902) / Merge Patch (RFC 7396) failure.
-        // Patch application is atomic: failure leaves the target unchanged.
-        // Reporting patch APIs reset all fields on entry and on success.
-        struct PatchError {
+        /// Structured JSON Patch (RFC 6902) / Merge Patch (RFC 7396) failure.
+        ///
+        /// Patch application is atomic: failure leaves the target unchanged.
+        /// Reporting patch APIs reset all fields on entry and on success.
+        struct PJSON_API PatchError {
+            /// Stable categories for programmatic JSON Patch failure handling.
             enum Code {
-                Ok,
-                InvalidPatchDocument,
-                OperationNotObject,
-                MissingOp,
-                MissingPath,
-                MissingFrom,
-                MissingValue,
-                InvalidOp,
-                InvalidPath,
-                InvalidFrom,
-                TargetMissing,
-                InvalidArrayIndex,
-                ArrayIndexOutOfRange,
-                MoveRootNotAllowed,
-                MoveIntoDescendant,
-                TestFailed,
-                ResourceLimit,
-                AllocationFailure,
-                InternalError
+                Ok,                   ///< Patch application succeeded.
+                InvalidPatchDocument, ///< The patch document is not an array.
+                OperationNotObject,   ///< An operation entry is not an object.
+                MissingOp,            ///< An operation lacks a string `op` member.
+                MissingPath,          ///< An operation lacks a string `path` member.
+                MissingFrom,          ///< A copy or move lacks a string `from` member.
+                MissingValue,         ///< An add, replace, or test lacks `value`.
+                InvalidOp,            ///< The operation name is unsupported.
+                InvalidPath,          ///< The destination JSON Pointer is invalid.
+                InvalidFrom,          ///< The source JSON Pointer is invalid.
+                TargetMissing,        ///< A required source, parent, or target is absent.
+                InvalidArrayIndex,    ///< An array path token is not a valid index.
+                ArrayIndexOutOfRange, ///< An array path token exceeds valid bounds.
+                MoveRootNotAllowed,   ///< A move attempts to remove the document root.
+                MoveIntoDescendant,   ///< A move destination lies under its source.
+                TestFailed,           ///< A test operation did not compare equal.
+                ResourceLimit,        ///< A configured patch-work limit was reached.
+                AllocationFailure,    ///< Patch application could not allocate.
+                InternalError         ///< An unexpected internal exception was contained.
             };
 
-            bool ok;
-            Code code;
-            size_t opIndex;
-            std::string op;
-            std::string path;
-            std::string from;
-            size_t tokenIndex;
-            std::string token;
-            std::string message;
+            bool ok;             ///< True exactly when code is Ok.
+            Code code;           ///< Stable machine-readable result category.
+            size_t opIndex;      ///< Zero-based index of the failing operation.
+            std::string op;      ///< Operation name when available.
+            std::string path;    ///< Destination pointer when available.
+            std::string from;    ///< Source pointer when available.
+            size_t tokenIndex;   ///< Zero-based index of the failing pointer token.
+            std::string token;   ///< Decoded failing pointer token when available.
+            std::string message; ///< Human-readable diagnostic; wording is not stable.
             /// Constructs a successful patch state with no operation or token details.
             PatchError();
         };
 
-        // Bounds transactional patch amplification. Zero selects the documented
-        // built-in ceiling rather than disabling a safety limit. Clone bytes
-        // include node storage plus string and object-key payload bytes.
-        struct PatchOptions {
-            size_t maxOperations;  // default/hard ceiling: 10,000
-            size_t maxClonedNodes; // default/hard ceiling: 1,000,000
-            size_t maxClonedBytes; // default/hard ceiling: 64 MiB
-            size_t maxWork;        // default/hard ceiling: 1,000,000
+        /// Bounds transactional patch amplification.
+        ///
+        /// Zero selects the documented built-in ceiling rather than disabling a
+        /// safety limit. Clone bytes include node storage plus string and
+        /// object-key payload bytes.
+        struct PJSON_API PatchOptions {
+            size_t maxOperations;  ///< Operation ceiling; zero selects the hard 10,000 limit.
+            size_t maxClonedNodes; ///< Clone-node ceiling; zero selects the hard 1,000,000 limit.
+            size_t maxClonedBytes; ///< Clone-byte ceiling; zero selects the hard 64 MiB limit.
+            size_t maxWork;        ///< Work ceiling; zero selects the hard 1,000,000 limit.
+            /// Selects the documented finite default limits.
             PatchOptions();
         };
 
-        // Controls JSON serialization. The default produces the same compact,
-        // ascending-key output as toString()/write() without options. Pretty
-        // output places each array element/object member on its own line. Only
-        // space and tab are valid indentation characters; any other value is
-        // treated as a space so serialization always remains valid JSON.
-        //
-        // Objects are stored in std::map, so source/insertion order is not
-        // available. Key ordering is therefore explicitly ascending or
-        // descending according to std::map's bytewise std::string ordering.
-        struct SerializeOptions {
-            enum KeyOrder { AscendingKeys, DescendingKeys };
+        /// Controls JSON serialization.
+        ///
+        /// The default produces compact output in native object-storage order.
+        /// Pretty output places each array
+        /// element/object member on its own line. Only space and tab are valid
+        /// indentation characters; any other value is treated as a space so
+        /// serialization always remains valid JSON.
+        ///
+        /// Object storage and serialization order are unspecified.
+        struct PJSON_API SerializeOptions {
+            // Governs how a stored non-finite double (NaN, +/-infinity) is
+            // serialized. JSON has no non-finite literal, so the default fails
+            // with a structured error rather than silently changing the value's
+            // type. NonFiniteToNull opts in to the legacy behavior of writing
+            // JSON null; NonFiniteToString writes the strings "NaN",
+            // "Infinity", and "-Infinity" for interoperability with permissive
+            // consumers. The chosen policy applies identically to compact,
+            // pretty, buffered, and streaming output.
+            /// Selects how stored NaN and infinity values are represented.
+            enum NonFinitePolicy {
+                RejectNonFinite,  ///< Fail because JSON has no non-finite number literal.
+                NonFiniteToNull,  ///< Emit non-finite values as JSON null.
+                NonFiniteToString ///< Emit "NaN" or signed "Infinity" strings.
+            };
 
-            bool pretty;
-            size_t indentWidth;
-            char indentCharacter;
-            bool escapeNonAscii;
-            KeyOrder keyOrder;
-            size_t maxOutputBytes; // default 64 MiB; zero explicitly means unlimited
+            bool pretty;               ///< Enables line breaks and indentation.
+            size_t indentWidth;        ///< Indentation characters per nesting level.
+            char indentCharacter;      ///< Space or tab; invalid values are treated as space.
+            bool escapeNonAscii;       ///< Emits non-ASCII code points as Unicode escapes.
+            NonFinitePolicy nonFinite; ///< Policy for NaN and infinity values.
+            size_t maxOutputBytes;     ///< Output ceiling; zero explicitly means unlimited.
 
-            /// Selects compact output, two-space indentation, and ascending keys.
+            /// Selects compact output, two-space indentation, and non-finite rejection.
             SerializeOptions();
             /// Returns the defaults with pretty printing enabled.
             static SerializeOptions prettyPrinted();
         };
 
-        // Event sink for non-owning SAX parsing. Return false from any callback
-        // to cancel parsing; public parseSax* APIs return false for cancellation
-        // or thrown exceptions and populate ParseError when one is supplied.
-        //
-        // Callbacks are delivered in source order. Duplicate-key policy still
-        // applies: RejectDuplicateKeys fails on the duplicate key,
-        // KeepFirstDuplicate suppresses later duplicate-value subtrees, and
-        // KeepLastDuplicate accepts duplicates while still reporting both
-        // occurrences because a streaming SAX walk cannot retract prior events.
-        // String and key references are borrowed and remain valid only for the
-        // duration of their callback. The handler itself need only outlive the
-        // parseSax* call. Default callbacks accept the event and do nothing.
-        struct SaxHandler {
-            /// Enables destruction through a SaxHandler base pointer.
-            virtual ~SaxHandler();
-            /// Receives a JSON null value; return false to cancel parsing.
-            virtual bool onNull();
-            /// Receives a JSON boolean value; return false to cancel parsing.
-            virtual bool onBool(bool aValue);
-            /// Receives an integer-valued JSON number; return false to cancel parsing.
-            virtual bool onInt(int64_t aValue);
-            /// Receives a floating-point JSON number; return false to cancel parsing.
-            virtual bool onDouble(double aValue);
-            /// Receives borrowed decoded string bytes; return false to cancel parsing.
-            virtual bool onString(const std::string& aValue);
-            /// Marks the beginning of an array; return false to cancel parsing.
-            virtual bool onStartArray();
-            /// Marks the end of an array; return false to cancel parsing.
-            virtual bool onEndArray();
-            /// Marks the beginning of an object; return false to cancel parsing.
-            virtual bool onStartObject();
-            /// Receives a borrowed decoded object key; return false to cancel parsing.
-            virtual bool onKey(const std::string& aKey);
-            /// Marks the end of an object; return false to cancel parsing.
-            virtual bool onEndObject();
-        };
+        /// Structured outcome for the non-throwing serialization APIs.
+        struct PJSON_API SerializeError {
+            /// Stable categories for programmatic serialization failure handling.
+            enum Code {
+                None,              ///< Serialization succeeded.
+                InvalidUtf8,       ///< A stored string or object key is not valid UTF-8.
+                NonFiniteNumber,   ///< NaN or infinity was rejected by the active policy.
+                OutputLimit,       ///< maxOutputBytes or representable output size was exceeded.
+                AllocationFailure, ///< Temporary serialization storage could not be allocated.
+                StreamFailure,     ///< The destination stream rejected a physical write.
+                InternalError      ///< An unexpected internal exception was contained.
+            };
 
-        // One schema-validation failure: `path` is a JSON Pointer to the
-        // offending node (e.g. "/address/zip", "" for the document root) and
-        // `message` explains what was wrong.
-        struct SchemaError {
-            std::string path;
-            std::string message;
-            /// Constructs an error with an empty root path and message.
-            SchemaError();
-            /// Constructs an error for aPath with the supplied diagnostic message.
-            SchemaError(const std::string& aPath, const std::string& aMsg);
-        };
-
-        // Bounds schema regular-expression work. By default only a conservative,
-        // non-ambiguous ECMAScript subset is accepted and both pattern/subject
-        // sizes are capped, preventing catastrophic std::regex backtracking.
-        // trustedRegex() restores unrestricted ECMAScript regex behavior for
-        // schemas and input controlled by the application.
-        struct SchemaOptions {
-            size_t maxRegexPatternBytes; // 0 = unlimited (default: 256)
-            size_t maxRegexSubjectBytes; // 0 = unlimited (default: 4096)
-            bool allowUnsafeRegex;       // default false
-            /// Recursive validation depth (default and absolute hard ceiling: 64).
-            /// Zero selects 64, and larger values are clamped to 64.
-            size_t maxValidationDepth;
-            /// Resolved references (default 1024); zero selects the hard ceiling of 1024.
-            size_t maxRefResolutions;
-            /// Validation work units (default 1,000,000); zero selects that hard ceiling.
-            size_t maxValidationWork;
-            /// Reported errors (default 100); zero selects the hard ceiling of 100.
-            size_t maxErrors;
-            bool validateFormats; // validate known string formats (default true)
-            /// Selects bounded safe-regex, traversal, reference, work, error, and format defaults.
-            SchemaOptions();
-            /// Disables only regex restrictions; all other defaults remain enabled.
-            static SchemaOptions trustedRegex();
+            Code code;           ///< Stable machine-readable result category.
+            std::string message; ///< Human-readable diagnostic; empty on success.
+            /// Constructs a successful serialization result.
+            SerializeError();
+            /// Resets the result to success.
+            void reset() noexcept;
         };
 
         //== Construction / lifetime =========================================
         /// Constructs null using the process-lifetime default allocator.
-        pjson();
+        pjson() noexcept;
         /// Constructs null bound to borrowed aAlloc, which must outlive this tree.
         explicit pjson(Allocator& aAlloc) noexcept;
         /// Destroys this value and its complete owned subtree.
@@ -345,104 +290,35 @@ namespace ByteDance {
         void resetTo(jsonType aeType);
         /// Calls resetTo() only when the type differs, otherwise preserving contents.
         void resetIfNeeded(jsonType aeType);
-        // Same-allocator swap is O(1). A cross-allocator swap is rejected as a
-        // safe no-op; use canSwap() to test before requesting it.
-        /// Exchanges contents when allocators match; otherwise does nothing.
+        // Same-allocator, non-overlapping swap is O(1). Cross-allocator and
+        // ancestor/descendant swaps are rejected as safe no-ops; use canSwap()
+        // to test before requesting one.
+        /// Exchanges compatible, non-overlapping contents; otherwise does nothing.
         void swap(pjson& aOther) noexcept;
         /// Returns the borrowed allocator bound to this value.
         Allocator& getAllocator() const noexcept;
-        /// Returns whether swap(aOther) can exchange contents.
+        /// Returns whether swap(aOther) can exchange contents safely.
         bool canSwap(const pjson& aOther) const noexcept;
 
-        //== DOM parsing with the default allocator ==========================
-        // Each parse accepts exactly one JSON value followed only by whitespace.
-        // In-memory parse failures return an empty pointer; diagnostic overloads
-        // reset aError and describe the first failure. A byte span may contain
-        // embedded NUL bytes, but a null aSrc is always an error.
-        /// Parses aStr into an owning tree using the default allocator.
-        static pjson::unique_ptr parse(const std::string& aStr,
-                                       const ParseOptions& aOpts = ParseOptions());
-        /// Parses the aSize-byte span at aSrc using the default allocator.
-        static pjson::unique_ptr parse(const char* aSrc, size_t aSize,
-                                       const ParseOptions& aOpts = ParseOptions());
-        /// Parses aStr and reports the first failure in aError.
-        static pjson::unique_ptr parse(const std::string& aStr, ParseError& aError,
-                                       const ParseOptions& aOpts = ParseOptions());
-        /// Parses the aSize-byte span and reports the first failure in aError.
-        static pjson::unique_ptr parse(const char* aSrc, size_t aSize, ParseError& aError,
-                                       const ParseOptions& aOpts = ParseOptions());
-
-        // parseStream() buffers the document in chunks while enforcing
-        // maxInputBytes. Stream or temporary-buffer exceptions may propagate.
-        /// Buffers and parses one document from aIn using the default allocator.
-        static pjson::unique_ptr parseStream(std::istream& aIn,
-                                             const ParseOptions& aOpts = ParseOptions());
-        /// Buffers and parses aIn, reporting ordinary parse/read failures in aError.
-        static pjson::unique_ptr parseStream(std::istream& aIn, ParseError& aError,
-                                             const ParseOptions& aOpts = ParseOptions());
-
-        //== DOM parsing with a custom allocator =============================
-        // Allocator-aware DOM parsing routes root/child nodes and string/array/
-        // object wrapper objects through borrowed aAlloc. Standard-container
-        // backing buffers still use their standard allocators, as described by
-        // Allocator above. aAlloc must outlive the returned tree.
-        /// Parses aStr with allocator-backed nodes and wrapper objects.
-        static unique_ptr parse(const std::string& aStr, Allocator& aAlloc,
-                                const ParseOptions& aOpts = ParseOptions());
-        /// Parses a byte span with allocator-backed nodes and wrapper objects.
-        static unique_ptr parse(const char* aSrc, size_t aSize, Allocator& aAlloc,
-                                const ParseOptions& aOpts = ParseOptions());
-        /// Parses aStr with aAlloc and reports the first failure in aError.
-        static unique_ptr parse(const std::string& aStr, ParseError& aError, Allocator& aAlloc,
-                                const ParseOptions& aOpts = ParseOptions());
-        /// Parses a byte span with aAlloc and reports the first failure in aError.
-        static unique_ptr parse(const char* aSrc, size_t aSize, ParseError& aError,
-                                Allocator& aAlloc, const ParseOptions& aOpts = ParseOptions());
-        /// Buffers aIn, then parses with allocator-backed nodes and wrappers.
-        static unique_ptr parseStream(std::istream& aIn, Allocator& aAlloc,
-                                      const ParseOptions& aOpts = ParseOptions());
-        /// Buffers and parses aIn with aAlloc, reporting ordinary failures in aError.
-        static unique_ptr parseStream(std::istream& aIn, ParseError& aError, Allocator& aAlloc,
-                                      const ParseOptions& aOpts = ParseOptions());
-
-        //== SAX parsing =====================================================
-        // SAX parsing retains neither aHandler nor callback arguments. It returns
-        // false for invalid input, cancellation, stream failure, or a handler
-        // exception; callbacks already delivered before failure are not undone.
-        /// Parses aStr and emits its events to aHandler without building a DOM.
-        static bool parseSax(const std::string& aStr, SaxHandler& aHandler,
-                             const ParseOptions& aOpts = ParseOptions());
-        /// Parses the aSize-byte span and emits its events to aHandler.
-        static bool parseSax(const char* aSrc, size_t aSize, SaxHandler& aHandler,
-                             const ParseOptions& aOpts = ParseOptions());
-        /// SAX-parses aStr and reports failure or cancellation in aError.
-        static bool parseSax(const std::string& aStr, SaxHandler& aHandler, ParseError& aError,
-                             const ParseOptions& aOpts = ParseOptions());
-        /// SAX-parses a byte span and reports failure or cancellation in aError.
-        static bool parseSax(const char* aSrc, size_t aSize, SaxHandler& aHandler,
-                             ParseError& aError, const ParseOptions& aOpts = ParseOptions());
-        // True streaming SAX parse: reads the istream incrementally and never
-        // buffers the full document in memory.
-        /// Incrementally parses aIn and emits events to aHandler.
-        static bool parseSaxStream(std::istream& aIn, SaxHandler& aHandler,
-                                   const ParseOptions& aOpts = ParseOptions());
-        /// Incrementally SAX-parses aIn and reports failure or cancellation in aError.
-        static bool parseSaxStream(std::istream& aIn, SaxHandler& aHandler, ParseError& aError,
-                                   const ParseOptions& aOpts = ParseOptions());
-
         //== Serialization ===================================================
-        // Non-finite stored doubles serialize as JSON null. Invalid UTF-8 in a
-        // string value or object key is a serialization failure: toString() throws,
-        // while write() sets failbit (and may propagate stream exceptions).
-        // toString() may also throw for allocation or length failure.
+        // Invalid UTF-8 and rejected non-finite doubles are serialization
+        // failures: the convenience toString() overloads throw, while legacy
+        // write() sets failbit (and may propagate enabled stream exceptions).
+        // The SerializeError overloads never throw and expose stable categories.
         /// Returns compact JSON using the default serialization options.
         std::string toString() const;
         /// Returns JSON serialized according to aOpts.
         std::string toString(const SerializeOptions& aOpts) const;
+        /// Serializes into aOut transactionally and reports failure without throwing.
+        bool toString(std::string& aOut, SerializeError& aError,
+                      const SerializeOptions& aOpts = SerializeOptions()) const noexcept;
         /// Writes compact JSON to aOut using the default serialization options.
         void write(std::ostream& aOut) const;
         /// Writes JSON configured by aOpts to aOut.
         void write(std::ostream& aOut, const SerializeOptions& aOpts) const;
+        /// Writes JSON and reports logical or physical failure without throwing.
+        bool write(std::ostream& aOut, SerializeError& aError,
+                   const SerializeOptions& aOpts = SerializeOptions()) const noexcept;
 
         //== Type inspection =================================================
         /// Returns this node's stored JSON representation.
@@ -451,10 +327,14 @@ namespace ByteDance {
         bool isNull() const;
         /// Returns whether this node stores a string.
         bool isString() const;
-        /// Returns whether this node stores either numeric representation.
+        /// Returns whether this node stores any numeric representation.
         bool isNumber() const;
-        /// Returns whether this node stores an integer representation.
+        /// Returns whether this node stores a signed-integer representation.
         bool isInt() const;
+        /// Returns whether this node stores an unsigned-integer representation.
+        bool isUInt() const;
+        /// Returns whether this node stores any integer representation (signed or unsigned).
+        bool isInteger() const;
         /// Returns whether this node stores a floating-point representation.
         bool isDouble() const;
         /// Returns whether this node stores a boolean.
@@ -464,13 +344,14 @@ namespace ByteDance {
         /// Returns whether this node stores an object.
         bool isObject() const;
 
-        // Minimal C++11-compatible, non-owning view of a JSON string. A view
-        // aliases bytes owned by this pjson node and is valid only while that
-        // node remains alive and unchanged. Assignment, reset, swap, move,
-        // destruction, erasing the node, or replacing/resetting an ancestor
-        // invalidates it. Strings may contain embedded NUL bytes; use size()
-        // rather than strlen().
-        class StringView {
+        /// Minimal C++11-compatible, non-owning view of a JSON string.
+        ///
+        /// A view aliases bytes owned by this pjson node and is valid only while
+        /// that node remains alive and unchanged. Assignment, reset, swap, move,
+        /// destruction, erasing the node, or replacing/resetting an ancestor
+        /// invalidates it. Strings may contain embedded NUL bytes; use size()
+        /// rather than strlen().
+        class PJSON_API StringView {
         public:
             /// Constructs an empty view with data() == nullptr.
             StringView() noexcept;
@@ -491,10 +372,15 @@ namespace ByteDance {
         };
 
         // Strict typed access to this node. On a type mismatch, returns false
-        // and leaves aResult unchanged. Integers may widen to double; no other
-        // coercions are performed. StringView avoids a string copy.
-        /// Extracts an integer only when this node stores jsonNumberInt.
+        // and leaves aResult unchanged. A signed integer read accepts an
+        // unsigned value only when it fits in int64_t; an unsigned integer read
+        // accepts a signed value only when it is non-negative; a double read
+        // widens any integer. No other coercions are performed. StringView
+        // avoids a string copy.
+        /// Extracts a signed integer; an unsigned value must fit in int64_t.
         bool tryGet(int64_t& aResult) const noexcept;
+        /// Extracts an unsigned integer; a signed value must be non-negative.
+        bool tryGet(uint64_t& aResult) const noexcept;
         /// Extracts a numeric value, widening a stored integer when necessary.
         bool tryGet(double& aResult) const noexcept;
         /// Extracts a boolean only when this node stores jsonBoolean.
@@ -512,14 +398,43 @@ namespace ByteDance {
         /// Empties a container without changing its type, or resets a scalar to null.
         void clear();
 
-        /// Returns copied object keys in std::map order, or an empty vector otherwise.
+        /// Returns copied object keys in unspecified storage order, or an empty vector otherwise.
         std::vector<std::string> keys() const;
+
+        //== Non-allocating traversal =======================================
+        /// Callback for read-only object-member traversal.
+        typedef bool (*ConstMemberVisitor)(StringView aKey, const pjson& aValue, void* aContext);
+        /// Callback for mutable object-member traversal.
+        typedef bool (*MemberVisitor)(StringView aKey, pjson& aValue, void* aContext);
+        /// Callback for read-only array-element traversal.
+        typedef bool (*ConstElementVisitor)(const pjson& aValue, void* aContext);
+        /// Callback for mutable array-element traversal.
+        typedef bool (*ElementVisitor)(pjson& aValue, void* aContext);
+        ///
+        /// Traversal copies no object names and performs no per-member lookup.
+        /// Object members are visited in unspecified storage order and array
+        /// elements in index order. Borrowed arguments are valid only for the callback. The
+        /// opaque context is forwarded unchanged. Returning false stops early.
+        /// A callback must not resize the traversed container. Calling a traversal
+        /// method on the wrong container type is a no-op that returns true.
+        /// Visits each object member as (key view, const value); false stops early.
+        bool forEachMember(ConstMemberVisitor aVisitor, void* aContext) const;
+        /// Visits each object member as (key view, mutable value); false stops early.
+        bool forEachMember(MemberVisitor aVisitor, void* aContext);
+        /// Visits each array element as a const value; false stops early.
+        bool forEachElement(ConstElementVisitor aVisitor, void* aContext) const;
+        /// Visits each array element as a mutable value; false stops early.
+        bool forEachElement(ElementVisitor aVisitor, void* aContext);
 
         //== Non-mutating lookup =============================================
         /// Returns whether this object contains aKey.
         bool hasKey(const std::string& aKey) const;
         /// Returns whether this object contains non-null aKey; null returns false.
         bool hasKey(const char* aKey) const;
+        /// Alias for hasKey(aKey); reads more naturally at call sites.
+        bool contains(const std::string& aKey) const;
+        /// Alias for hasKey(aKey); reads more naturally at call sites.
+        bool contains(const char* aKey) const;
         /// Returns whether this array contains aIndex; negative indexes count from the end.
         bool hasIndex(int aIndex) const noexcept;
 
@@ -542,6 +457,10 @@ namespace ByteDance {
         pjson* find(int aIndex) noexcept;
         /// Returns the read-only borrowed array child at aIndex, or null on failure.
         const pjson* find(int aIndex) const noexcept;
+        /// Returns the borrowed array child at a non-negative index, or null on failure.
+        pjson* findIndex(size_t aIndex) noexcept;
+        /// Returns the read-only borrowed array child at a non-negative index, or null.
+        const pjson* findIndex(size_t aIndex) const noexcept;
 
         // RFC 6901 lookup. The empty pointer addresses this value; every
         // non-empty pointer must begin with '/'. Lookups are iterative and
@@ -570,6 +489,8 @@ namespace ByteDance {
         // unchanged. Negative indexes count from the end.
         /// Extracts the integer child at aKey without mutating this object.
         bool tryGet(const std::string& aKey, int64_t& aResult) const;
+        /// Extracts the unsigned-integer child at aKey without mutating this object.
+        bool tryGet(const std::string& aKey, uint64_t& aResult) const;
         /// Extracts the numeric child at aKey as a double.
         bool tryGet(const std::string& aKey, double& aResult) const;
         /// Extracts the boolean child at aKey.
@@ -581,6 +502,8 @@ namespace ByteDance {
 
         /// Extracts the integer child at non-null aKey.
         bool tryGet(const char* aKey, int64_t& aResult) const;
+        /// Extracts the unsigned-integer child at non-null aKey.
+        bool tryGet(const char* aKey, uint64_t& aResult) const;
         /// Extracts the numeric child at non-null aKey as a double.
         bool tryGet(const char* aKey, double& aResult) const;
         /// Extracts the boolean child at non-null aKey.
@@ -592,6 +515,8 @@ namespace ByteDance {
 
         /// Extracts the integer array child at aIndex.
         bool tryGet(int aIndex, int64_t& aResult) const noexcept;
+        /// Extracts the unsigned-integer array child at aIndex.
+        bool tryGet(int aIndex, uint64_t& aResult) const noexcept;
         /// Extracts the numeric array child at aIndex as a double.
         bool tryGet(int aIndex, double& aResult) const noexcept;
         /// Extracts the boolean array child at aIndex.
@@ -604,30 +529,96 @@ namespace ByteDance {
         //== Building / mutable access =======================================
         // operator[] is a direct builder API. A key access changes a non-object
         // into an object and creates a missing null child. An index access changes
-        // a non-array into an array; negative indexes count from the end and clamp
-        // before the beginning to zero, while indexes past the end grow the array
-        // with null children. A single access that would create more than one
-        // million children throws std::length_error before mutation. Use
-        // find()/tryGet() for reads.
+        // a non-array into an array; valid negative indexes count from the end,
+        // while an index before the beginning throws std::out_of_range without
+        // mutation. Non-negative indexes past the end grow the array with null
+        // children. A single access that would create more than one million
+        // children throws std::length_error before mutation. Use find()/tryGet()
+        // for reads.
         /// Returns or creates the child at aString.
         pjson& operator[](const std::string& aString);
         /// Returns or creates the child at aSkey; throws std::invalid_argument for null.
         pjson& operator[](const char* aSkey);
         /// Returns or creates the child at index under the auto-growth rules above.
         pjson& operator[](int index);
+        /// Returns or creates the child at a non-negative index.
+        pjson& operator[](size_t index);
+
+        //== Factories and typed construction ================================
+        // Explicit, unambiguous ways to create each JSON kind without relying on
+        // default construction having a particular type. Each uses the default
+        // allocator; the allocator-aware constructors remain available for
+        // custom-allocator trees.
+        /// Returns a JSON null value.
+        static pjson null();
+        /// Returns an empty JSON object value.
+        static pjson object();
+        /// Returns an empty JSON array value.
+        static pjson array();
+        /// Replaces this value with JSON null (std::nullptr_t assignment).
+        pjson& operator=(std::nullptr_t);
+
+        //== Checked access ==================================================
+        // at() is a checked, non-vivifying accessor. Unlike operator[], it never
+        // creates a child: a missing object key, an out-of-range index, or a
+        // wrong container type throws std::out_of_range.
+        /// Returns the existing child at aKey or throws std::out_of_range.
+        pjson& at(const std::string& aKey);
+        /// Returns the read-only child at aKey or throws std::out_of_range.
+        const pjson& at(const std::string& aKey) const;
+        /// Returns the existing element at aIndex or throws std::out_of_range.
+        pjson& at(size_t aIndex);
+        /// Returns the read-only element at aIndex or throws std::out_of_range.
+        const pjson& at(size_t aIndex) const;
+
+        //== Generic child insertion ========================================
+        // Append or assign arbitrary pjson values, not just scalars. A non-array
+        // target is promoted to an array by pushBack. Cross-allocator inserts
+        // deep-copy the value into this node's allocator.
+        /// Appends a deep copy of aValue, promoting this node to an array.
+        pjson& pushBack(const pjson& aValue);
+        /// Moves an independent same-allocator value; otherwise deep-copies it.
+        pjson& pushBack(pjson&& aValue);
+        /// Inserts or replaces the member aKey with a deep copy of aValue.
+        pjson& insertOrAssign(const std::string& aKey, const pjson& aValue);
+        /// Moves an independent same-allocator value; otherwise deep-copies it.
+        pjson& insertOrAssign(const std::string& aKey, pjson&& aValue);
+        /// Reserves capacity for at least aCount array elements (no-op for non-arrays
+        /// unless this node is first made an array); returns *this for chaining.
+        pjson& reserve(size_t aCount);
 
         // Assign a scalar value, replacing whatever this node was. Numbers are
-        // stored as int64_t (integers) or double (floating point).
+        // stored as int64_t (signed integers), uint64_t (unsigned integers), or
+        // double (floating point). An explicit uint64_t assignment retains the
+        // unsigned type identity even for small values.
         /// Replaces this value with a copy of aString.
         pjson& operator=(const std::string& aString);
         /// Replaces this value with aCString; throws std::invalid_argument for null.
         pjson& operator=(const char* aCString);
         /// Replaces this value with aBool.
         pjson& operator=(const bool aBool);
-        /// Replaces this value with aInt.
-        pjson& operator=(const int64_t aInt);
-        /// Replaces this value with aDouble; non-finite values serialize as null.
+        /// Replaces this value with a signed integer.
+        pjson& operator=(const int aInt);
+        /// Replaces this value with an unsigned integer.
+        pjson& operator=(const unsigned int aUInt);
+        /// Replaces this value with a signed short integer.
+        pjson& operator=(const short aInt);
+        /// Replaces this value with an unsigned short integer.
+        pjson& operator=(const unsigned short aUInt);
+        /// Replaces this value with a signed long integer.
+        pjson& operator=(const long aInt);
+        /// Replaces this value with an unsigned long integer.
+        pjson& operator=(const unsigned long aUInt);
+        /// Replaces this value with a signed long-long integer.
+        pjson& operator=(const long long aInt);
+        /// Replaces this value with an unsigned long-long integer.
+        pjson& operator=(const unsigned long long aUInt);
+        /// Replaces this value with a floating-point number.
+        pjson& operator=(const float aFloat);
+        /// Replaces this value with aDouble; the non-finite policy governs output.
         pjson& operator=(const double aDouble);
+        /// Narrows a long double to the library's binary64 number representation.
+        pjson& operator=(const long double aDouble);
 
         // Vector assignment atomically replaces this node with an array of copied
         // children allocated through this node's allocator.
@@ -635,10 +626,28 @@ namespace ByteDance {
         pjson& operator=(const std::vector<std::string>& aValueArray);
         /// Replaces this value with a copied boolean array.
         pjson& operator=(const std::vector<bool>& aValueArray);
-        /// Replaces this value with a copied integer array.
-        pjson& operator=(const std::vector<int64_t>& aValueArray);
+        /// Replaces this value with a copied native-integer array.
+        pjson& operator=(const std::vector<int>& aValueArray);
+        /// Replaces this value with a copied native unsigned-integer array.
+        pjson& operator=(const std::vector<unsigned int>& aValueArray);
+        /// Replaces this value with a copied signed-short array.
+        pjson& operator=(const std::vector<short>& aValueArray);
+        /// Replaces this value with a copied unsigned-short array.
+        pjson& operator=(const std::vector<unsigned short>& aValueArray);
+        /// Replaces this value with a copied signed-long array.
+        pjson& operator=(const std::vector<long>& aValueArray);
+        /// Replaces this value with a copied unsigned-long array.
+        pjson& operator=(const std::vector<unsigned long>& aValueArray);
+        /// Replaces this value with a copied signed-long-long array.
+        pjson& operator=(const std::vector<long long>& aValueArray);
+        /// Replaces this value with a copied unsigned-long-long array.
+        pjson& operator=(const std::vector<unsigned long long>& aValueArray);
+        /// Replaces this value with a copied float array.
+        pjson& operator=(const std::vector<float>& aValueArray);
         /// Replaces this value with a copied double array.
         pjson& operator=(const std::vector<double>& aValueArray);
+        /// Replaces this value with a copied long-double array, narrowing each value to double.
+        pjson& operator=(const std::vector<long double>& aValueArray);
 
         // Scalar append adds one copied child. If this node is not already an
         // array, its previous value is discarded rather than retained.
@@ -648,10 +657,28 @@ namespace ByteDance {
         pjson& operator+=(const char* aValue);
         /// Appends aValue as a boolean child.
         pjson& operator+=(const bool aValue);
-        /// Appends aValue as an integer child.
-        pjson& operator+=(const int64_t aValue);
+        /// Appends aValue as a signed integer child.
+        pjson& operator+=(const int aValue);
+        /// Appends aValue as an unsigned integer child.
+        pjson& operator+=(const unsigned int aValue);
+        /// Appends aValue as a signed-short child.
+        pjson& operator+=(const short aValue);
+        /// Appends aValue as an unsigned-short child.
+        pjson& operator+=(const unsigned short aValue);
+        /// Appends aValue as a signed-long child.
+        pjson& operator+=(const long aValue);
+        /// Appends aValue as an unsigned-long child.
+        pjson& operator+=(const unsigned long aValue);
+        /// Appends aValue as a signed-long-long child.
+        pjson& operator+=(const long long aValue);
+        /// Appends aValue as an unsigned-long-long child.
+        pjson& operator+=(const unsigned long long aValue);
+        /// Appends aValue as a floating-point child.
+        pjson& operator+=(const float aValue);
         /// Appends aValue as a double child.
         pjson& operator+=(const double aValue);
+        /// Narrows aValue to the library's binary64 number representation and appends it.
+        pjson& operator+=(const long double aValue);
 
         // Vector append copies every element. A non-array's prior value is
         // discarded; even an empty vector promotes a non-array to an empty array.
@@ -659,10 +686,28 @@ namespace ByteDance {
         pjson& operator+=(const std::vector<std::string>& aValueArray);
         /// Appends every boolean in aValueArray.
         pjson& operator+=(const std::vector<bool>& aValueArray);
-        /// Appends every integer in aValueArray.
-        pjson& operator+=(const std::vector<int64_t>& aValueArray);
+        /// Appends every native integer in aValueArray.
+        pjson& operator+=(const std::vector<int>& aValueArray);
+        /// Appends every native unsigned integer in aValueArray.
+        pjson& operator+=(const std::vector<unsigned int>& aValueArray);
+        /// Appends every signed short in aValueArray.
+        pjson& operator+=(const std::vector<short>& aValueArray);
+        /// Appends every unsigned short in aValueArray.
+        pjson& operator+=(const std::vector<unsigned short>& aValueArray);
+        /// Appends every signed long in aValueArray.
+        pjson& operator+=(const std::vector<long>& aValueArray);
+        /// Appends every unsigned long in aValueArray.
+        pjson& operator+=(const std::vector<unsigned long>& aValueArray);
+        /// Appends every signed long long in aValueArray.
+        pjson& operator+=(const std::vector<long long>& aValueArray);
+        /// Appends every unsigned long long in aValueArray.
+        pjson& operator+=(const std::vector<unsigned long long>& aValueArray);
+        /// Appends every float in aValueArray.
+        pjson& operator+=(const std::vector<float>& aValueArray);
         /// Appends every double in aValueArray.
         pjson& operator+=(const std::vector<double>& aValueArray);
+        /// Narrows and appends every long double in aValueArray.
+        pjson& operator+=(const std::vector<long double>& aValueArray);
 
         // Remove and free the child under a map key / at an array index.
         // Array indexes are zero-based and erasure shifts later elements left.
@@ -701,70 +746,36 @@ namespace ByteDance {
         /// Returns the negation of operator==.
         bool operator!=(const pjson& aOther) const;
 
-        //== Schema validation ===============================================
-        // Validates this value against a schema that is itself a pjson object,
-        // using the documented JSON Schema subset; this is not a complete draft
-        // implementation. Returns true when the
-        // value conforms. Never throws. The second form appends reported
-        // keyword failures rather than stopping at the first. Errors inside
-        // non-selected anyOf/oneOf/not branches are intentionally suppressed,
-        // and a resource-budget failure can stop further validation.
-        //
-        // Supported keywords:
-        //   type, enum, const,
-        //   $ref (local JSON Pointer fragments),
-        //   properties, patternProperties, propertyNames, required,
-        //     dependentRequired, dependencies, additionalProperties,
-        //     minProperties, maxProperties,
-        //   items, minItems, maxItems, uniqueItems,
-        //   minimum, maximum, exclusiveMinimum, exclusiveMaximum, multipleOf,
-        //   minLength, maxLength, pattern, format,
-        //   allOf, anyOf, oneOf, not.
-        // A boolean schema (true/false) accepts/rejects everything. Unknown
-        // keywords and unsupported keyword shapes are ignored. Both inputs are
-        // borrowed and unchanged; the collecting overload appends to aErrors
-        // without clearing existing entries. Resource aborts may stop collection.
-        /// Returns whether this value satisfies aSchema under aOpts.
-        bool validate(const pjson& aSchema,
-                      const SchemaOptions& aOpts = SchemaOptions()) const noexcept;
-        /// Validates and appends discovered failures to aErrors.
-        bool validate(const pjson& aSchema, std::vector<SchemaError>& aErrors,
-                      const SchemaOptions& aOpts = SchemaOptions()) const noexcept;
+        //== Numeric ordering ================================================
+        // Exact ordering across the signed, unsigned, and double numeric kinds
+        // without rounding an integer through binary64. On success aOrder is set
+        // to -1, 0, or 1 for this value being less than, equal to, or greater
+        // than aOther. Returns false and leaves aOrder unchanged when either
+        // value is not a number, or when the comparison is unordered because a
+        // NaN is involved. This is the exact comparison callers (including
+        // schema validators) need for numeric bounds; equality alone is exposed
+        // through operator==.
+        /// Compares two stored numbers exactly; false when non-numeric/unordered.
+        bool tryCompareNumber(const pjson& aOther, int& aOrder) const noexcept;
+
+        // NOTE: JSON Schema validation is no longer a member of pjson. It now
+        // lives in the standalone ByteDance::pJsonSchemaValidator helper declared
+        // in <pjson_schema.h>, which consumes only pjson's public API. This keeps
+        // the core DOM free of the schema/regex machinery. The validator carries
+        // its own Error and Options vocabulary types.
 
     private:
         //== Internal helpers ================================================
-        // The parser, schema validator, and encoding routines live entirely in
-        // pjson.cpp as the pjsonImpl helper struct, so this header stays small.
-        // pjsonImpl is a friend so it can touch the data union directly; only
-        // the few instance helpers other members call are declared here.
+        // Encoding, ownership, and other DOM operations that need to touch the
+        // data members below live behind the pjsonImpl helper. Schema
+        // validation is deliberately separate and uses only the public API.
+        // pjsonImpl is a friend so it can reach private representation directly;
+        // no instance helper methods are declared here.
         friend struct pjsonImpl;
-        friend struct ValueDeleter;
-
-        /// Iteratively deep-copies aFrom's contents using this node's allocator.
-        void copyContentsFrom(const pjson& aFrom);
-
-        //== Data ============================================================
-        typedef std::vector<pjson*> ArrayStorage;
-        typedef std::map<std::string, pjson*> ObjectStorage;
-
+        // These two pointers are the stable ABI handle. Null values share a
+        // private implementation sentinel; non-null state belongs to _allocator.
         Allocator* _allocator;
-        bool _allocatorOwnedNode;
-        // Intrusive scratch link used only by allocation-free iterative tree
-        // destruction. It is null during normal object lifetime.
-        pjson* _disposeNext;
-        jsonType _eType = jsonType::jsonNull;
-        union Storage {
-            void* _pValueRaw;
-            ObjectStorage* _pValueMap;
-            ArrayStorage* _pValueArray;
-            int64_t _valueInt;
-            double _valueDouble;
-            bool _valueBool;
-            std::string* _pValueString;
-
-            /// Initializes the raw representation to null.
-            Storage();
-        } _uValue;
+        pjsonImpl* _pImpl;
     };
     //========================================================================
 }; // end namespace ByteDance

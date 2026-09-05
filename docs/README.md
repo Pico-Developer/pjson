@@ -52,6 +52,9 @@ flowchart LR
 
 ## Reference and migration
 
+- [pjson 2.0 behavioral and ABI contract](behavioral-contract-2.0.md) — current
+  ownership, parsing, numeric, mutation, error, allocator, thread-safety, and
+  binary-compatibility guarantees
 - [Browsable API reference](https://pico-developer.github.io/pjson/) — generated
   per-symbol documentation (its [source page](reference/mainpage.md) is kept in
   this repository).
@@ -87,6 +90,7 @@ warnings and missing public API families fail the build.
 
 ```cpp
 #include "pjson.h"
+#include "pjson_parser.h"
 #include <cstdint>
 #include <iostream>
 using namespace ByteDance;
@@ -101,9 +105,10 @@ int main() {
     pjson::SerializeOptions pretty = pjson::SerializeOptions::prettyPrinted();
     std::cout << person.toString(pretty) << "\n";
 
-    pjson::unique_ptr parsed = pjson::parse(person.toString(pretty));
+    pJsonParser::Error error;
+    pjson parsed = pJsonParser().parse(person.toString(pretty), error);
     std::string name;
-    if (parsed && parsed->tryGet("name", name))
+    if (error.ok && parsed.tryGet("name", name))
         std::cout << name << "\n"; // Ada
 }
 ```

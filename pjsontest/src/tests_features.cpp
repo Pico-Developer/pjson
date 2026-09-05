@@ -14,13 +14,15 @@
 //
 //===----------------------------------------------------------------------===//
 // Tests for higher-level library features on the settled surface: depth/resource
-// guards, strict parse mode, pjson::unique_ptr ownership, equality, container
+// guards, strict parse mode, pjson_test::Parsed ownership, equality, container
 // behavior, erase, and stream I/O.
 //
 #include "pjson.h"
+#include "pjson_parser.h"
 #include "test_harness.h"
 #include "test_util.h"
 
+#include <cmath>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -52,11 +54,12 @@ namespace {
 // Library version.
 //===----------------------------------------------------------------------===//
 TEST(version_string) {
-    CHECK_EQ(std::string(pjson::getVersion()), std::string("1.0.0"));
-    CHECK_EQ(std::string(PJSON_VERSION), std::string("1.0.0"));
-    CHECK_EQ(PJSON_VERSION_MAJOR, 1);
+    CHECK_EQ(std::string(pjson::getVersion()), std::string("2.0.0"));
+    CHECK_EQ(std::string(PJSON_VERSION), std::string("2.0.0"));
+    CHECK_EQ(PJSON_VERSION_MAJOR, 2);
     CHECK_EQ(PJSON_VERSION_MINOR, 0);
     CHECK_EQ(PJSON_VERSION_PATCH, 0);
+    CHECK_EQ(PJSON_ABI_VERSION, 2);
 }
 
 //===----------------------------------------------------------------------===//
@@ -69,7 +72,7 @@ TEST(depth_guard_rejects_deep_nesting) {
     const int depth = 100000;
     std::string s(depth, '[');
     s += std::string(depth, ']');
-    CHECK(pjson::parse(s) == nullptr);
+    CHECK(pjson_test::parse(s) == nullptr);
 }
 
 TEST(depth_guard_allows_reasonable_nesting) {
@@ -84,10 +87,10 @@ TEST(depth_guard_allows_reasonable_nesting) {
 TEST(depth_guard_boundary_is_configurable) {
     // maxDepth counts array/object frames. With maxDepth = 3, three nested
     // arrays are OK but four are not.
-    pjson::ParseOptions opt;
+    pJsonParser::Options opt;
     opt.maxDepth = 3;
-    CHECK(pjson::parse("[[[1]]]", opt) != nullptr);
-    CHECK(pjson::parse("[[[[1]]]]", opt) == nullptr);
+    CHECK(pjson_test::parse("[[[1]]]", opt) != nullptr);
+    CHECK(pjson_test::parse("[[[[1]]]]", opt) == nullptr);
 }
 
 //===----------------------------------------------------------------------===//
@@ -101,11 +104,21 @@ TEST(number_overflow_rejected) {
 }
 
 TEST(number_underflow_is_zero) {
-    // Underflow to 0.0 is fine and finite.
-    auto p = parse("1e-400");
-    CHECK(p != nullptr);
-    if (p)
-        CHECK_EQ(mustGetDouble(*p), 0.0);
+    // A nonzero token rounded to zero is rejected unless lossy conversion was requested.
+    CHECK(parse("1e-400") == nullptr);
+    CHECK(parse("-1e-400") == nullptr);
+    pJsonParser::Options lossy;
+    lossy.numberPolicy = pJsonParser::Options::AllowLossyNumbers;
+    auto positive = pjson_test::parse("1e-400", lossy);
+    auto negative = pjson_test::parse("-1e-400", lossy);
+    CHECK(positive != nullptr);
+    CHECK(negative != nullptr);
+    if (positive)
+        CHECK_EQ(mustGetDouble(*positive), 0.0);
+    if (negative) {
+        CHECK_EQ(mustGetDouble(*negative), 0.0);
+        CHECK(std::signbit(mustGetDouble(*negative)));
+    }
 }
 
 TEST(huge_but_finite_number_ok) {
@@ -118,39 +131,39 @@ TEST(huge_but_finite_number_ok) {
 //===----------------------------------------------------------------------===//
 TEST(strict_rejects_raw_control_char) {
     const char raw[] = {'"', 'a', '\n', 'b', '"'};
-    CHECK(pjson::parse(raw, sizeof(raw)) == nullptr);
+    CHECK(pjson_test::parse(raw, sizeof(raw)) == nullptr);
 }
 
 TEST(strict_rejects_unknown_escape) {
-    CHECK(pjson::parse("\"a\\qb\"") == nullptr);
+    CHECK(pjson_test::parse("\"a\\qb\"") == nullptr);
 }
 
 TEST(strict_rejects_lone_surrogate) {
-    CHECK(pjson::parse("\"\\uD800\"") == nullptr);
+    CHECK(pjson_test::parse("\"\\uD800\"") == nullptr);
 }
 
 TEST(strict_accepts_valid_surrogate_pair) {
-    CHECK(pjson::parse("\"\\uD83D\\uDE00\"") != nullptr);
+    CHECK(pjson_test::parse("\"\\uD83D\\uDE00\"") != nullptr);
 }
 
 TEST(strict_rejects_uppercase_keywords) {
-    CHECK(pjson::parse("NULL") == nullptr);
-    CHECK(pjson::parse("True") == nullptr);
-    CHECK(pjson::parse("null") != nullptr);
-    CHECK(pjson::parse("true") != nullptr);
-    CHECK(pjson::parse("false") != nullptr);
+    CHECK(pjson_test::parse("NULL") == nullptr);
+    CHECK(pjson_test::parse("True") == nullptr);
+    CHECK(pjson_test::parse("null") != nullptr);
+    CHECK(pjson_test::parse("true") != nullptr);
+    CHECK(pjson_test::parse("false") != nullptr);
 }
 
 TEST(strict_rejects_invalid_utf8) {
     // 0xFF is never valid UTF-8.
     const char bad[] = {'"', static_cast<char>(0xFF), '"'};
-    CHECK(pjson::parse(bad, sizeof(bad)) == nullptr);
+    CHECK(pjson_test::parse(bad, sizeof(bad)) == nullptr);
 }
 
 TEST(strict_accepts_valid_utf8) {
     // "é" as UTF-8 (0xC3 0xA9) between quotes.
     const char good[] = {'"', static_cast<char>(0xC3), static_cast<char>(0xA9), '"'};
-    auto p = pjson::parse(good, sizeof(good));
+    auto p = pjson_test::parse(good, sizeof(good));
     CHECK(p != nullptr);
     if (!p)
         return;
@@ -160,7 +173,7 @@ TEST(strict_accepts_valid_utf8) {
 }
 
 TEST(strict_still_parses_normal_documents) {
-    auto p = pjson::parse(R"({ "a": 1, "b": [true, null, "x"] })");
+    auto p = pjson_test::parse(R"({ "a": 1, "b": [true, null, "x"] })");
     CHECK(p != nullptr);
     if (!p)
         return;
@@ -175,10 +188,10 @@ TEST(strict_still_parses_normal_documents) {
 }
 
 //===----------------------------------------------------------------------===//
-// Ownership-safe parse API returning a unique_ptr.
+// Value-returning parse API with pJsonParser::Error-based success detection.
 //===----------------------------------------------------------------------===//
-TEST(parse_returns_unique_ptr) {
-    pjson::unique_ptr p = pjson::parse(R"({"k":42})");
+TEST(parse_returns_value) {
+    pjson_test::Parsed p = pjson_test::parse(R"({"k":42})");
     CHECK(static_cast<bool>(p));
     if (p) {
         const pjson* value = p->find("k");
@@ -187,13 +200,13 @@ TEST(parse_returns_unique_ptr) {
             CHECK_EQ(mustGetInt(*value), int64_t(42));
     }
 
-    pjson::unique_ptr bad = pjson::parse("{not json");
-    CHECK(!bad); // empty on failure
+    pjson_test::Parsed bad = pjson_test::parse("{not json");
+    CHECK(!bad); // reports failure via pJsonParser::Error
 }
 
 TEST(parse_ptr_size_overload) {
     const char* src = "123456";
-    auto p = pjson::parse(src, 3); // only "123"
+    auto p = pjson_test::parse(src, 3); // only "123"
     CHECK(static_cast<bool>(p));
     if (p)
         CHECK_EQ(mustGetInt(*p), int64_t(123));
@@ -203,8 +216,8 @@ TEST(parse_ptr_size_overload) {
 // Parse errors expose a byte offset plus one-based line/byte-column coordinates.
 //===----------------------------------------------------------------------===//
 TEST(parse_error_reports_success) {
-    pjson::ParseError err;
-    auto p = pjson::parse(R"({"a":1})", err);
+    pJsonParser::Error err;
+    auto p = pjson_test::parse(R"({"a":1})", err);
     CHECK(static_cast<bool>(p));
     CHECK(err.ok);
     CHECK_EQ(err.line, size_t(1));
@@ -212,8 +225,8 @@ TEST(parse_error_reports_success) {
 }
 
 TEST(parse_error_reports_offset_and_message) {
-    pjson::ParseError err;
-    auto p = pjson::parse("[1, 2, ]", err); // trailing comma at index 7
+    pJsonParser::Error err;
+    auto p = pjson_test::parse("[1, 2, ]", err); // trailing comma at index 7
     CHECK(!p);
     CHECK(!err.ok);
     CHECK(!err.message.empty());
@@ -223,26 +236,26 @@ TEST(parse_error_reports_offset_and_message) {
 }
 
 TEST(parse_error_reports_line_and_column) {
-    pjson::ParseError err;
-    CHECK(!pjson::parse("{\r\n  \"a\": 1,\r\n  \"b\": [2, ]\r\n}", err));
+    pJsonParser::Error err;
+    CHECK(!pjson_test::parse("{\r\n  \"a\": 1,\r\n  \"b\": [2, ]\r\n}", err));
     CHECK_EQ(err.line, size_t(3));
     CHECK_EQ(err.column, size_t(12));
     CHECK_EQ(err.offset, size_t(25));
 
-    CHECK(!pjson::parse("1\r\n2", err));
+    CHECK(!pjson_test::parse("1\r\n2", err));
     CHECK_EQ(err.offset, size_t(3));
     CHECK_EQ(err.line, size_t(2));
     CHECK_EQ(err.column, size_t(1));
 
-    CHECK(!pjson::parse("1\r2", err));
+    CHECK(!pjson_test::parse("1\r2", err));
     CHECK_EQ(err.offset, size_t(2));
     CHECK_EQ(err.line, size_t(2));
     CHECK_EQ(err.column, size_t(1));
 }
 
 TEST(parse_error_trailing_garbage) {
-    pjson::ParseError err;
-    auto p = pjson::parse("42 abc", err);
+    pJsonParser::Error err;
+    auto p = pjson_test::parse("42 abc", err);
     CHECK(!p);
     CHECK(!err.ok);
     CHECK_EQ(err.offset, size_t(3)); // 'a'
@@ -251,10 +264,10 @@ TEST(parse_error_trailing_garbage) {
 }
 
 TEST(parse_error_depth_message) {
-    pjson::ParseOptions opt;
+    pJsonParser::Options opt;
     opt.maxDepth = 2;
-    pjson::ParseError err;
-    auto p = pjson::parse("[[[1]]]", err, opt);
+    pJsonParser::Error err;
+    auto p = pjson_test::parse("[[[1]]]", err, opt);
     CHECK(!p);
     CHECK(!err.ok);
     CHECK(err.message.find("depth") != std::string::npos);
@@ -423,16 +436,18 @@ TEST(erase_wrong_type_is_false) {
 //===----------------------------------------------------------------------===//
 // Listing object keys for iteration.
 //===----------------------------------------------------------------------===//
-TEST(keys_returns_sorted_keys) {
+TEST(keys_returns_each_object_key) {
     pjson j;
     j["gamma"] = static_cast<int64_t>(1);
     j["alpha"] = static_cast<int64_t>(2);
     j["beta"] = static_cast<int64_t>(3);
     std::vector<std::string> k = j.keys();
     CHECK_EQ(k.size(), size_t(3));
-    CHECK_EQ(k[0], std::string("alpha"));
-    CHECK_EQ(k[1], std::string("beta"));
-    CHECK_EQ(k[2], std::string("gamma"));
+    for (size_t i = 0; i < k.size(); ++i) {
+        CHECK(j.hasKey(k[i]));
+        for (size_t other = i + 1; other < k.size(); ++other)
+            CHECK(k[i] != k[other]);
+    }
 
     pjson notMap;
     notMap = static_cast<int64_t>(5);
@@ -492,7 +507,7 @@ TEST(write_to_stream) {
 
 TEST(parse_from_stream) {
     std::istringstream is(R"({ "name": "Ada", "scores": [90, 82] })");
-    auto p = pjson::parseStream(is);
+    auto p = pjson_test::parseStream(is);
     CHECK(static_cast<bool>(p));
     if (!p)
         return;
@@ -508,8 +523,8 @@ TEST(parse_from_stream) {
 
 TEST(parse_from_stream_with_error) {
     std::istringstream is("{bad");
-    pjson::ParseError err;
-    auto p = pjson::parseStream(is, err);
+    pJsonParser::Error err;
+    auto p = pjson_test::parseStream(is, err);
     CHECK(!p);
     CHECK(!err.ok);
 }
@@ -521,7 +536,7 @@ TEST(stream_round_trip) {
     std::ostringstream os;
     j.write(os);
     std::istringstream is(os.str());
-    auto rt = pjson::parseStream(is);
+    auto rt = pjson_test::parseStream(is);
     CHECK(static_cast<bool>(rt));
     CHECK(*rt == j);
 }

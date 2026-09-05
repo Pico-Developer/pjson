@@ -17,29 +17,27 @@ REQUIRED_COMPOUNDS = {
     "ByteDance",
     "ByteDance::pjson",
     "ByteDance::pjson::Allocator",
-    "ByteDance::pjson::ValueDeleter",
-    "ByteDance::pjson::ParseOptions",
-    "ByteDance::pjson::ParseError",
     "ByteDance::pjson::PointerError",
     "ByteDance::pjson::PatchError",
     "ByteDance::pjson::PatchOptions",
     "ByteDance::pjson::SerializeOptions",
+    "ByteDance::pjson::SerializeError",
     "ByteDance::pjson::StringView",
-    "ByteDance::pjson::SaxHandler",
-    "ByteDance::pjson::SchemaError",
-    "ByteDance::pjson::SchemaOptions",
+    "ByteDance::pJsonParser",
+    "ByteDance::pJsonParser::Options",
+    "ByteDance::pJsonParser::Error",
+    "ByteDance::pJsonParser::SaxHandler",
+    "ByteDance::pJsonSchemaValidator",
+    "ByteDance::pJsonSchemaValidator::Error",
+    "ByteDance::pJsonSchemaValidator::Options",
 }
 
 # Baseline overload counts make accidental omissions visible. APIs whose exact
 # shape is part of the breaking-contract check are also listed below by type.
 REQUIRED_MEMBERS = {
     "getVersion": 1,
-    "parse": 8,
-    "parseStream": 4,
-    "parseSax": 4,
-    "parseSaxStream": 2,
-    "toString": 2,
-    "write": 2,
+    "toString": 3,
+    "write": 3,
     "getType": 1,
     "isNull": 1,
     "isString": 1,
@@ -49,32 +47,75 @@ REQUIRED_MEMBERS = {
     "isBool": 1,
     "isArray": 1,
     "isObject": 1,
+    "isUInt": 1,
+    "isInteger": 1,
     "getAllocator": 1,
     "canSwap": 1,
-    "tryGet": 20,
+    "tryGet": 24,
     "size": 1,
     "empty": 1,
     "clear": 1,
     "keys": 1,
     "hasKey": 2,
+    "contains": 2,
     "hasIndex": 1,
     "find": 6,
+    "findIndex": 2,
+    "forEachMember": 2,
+    "forEachElement": 2,
+    "at": 4,
+    "null": 1,
+    "object": 1,
+    "array": 1,
+    "pushBack": 2,
+    "insertOrAssign": 2,
+    "reserve": 1,
     "escapePointerToken": 1,
     "findPointer": 8,
-    "operator[]": 3,
-    "operator=": 11,
-    "operator+=": 9,
+    "operator[]": 4,
+    "operator=": 30,
+    "operator+=": 27,
     "erase": 3,
     "applyPatch": 2,
     "applyMergePatch": 2,
     "operator==": 1,
     "operator!=": 1,
+}
+
+REQUIRED_PARSER_MEMBERS = {
+    "pJsonParser": 2,
+    "options": 1,
+    "allocator": 1,
+    "parse": 4,
+    "parseStream": 2,
+    "parseSax": 4,
+    "parseSaxStream": 2,
+}
+
+REQUIRED_SCHEMA_VALIDATOR_MEMBERS = {
+    "pJsonSchemaValidator": 1,
     "validate": 2,
+    "documentedSubsetDialectUri": 1,
+    "documentedSubsetVocabularyUri": 1,
+    "isSchemaValid": 1,
+    "schemaErrors": 1,
+    "dialect": 1,
+    "schema": 1,
+    "options": 1,
+}
+
+REQUIRED_SCHEMA_OPTIONS_MEMBERS = {
+    "Options": 1,
+    "trustedRegex": 1,
+    "strict": 1,
+    "modernSubset": 1,
 }
 
 REMOVED_PUBLIC_MEMBERS = {
     "PJSONARRAY",
     "PJSONMAP",
+    "ArrayStorage",
+    "ObjectStorage",
     "getInt64",
     "getDouble",
     "getBool",
@@ -82,19 +123,54 @@ REMOVED_PUBLIC_MEMBERS = {
     "getArray",
     "getMap",
     "getIfExist",
+    "KeyOrder",
+    "AscendingKeys",
+    "DescendingKeys",
+    "keyOrder",
     "getArrayValues",
     "getInt64Or",
     "getDoubleOr",
     "getBoolOr",
     "getStringOr",
-    "at",
     "EncodeForJSON",
     "EncodeBase64ForJSON",
     "DecodeFromJSON",
     "DecodeBase64FromJSON",
+    "parse",
+    "parseStream",
+    "parseSax",
+    "parseSaxStream",
 }
 
 EXPECTED_PUBLIC_ENUMS = {
+    ("ByteDance::pJsonSchemaValidator::Error", "Category"): {
+        "InstanceValidation",
+        "SchemaCompilation",
+    },
+    ("ByteDance::pJsonSchemaValidator::Error", "Code"): {
+        "None",
+        "FalseSchema",
+        "TypeMismatch",
+        "ConstMismatch",
+        "EnumMismatch",
+        "NumericConstraint",
+        "StringConstraint",
+        "ArrayConstraint",
+        "ObjectConstraint",
+        "FormatMismatch",
+        "CombinatorMismatch",
+        "ReferenceFailure",
+        "ReferenceCycle",
+        "RegexFailure",
+        "UnsupportedKeyword",
+        "InvalidSchema",
+        "UnsupportedDialect",
+        "UnsupportedVocabulary",
+        "ResolverFailure",
+        "ResourceLimit",
+        "AllocationFailure",
+        "InternalError",
+    },
     ("ByteDance::pjson", "jsonType"): {
         "jsonNull",
         "jsonString",
@@ -103,17 +179,37 @@ EXPECTED_PUBLIC_ENUMS = {
         "jsonBoolean",
         "jsonArray",
         "jsonObject",
+        "jsonNumberUInt",
     },
     ("ByteDance::pjson::Allocator", "AllocationKind"): {
         "NodeAllocation",
         "StringAllocation",
         "ArrayAllocation",
         "ObjectAllocation",
+        "ImplementationAllocation",
     },
-    ("ByteDance::pjson::ParseOptions", "DuplicateKeyPolicy"): {
+    ("ByteDance::pJsonParser::Options", "DuplicateKeyPolicy"): {
         "RejectDuplicateKeys",
         "KeepFirstDuplicate",
         "KeepLastDuplicate",
+    },
+    ("ByteDance::pJsonParser::Options", "NumberPolicy"): {
+        "RejectUnrepresentableNumbers",
+        "AllowLossyNumbers",
+    },
+    ("ByteDance::pJsonParser::Error", "Code"): {
+        "None",
+        "Syntax",
+        "InvalidEncoding",
+        "DuplicateKey",
+        "NumberRange",
+        "DepthLimit",
+        "InputLimit",
+        "NodeLimit",
+        "AllocationFailure",
+        "StreamError",
+        "CallbackError",
+        "InvalidArgument",
     },
     ("ByteDance::pjson::PointerError", "Code"): {
         "Ok",
@@ -148,39 +244,64 @@ EXPECTED_PUBLIC_ENUMS = {
         "AllocationFailure",
         "InternalError",
     },
-    ("ByteDance::pjson::SerializeOptions", "KeyOrder"): {
-        "AscendingKeys",
-        "DescendingKeys",
+    ("ByteDance::pjson::SerializeOptions", "NonFinitePolicy"): {
+        "RejectNonFinite",
+        "NonFiniteToNull",
+        "NonFiniteToString",
+    },
+    ("ByteDance::pjson::SerializeError", "Code"): {
+        "None",
+        "InvalidUtf8",
+        "NonFiniteNumber",
+        "OutputLimit",
+        "AllocationFailure",
+        "StreamFailure",
+        "InternalError",
     },
 }
 
 EXPECTED_PARAMETER_TYPES = {
+    "operator[]": {
+        ("const std::string&",),
+        ("const char*",),
+        ("int",),
+        ("size_t",),
+    },
     "tryGet": {
         ("int64_t&",),
+        ("uint64_t&",),
         ("double&",),
         ("bool&",),
         ("std::string&",),
         ("StringView&",),
         ("const std::string&", "int64_t&"),
+        ("const std::string&", "uint64_t&"),
         ("const std::string&", "double&"),
         ("const std::string&", "bool&"),
         ("const std::string&", "std::string&"),
         ("const std::string&", "StringView&"),
         ("const char*", "int64_t&"),
+        ("const char*", "uint64_t&"),
         ("const char*", "double&"),
         ("const char*", "bool&"),
         ("const char*", "std::string&"),
         ("const char*", "StringView&"),
         ("int", "int64_t&"),
+        ("int", "uint64_t&"),
         ("int", "double&"),
         ("int", "bool&"),
         ("int", "std::string&"),
         ("int", "StringView&"),
     },
-    "toString": {(), ("const SerializeOptions&",)},
+    "toString": {
+        (),
+        ("const SerializeOptions&",),
+        ("std::string&", "SerializeError&", "const SerializeOptions&"),
+    },
     "write": {
         ("std::ostream&",),
         ("std::ostream&", "const SerializeOptions&"),
+        ("std::ostream&", "SerializeError&", "const SerializeOptions&"),
     },
     "applyPatch": {
         ("const pjson&", "const PatchOptions&"),
@@ -193,30 +314,115 @@ EXPECTED_PARAMETER_TYPES = {
     "operator=": {
         ("const pjson&",),
         ("pjson&&",),
+        ("std::nullptr_t",),
         ("const std::string&",),
         ("const char*",),
         ("const bool",),
-        ("const int64_t",),
+        ("const int",),
+        ("const unsigned int",),
+        ("const short",),
+        ("const unsigned short",),
+        ("const long",),
+        ("const unsigned long",),
+        ("const long long",),
+        ("const unsigned long long",),
+        ("const float",),
         ("const double",),
+        ("const long double",),
         ("const std::vector<std::string>&",),
         ("const std::vector<bool>&",),
-        ("const std::vector<int64_t>&",),
+        ("const std::vector<int>&",),
+        ("const std::vector<unsigned int>&",),
+        ("const std::vector<short>&",),
+        ("const std::vector<unsigned short>&",),
+        ("const std::vector<long>&",),
+        ("const std::vector<unsigned long>&",),
+        ("const std::vector<long long>&",),
+        ("const std::vector<unsigned long long>&",),
+        ("const std::vector<float>&",),
         ("const std::vector<double>&",),
+        ("const std::vector<long double>&",),
     },
     "operator+=": {
         ("const std::string&",),
         ("const char*",),
         ("const bool",),
-        ("const int64_t",),
+        ("const int",),
+        ("const unsigned int",),
+        ("const short",),
+        ("const unsigned short",),
+        ("const long",),
+        ("const unsigned long",),
+        ("const long long",),
+        ("const unsigned long long",),
+        ("const float",),
         ("const double",),
+        ("const long double",),
         ("const std::vector<std::string>&",),
         ("const std::vector<bool>&",),
-        ("const std::vector<int64_t>&",),
+        ("const std::vector<int>&",),
+        ("const std::vector<unsigned int>&",),
+        ("const std::vector<short>&",),
+        ("const std::vector<unsigned short>&",),
+        ("const std::vector<long>&",),
+        ("const std::vector<unsigned long>&",),
+        ("const std::vector<long long>&",),
+        ("const std::vector<unsigned long long>&",),
+        ("const std::vector<float>&",),
         ("const std::vector<double>&",),
+        ("const std::vector<long double>&",),
     },
 }
 
 REQUIRED_PUBLIC_FIELDS = {
+    "ByteDance::pJsonParser::Options": {
+        "maxDepth",
+        "maxNodes",
+        "maxInputBytes",
+        "duplicateKeys",
+        "numberPolicy",
+    },
+    "ByteDance::pJsonParser::Error": {
+        "ok",
+        "code",
+        "offset",
+        "line",
+        "column",
+        "message",
+    },
+    "ByteDance::pjson::SerializeError": {
+        "code",
+        "message",
+    },
+    "ByteDance::pJsonSchemaValidator::Error": {
+        "code",
+        "category",
+        "instanceLocation",
+        "schemaLocation",
+        "keyword",
+        "message",
+        "causes",
+    },
+    "ByteDance::pJsonSchemaValidator::Options": {
+        "maxRegexPatternBytes",
+        "maxRegexSubjectBytes",
+        "allowUnsafeRegex",
+        "maxValidationDepth",
+        "maxRefResolutions",
+        "maxValidationWork",
+        "maxErrors",
+        "stopAfterFirstError",
+        "collectNestedCauses",
+        "validateFormats",
+        "strictSubset",
+        "refSiblings",
+        "retrievalUri",
+        "defaultDialectUri",
+        "resolver",
+        "resolverContext",
+        "maxResolvedDocuments",
+        "maxResolvedBytes",
+    },
     "ByteDance::pjson::PatchOptions": {
         "maxOperations",
         "maxClonedNodes",
@@ -228,7 +434,7 @@ REQUIRED_PUBLIC_FIELDS = {
         "indentWidth",
         "indentCharacter",
         "escapeNonAscii",
-        "keyOrder",
+        "nonFinite",
         "maxOutputBytes",
     },
 }
@@ -243,6 +449,7 @@ REQUIRED_DEFINES = {
     "PJSON_VERSION_MAJOR",
     "PJSON_VERSION_MINOR",
     "PJSON_VERSION_PATCH",
+    "PJSON_ABI_VERSION",
 }
 REQUIRED_ALLOCATOR_MEMBERS = {
     "AllocationKind": 1,
@@ -336,6 +543,46 @@ def main() -> int:
         if members[name] < minimum:
             errors.append(f"{name}: expected at least {minimum} overload(s), found {members[name]}")
 
+    parser_node = compounds.get("ByteDance::pJsonParser")
+    parser_members: collections.Counter[str] = collections.Counter()
+    if parser_node is not None:
+        parser_members.update(
+            node.findtext("name", default="") for node in parser_node.findall("member")
+        )
+    for name, minimum in REQUIRED_PARSER_MEMBERS.items():
+        if parser_members[name] < minimum:
+            errors.append(
+                f"pJsonParser::{name}: expected at least {minimum}, "
+                f"found {parser_members[name]}"
+            )
+
+    schema_validator_node = compounds.get("ByteDance::pJsonSchemaValidator")
+    schema_validator_members: collections.Counter[str] = collections.Counter()
+    if schema_validator_node is not None:
+        schema_validator_members.update(
+            node.findtext("name", default="")
+            for node in schema_validator_node.findall("member")
+        )
+    for name, minimum in REQUIRED_SCHEMA_VALIDATOR_MEMBERS.items():
+        if schema_validator_members[name] < minimum:
+            errors.append(
+                f"pJsonSchemaValidator::{name}: expected at least {minimum}, "
+                f"found {schema_validator_members[name]}"
+            )
+
+    schema_options_node = compounds.get("ByteDance::pJsonSchemaValidator::Options")
+    schema_options_members: collections.Counter[str] = collections.Counter()
+    if schema_options_node is not None:
+        schema_options_members.update(
+            node.findtext("name", default="") for node in schema_options_node.findall("member")
+        )
+    for name, minimum in REQUIRED_SCHEMA_OPTIONS_MEMBERS.items():
+        if schema_options_members[name] < minimum:
+            errors.append(
+                f"pJsonSchemaValidator::Options::{name}: expected at least {minimum}, "
+                f"found {schema_options_members[name]}"
+            )
+
     def compound_definition(name: str):
         """Load one compound XML definition when its index entry exists."""
         node = compounds.get(name)
@@ -361,16 +608,6 @@ def main() -> int:
                     f"Allocator::{name}: expected at least {minimum}, "
                     f"found {allocator_members[name]}"
                 )
-    deleter_definition = compound_definition("ByteDance::pjson::ValueDeleter")
-    if deleter_definition is not None:
-        undocumented = undocumented_public_members(deleter_definition)
-        if undocumented:
-            errors.append(
-                "undocumented ValueDeleter members: " + ", ".join(undocumented)
-            )
-        if not deleter_definition.findall(".//memberdef[@prot='public'][name='operator()']"):
-            errors.append("missing ValueDeleter::operator()")
-
     for compound_name, expected_fields in REQUIRED_PUBLIC_FIELDS.items():
         definition = compound_definition(compound_name)
         if definition is None:
@@ -382,8 +619,6 @@ def main() -> int:
         for field in sorted(expected_fields - actual_fields):
             errors.append(f"missing public field {compound_name}::{field}")
 
-    if members["unique_ptr"] < 1:
-        errors.append("missing allocator-aware pjson::unique_ptr typedef")
     if members["pjson"] < 6:
         errors.append("pjson: expected six allocator/default constructors")
     if members["swap"] < 1 or members["copyFrom"] < 1:
@@ -419,20 +654,6 @@ def main() -> int:
                         f"returns {result_type}, expected bool"
                     )
 
-        dom_parse_members = [
-            member
-            for member in public_members
-            if member.findtext("name", default="") in {"parse", "parseStream"}
-        ]
-        for member in dom_parse_members:
-            result_type = normalized_xml_type(member.find("type"))
-            if result_type not in {"unique_ptr", "pjson::unique_ptr"}:
-                name = member.findtext("name", default="")
-                errors.append(
-                    f"{signature(name, parameter_types(member))} returns {result_type}, "
-                    "expected pjson::unique_ptr"
-                )
-
         constructors = [
             member.findtext("argsstring", default="")
             for member in pjson_definition.findall(".//memberdef[@prot='public']")
@@ -445,25 +666,37 @@ def main() -> int:
                 f"found {len(allocator_constructors)}"
             )
 
-        parse_signatures = [
-            member.findtext("argsstring", default="")
-            for member in pjson_definition.findall(".//memberdef[@prot='public']")
-            if member.findtext("name", default="") in {"parse", "parseStream"}
-        ]
-        allocator_signatures = [signature for signature in parse_signatures if "Allocator &" in signature]
-        if len(allocator_signatures) < 6:
+
+    parser_definition = compound_definition("ByteDance::pJsonParser")
+    if parser_definition is not None:
+        undocumented = undocumented_public_members(parser_definition)
+        if undocumented:
             errors.append(
-                f"allocator-aware parse APIs: expected six signatures, "
-                f"found {len(allocator_signatures)}"
+                "undocumented pJsonParser members: " + ", ".join(undocumented)
             )
+        parser_public_members = parser_definition.findall(".//memberdef[@prot='public']")
+        for member in parser_public_members:
+            if member.findtext("name", default="") in {"parse", "parseStream"}:
+                result_type = normalized_xml_type(member.find("type"))
+                if result_type != "pjson":
+                    name = member.findtext("name", default="")
+                    errors.append(
+                        f"pJsonParser::{signature(name, parameter_types(member))} returns "
+                        f"{result_type}, expected pjson"
+                    )
 
     # Pin every public enum nested anywhere under pjson. Scanning all public
     # pjson compounds, rather than only the currently expected owners, also
     # makes a newly added enum fail until the reference contract is updated.
     actual_public_enums: dict[tuple[str, str], set[str]] = {}
     for compound_name in sorted(compounds):
-        if compound_name != "ByteDance::pjson" and not compound_name.startswith(
-            "ByteDance::pjson::"
+        if (
+            compound_name != "ByteDance::pjson"
+            and not compound_name.startswith("ByteDance::pjson::")
+            and compound_name != "ByteDance::pJsonParser"
+            and not compound_name.startswith("ByteDance::pJsonParser::")
+            and compound_name != "ByteDance::pJsonSchemaValidator"
+            and not compound_name.startswith("ByteDance::pJsonSchemaValidator::")
         ):
             continue
         definition = compound_definition(compound_name)

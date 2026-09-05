@@ -23,8 +23,9 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-CTest registers every `TEST()` separately, so progress and failures are
-reported case by case rather than as one aggregate `1/1` executable.
+After linking, CMake asks the compiled test registry for its test names and
+registers every `TEST()` separately, so progress and failures are reported case
+by case rather than as one aggregate `1/1` executable.
 You can run one case by name with `ctest --test-dir build -R pjson.test_name`.
 
 There is still only one test binary. Run it directly to execute every case:
@@ -65,18 +66,24 @@ full sweep. The fetch helper checks out a pinned corpus commit for reproducible
 results. Plain `./build.sh --test --auto` also fetches either corpus when it is
 missing. Without `--auto`, both `--test` and `--all` ask before downloading.
 
-The schema suite uses a separately pinned subset manifest drawn from the
-JSON-Schema-Test-Suite `draft7` directory. Fetch and run that manifest with:
+The schema suite uses a pinned JSON-Schema-Test-Suite checkout. It runs the
+legacy subset manifest from `draft7` and a complete 80-file Draft 2020-12
+manifest. The Draft 2020-12 gate currently executes 1,773 applicable cases
+across 437 groups with no selected-group skips; 15 whole optional files
+are explicitly deferred and checked by the bidirectional manifest. Fetch and
+run both gates with:
 
 ```sh
 ./scripts/fetch-json-schema-test-suite.sh
 PJSON_JSON_SCHEMA_TEST_SUITE_DIR="$PWD/.test-corpora/JSON-Schema-Test-Suite" \
   ctest --test-dir out/build-debug --output-on-failure \
-  -R '^pjson\.schema_official_draft7_optional$'
+  -R '^pjson\.schema_official_(draft7|draft2020)_optional$'
 ```
 
-Without that checkout, the official-schema case reports a clean skip; the
-repository's inline schema tests still run.
+Without that checkout, an explicitly optional local test run reports clean
+skips; `--auto`, the full contributor gate, and release CI fetch the pinned
+checkout and require the manifest-backed cases to run. The repository's inline
+schema tests always run.
 
 ## How the suite is organized
 
@@ -92,14 +99,14 @@ one executable:
 | `tests_roundtrip.cpp` | serialize/parse stability, formatting |
 | `tests_features.cpp` | version, depth guard, RFC 8259 parsing, errors, equality, streams |
 | `tests_schema.cpp`, `tests_schema_complex.cpp`, `tests_schema_vocabulary.cpp` | schema validation and vocabulary |
-| `tests_schema_official.cpp` | optional pinned JSON-Schema-Test-Suite subset manifest |
+| `tests_schema_official.cpp` | pinned draft-07 subset plus complete Draft 2020-12 manifest and deferral accounting |
 | `tests_malformed.cpp` | exhaustive invalid/hostile input (never throws) |
 | `tests_mutation.cpp` | complex add/edit/delete/rebuild scenarios |
 | `tests_api_edge.cpp` | normal + edge case for every public method |
 | `tests_fuzz.cpp` | deterministic (seeded) fuzzing |
 | `tests_pathological.cpp` | extreme numbers, wide payloads, and exact budget boundaries |
 | `tests_conformance.cpp` | inline RFC 8259 cases + optional nst/JSONTestSuite corpus |
-| `tests_storage.cpp` | inline scalar storage, copy/move/swap, type transitions |
+| `tests_storage.cpp` | opaque scalar storage, copy/move/swap, type transitions, ABI shape |
 | `tests_allocator.cpp` | custom allocator ownership, failure, move, and swap behavior |
 | `tests_streaming.cpp` | SAX events, chunk boundaries, cancellation, direct stream output |
 | `tests_serialize_access.cpp` | serialization options and non-vivifying access |
@@ -129,7 +136,7 @@ TEST(my_feature_does_x) {
 - `TEST(name) { ... }` registers a test automatically — no list to maintain.
 - `CHECK(expr)` fails the test if `expr` is false.
 - `CHECK_EQ(a, b)` checks equality and prints both values on failure.
-- `CHECK_PARSE_FAILS(text)` asserts that parsing `text` returns empty.
+- `CHECK_PARSE_FAILS(text)` asserts that parsing `text` reports a failure.
 
 There is no `main()` to edit; the runner discovers every `TEST` at startup.
 
@@ -142,12 +149,14 @@ points must not crash or emit unexpected exceptions, and successful parses must
 round-trip. Expected serialization and allocation failures keep their documented
 contracts.
 
-For mutation-guided coverage, Clang builds four standalone libFuzzer targets:
+For mutation-guided coverage, Clang builds seven standalone libFuzzer targets:
 `pjson_fuzz_parse` exercises RFC 8259 DOM round trips,
 `pjson_fuzz_stream` compares buffer, stream, and SAX paths, and
-`pjson_fuzz_schema` checks schema validation invariants. `pjson_fuzz_patch`
-exercises JSON Patch and Merge Patch, checking that failures leave the target
-unchanged and successful transformations remain serializable. Run the bounded
+`pjson_fuzz_serialize` checks serialization options and structured failures.
+`pjson_fuzz_schema` checks schema validation invariants,
+`pjson_fuzz_pointer` covers RFC 6901 lookup, and separate `pjson_fuzz_patch` and
+`pjson_fuzz_merge_patch` targets check atomic failure and successful
+transformations. Run the bounded
 seed corpus smoke used by CI with:
 
 ```sh
@@ -183,7 +192,8 @@ With no `PJSON_FUZZING_ENGINE`, this requires a full LLVM Clang distribution
 with libFuzzer; Apple Command Line Tools alone may not include that runtime. An
 external engine may instead be supplied through `PJSON_FUZZING_ENGINE`.
 OSS-Fuzz packaging is kept in `oss-fuzz/`, and every target uses
-`fuzz/json.dict`.
+`fuzz/json.dict`. The smoke and OSS-Fuzz configurations permit inputs up to
+64 KiB, and checked-in serializer/Merge Patch seeds exceed 4 KiB.
 
 `PJSON_BUILD_FUZZERS` controls only whether the targets are built. It does not
 run them; use `./build.sh --fuzz`, invoke the executables directly, or use the

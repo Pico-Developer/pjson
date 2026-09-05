@@ -9,6 +9,219 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases follow
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-09-05
+
+This release contains the complete audited change set since 1.0.0. It includes
+source- and ABI-breaking API improvements, so it is a major version bump.
+
+### Added
+
+- Added an exact unsigned-integer representation (`jsonNumberUInt`): `uint64_t`
+  assignment/append/vectors, `isUInt()`, `isInteger()`, `tryGet(uint64_t&)`, the
+  `SaxHandler::onUInt(uint64_t)` event, and exact signed/unsigned/double
+  comparison and decimal serialization without converting through `double`.
+- Added a structured `ParseError::Code` category (syntax, invalid encoding,
+  duplicate key, number range, depth/input/node limits, allocation failure,
+  stream error, callback error, invalid argument) alongside the existing
+  message and byte/line/column coordinates.
+- Added non-allocating traversal: `forEachMember` and `forEachElement`
+  (const and mutable) that visit borrowed children without copying keys.
+- Added construction and mutation primitives: `null()`, `object()`, `array()`
+  factories, `operator=(std::nullptr_t)`, `pushBack()` (copy and move),
+  `insertOrAssign()`, `reserve()`, checked `at()` for keys and indices, and
+  `contains()`.
+- Added `SerializeOptions::NonFinitePolicy` (`RejectNonFinite` default,
+  `NonFiniteToNull`, `NonFiniteToString`) governing NaN/infinity output.
+- Added `ParseOptions::NumberPolicy` (`RejectUnrepresentableNumbers` default,
+  `AllowLossyNumbers`) governing numbers outside the exact 64-bit and binary64
+  ranges.
+- Added JSON Schema Draft 2020-12 applicator keywords to the validator:
+  `if`/`then`/`else`, `prefixItems`, `contains`/`minContains`/`maxContains`, and
+  `dependentSchemas`, plus a strict fail-closed subset mode.
+
+### Changed
+
+- **BREAKING (behavior):** object members now use private, process-seeded
+  hash-table storage. Lookup and insertion are average constant time;
+  `keys()`, `forEachMember()`, and serialization use unspecified native storage
+  order. Object equality remains independent of storage order.
+- **BREAKING (API):** removed `SerializeOptions::KeyOrder` and `keyOrder`; JSON
+  objects are unordered by specification, so the serializer no longer pays to
+  impose an order.
+- **BREAKING (ABI):** established `PJSON_ABI_VERSION` and shared-library
+  `SOVERSION` 2 for the new opaque object layouts and public option structures.
+
+- Restored the primary builder syntax for native integral and floating-point
+  values and common vectors. Numeric literals can again be assigned and
+  appended without casts, while preserving signed versus unsigned storage.
+
+- **BREAKING (API):** parsing is now provided by the standalone
+  `ByteDance::pJsonParser` class in `<pjson_parser.h>`. Parser `Options`,
+  `Error`, and `SaxHandler` are nested under that class; `pjson` no longer
+  declares parsing members and has no dependency on the parser. Configure the
+  allocator and options when constructing a reusable parser, then call
+  `parse`, `parseStream`, `parseSax`, or `parseSaxStream`. DOM parse results
+  remain ordinary `pjson` values.
+- Split the implementation into focused DOM, parser, serializer, JSON Pointer,
+  JSON Patch/Merge Patch, and existing schema translation units while retaining
+  one `pjson::pjson` library target.
+- **BREAKING (ABI):** `pjson` is now a fixed two-pointer handle containing its
+  allocator identity and an opaque implementation pointer. Null values share an
+  allocation-free private sentinel; non-null representation changes no longer
+  alter `sizeof(pjson)`. `pJsonParser` is likewise a one-pointer PImpl. Explicit
+  symbol visibility replaces automatic Windows export, and ABI generation 2 is
+  declared by `PJSON_ABI_VERSION` and shared-library `SOVERSION`.
+- Added `Allocator::ImplementationAllocation` for non-null `pjson` private-state
+  allocation. Custom allocators must accept the appended allocation kind.
+- Default construction is now explicitly `noexcept`, matching its
+  allocation-free null-sentinel implementation and the 2.0 ABI contract.
+- Added non-vivifying `findIndex(size_t)` lookup so large non-negative indexes
+  never narrow through the signed `find(int)` API.
+- Shared-library consumers now receive `PJSON_SHARED` through both exported
+  CMake targets, pkg-config, and Conan metadata, and public declarations retain
+  default visibility even when the consumer compiles with hidden visibility.
+- SAX parsing now reports `AllocationFailure` rather than `CallbackError` when
+  allocation fails in parser state or a callback, and reports exception-enabled
+  input-stream failures as `StreamError`.
+- **BREAKING (behavior):** mutable array subscripting no longer clamps a
+  negative index before the beginning to element zero. It now throws
+  `std::out_of_range` without mutation; valid negative indexes still count from
+  the end, and a new `operator[](size_t)` serves non-negative builder access.
+- Added non-throwing `toString(out, SerializeError&, options)` and
+  `write(stream, SerializeError&, options)` overloads with stable error codes.
+  String output is transactional; logical stream failures are preflighted.
+- Expanded `pJsonSchemaValidator::Error` with stable codes, separate instance
+  and schema locations, keyword names, optional combinator causes, and a
+  first-error validation mode.
+- Strict schema mode now rejects malformed values for every supported keyword
+  during validator construction, including invalid and unsafe regular
+  expressions; permissive mode retains its ignore-malformed behavior.
+- Added dedicated serialization, JSON Pointer, and JSON Merge Patch fuzzers;
+  local and OSS-Fuzz smoke inputs now reach 64 KiB and include checked-in
+  inputs larger than 4 KiB.
+- Finite doubles now use pinned Ryu shortest-round-trip conversion while
+  preserving pjson's fixed/scientific spelling policy; default parsing rejects
+  a nonzero decimal token that underflows to zero, with explicit lossy opt-in.
+- Split stateless JSON Schema value/numeric/regex, format, and URI helpers into
+  focused private translation units while retaining one public schema API.
+- Unified DOM and SAX numeric-token classification/conversion behind one
+  internal routine, including exact integer, overflow, underflow, and lossy
+  policy decisions.
+- Unified DOM and SAX JSON-number grammar scanning through cursor adapters and
+  extracted per-resource schema dialect/vocabulary policy into a focused private
+  translation unit.
+- CTest cases are now discovered from the executable's compiled registry after
+  linking instead of scraping `TEST(...)` tokens from source text.
+- **BREAKING (API):** JSON Schema validation is no longer a member of `pjson`.
+  The `pjson::validate()` overloads and the nested `pjson::SchemaError` /
+  `pjson::SchemaOptions` types are removed. Validation now lives in a standalone
+  `ByteDance::pJsonSchemaValidator` class declared in the new `<pjson_schema.h>`
+  header (built from `pjson_schema.cpp`). Compile a schema once —
+  `pJsonSchemaValidator v(schema[, pJsonSchemaValidator::Options()]);` — then
+  call `v.validate(instance[, errors])`. The former `SchemaError` and
+  `SchemaOptions` are now `pJsonSchemaValidator::Error` and
+  `pJsonSchemaValidator::Options`. The validator is a pure consumer of pjson's
+  public API and touches no library internals, so the core DOM no longer links
+  the schema/regex machinery. A new public `pjson::tryCompareNumber()` exposes
+  the exact cross-kind numeric ordering the validator needs.
+- Added an explicit schema-compilation contract. pjson now names its supported
+  subset dialect/vocabulary, honors root `$schema`, supports a configurable
+  default dialect, rejects unsupported dialects and required vocabularies, and
+  exposes `isSchemaValid()`, `schemaErrors()`, and `dialect()`. Schema errors are
+  categorized as `SchemaCompilation` versus `InstanceValidation`.
+- Added a pinned, manifest-driven Draft 2020-12 conformance gate. It now
+  explicitly accounts for all 80 pinned files, runs 1,773 applicable cases
+  across 437 groups, and records every selected-group and whole-file deferral.
+  A bidirectional manifest check prevents corpus additions from disappearing.
+- Added `$id` resource bases, `$anchor`, `$dynamicAnchor`, `$ref`, `$dynamicRef`,
+  and an explicit function-pointer resolver. pjson performs no implicit I/O;
+  resolution is bounded by reference, document, byte, work, and depth limits.
+  `Options::modernSubset()` enables modern `$ref` sibling semantics and the
+  Draft 2020-12 annotation-only `format` default; the normal defaults retain
+  prior Draft 7-compatible behavior.
+- Added Draft 2020-12 evaluation-annotation propagation and enforcement for
+  `unevaluatedItems` and `unevaluatedProperties` across references, dynamic
+  references, combinators, conditionals, `contains`, and container applicators.
+  The official gate now executes 1,773 cases across 437 groups.
+- Added opt-in `Options::draft2020()` with bundled official meta-schemas, schema
+  compilation against the selected meta-schema, and per-resource vocabulary
+  activation. Custom meta-schemas use the explicit resolver and existing
+  resolution budgets. The optional complete format-assertion vocabulary remains
+  unsupported and fails closed when required.
+- Published one versioned pjson 2.0 behavioral contract consolidating ownership,
+  parsing, numeric, mutation, invalidation, allocator, thread-safety, error, and
+  standards guarantees.
+- Expanded benchmarks with wide-object, large-array, string-heavy, escape-heavy,
+  integer-heavy, and floating-heavy workloads. Added versioned JSON reports with
+  source/build/environment/methodology metadata and advisory CI artifacts.
+- Aligned SAX null-span diagnostics with DOM parsing by reporting
+  `pJsonParser::Error::InvalidArgument`.
+- Replaced schema `std::regex` use with private, pinned SRELL 2026.06, adding
+  Unicode ECMAScript property/non-BMP support, bounded backend work, and the
+  asserted `regex` format without changing the public dependency surface.
+- Replaced repeated locale-stream double formatting with pinned Ryu shortest
+  conversion while preserving pjson's fixed/scientific spelling policy. On the
+  controlled local shape benchmark, floating-heavy serialization improved by
+  approximately 88%, with all bit-round-trip tests unchanged.
+- Added an environment-checking benchmark report comparator and separate
+  artifact-size metadata tool. Threshold failures remain opt-in for controlled
+  runners.
+- Moved pJsonSchemaValidator storage behind a private implementation pointer;
+  schemas are copied to the default allocator, removing dependence on the
+  caller's schema allocator lifetime.
+- Hardened move assignment, `pushBack`, `insertOrAssign`, and `swap` for
+  ancestor/descendant aliasing. Overlapping swaps are rejected by `canSwap()`,
+  and insertion cannot create an ownership cycle or consume a source before a
+  potentially throwing container insertion commits.
+- Count custom meta-schema documents and bytes once when the same resolved URI
+  is subsequently compiled as a schema resource, and normalize relative URI
+  dot segments before invoking an external resolver.
+- Hardened benchmark report comparison to reject missing, extra, duplicate, or
+  invalid result rows instead of silently comparing only their intersection.
+
+- **BREAKING (API):** `parse()` and `parseStream()` now return a `pjson` value
+  instead of `pjson::unique_ptr`; the `pjson::unique_ptr` typedef and
+  `ValueDeleter` are removed. Detect failure with a `ParseError` out-param
+  (`err.ok`) rather than a null check — the terse overloads return a JSON `null`
+  value on failure. Move the returned value to transfer ownership. This removes
+  the only smart pointer from the public API.
+- **BREAKING (ABI):** `pjson::jsonType` gained `jsonNumberUInt` and the value
+  storage grew a `uint64_t` member. Existing enumerator values are unchanged, but
+  the class layout changed; dependents must be rebuilt against this header.
+- **BREAKING (behavior):** integer tokens above `INT64_MAX` now parse to the
+  exact unsigned representation (up to `UINT64_MAX`) instead of a lossy `double`.
+  Tokens outside `[INT64_MIN, UINT64_MAX]`, and non-finite floating values, are
+  now rejected by default; opt in with `ParseOptions::AllowLossyNumbers`.
+- **BREAKING (behavior):** serializing a stored non-finite `double` now fails
+  with a structured error by default instead of silently emitting `null`. Use
+  `SerializeOptions::NonFiniteToNull` to keep the old behavior.
+- Object key access, lookup, `hasKey`, `erase`, and keyed `tryGet` are now
+  length-aware for `std::string`, preserving names containing embedded U+0000;
+  `const char*` overloads keep documented NUL-terminated behavior.
+- The parser now clamps a configured `maxDepth` to a stack-safe hard ceiling, so
+  even an `INT_MAX` request cannot overflow the native stack.
+
+### Fixed
+
+- Fixed a heap-use-after-free in move assignment when the source aliased an
+  ancestor or descendant of the destination; overlapping `swap()` is now a safe
+  no-op.
+- Rejected duplicate object keys are now reported immediately at the duplicate
+  key's own offset, before its value subtree is parsed or allocated.
+
+### Removed
+
+- Removed the public `pjson::unique_ptr` typedef and `pjson::ValueDeleter`;
+  parsing returns a `pjson` value. A `new pjson()` root is still freed by an
+  ordinary `std::unique_ptr<pjson>` or by normal scope.
+
+### Security
+
+- Made configurable nesting limits memory-safe: excessive depth returns a
+  structured resource-limit error rather than exhausting the stack, across the
+  string, byte-span, DOM-stream, buffered-SAX, and incremental-SAX front ends.
+
+
 ## [1.0.0] - 2026-08-31
 
 ### Added
@@ -119,7 +332,8 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases follow
 
 - Initial pjson source release.
 
-[Unreleased]: https://github.com/Pico-Developer/pjson/compare/1.0.0...HEAD
+[Unreleased]: https://github.com/Pico-Developer/pjson/compare/2.0.0...HEAD
+[2.0.0]: https://github.com/Pico-Developer/pjson/compare/1.0.0...2.0.0
 [1.0.0]: https://github.com/Pico-Developer/pjson/compare/release-0.0.3...1.0.0
 [0.0.3]: https://github.com/Pico-Developer/pjson/compare/release-0.0.2...release-0.0.3
 [0.0.2]: https://github.com/Pico-Developer/pjson/compare/release-0.0.1...release-0.0.2

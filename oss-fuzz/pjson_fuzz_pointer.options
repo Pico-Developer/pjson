@@ -1,0 +1,7 @@
+# SPDX-FileCopyrightText: 2026 ByteDance Ltd. and/or its affiliates
+# SPDX-License-Identifier: Apache-2.0
+
+[libfuzzer]
+max_len = 65536
+timeout = 5
+rss_limit_mb = 2048

@@ -19,6 +19,7 @@
 #include "pjson.h"
 #include "test_harness.h"
 
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -213,21 +214,54 @@ TEST(negative_index_from_end) {
     expectInt(arr[-3], int64_t(10));
 }
 
-TEST(negative_index_past_start_clamps) {
+TEST(negative_index_past_start_throws_without_mutation) {
     pjson arr;
     arr[0] = static_cast<int64_t>(10);
     arr[1] = static_cast<int64_t>(20);
     arr[2] = static_cast<int64_t>(30);
-    expectInt(arr[-4], int64_t(10));
-    expectInt(arr[-100], int64_t(10));
+    const std::string before = arr.toString();
+    bool threw = false;
+    try {
+        (void)arr[-4];
+    } catch (const std::out_of_range&) {
+        threw = true;
+    }
+    CHECK(threw);
+    CHECK_EQ(arr.toString(), before);
 }
 
-TEST(negative_index_on_empty_array) {
+TEST(negative_index_on_empty_array_throws_without_growth) {
     pjson arr;
     arr.resetTo(pjson::jsonArray);
-    pjson& element = arr[-1];
-    CHECK_EQ(element.getType(), pjson::jsonNull);
-    CHECK_EQ(arr.size(), size_t(1));
+    bool threw = false;
+    try {
+        (void)arr[-1];
+    } catch (const std::out_of_range&) {
+        threw = true;
+    }
+    CHECK(threw);
+    CHECK(arr.empty());
+}
+
+TEST(negative_index_on_scalar_throws_without_type_change) {
+    pjson value;
+    value = int64_t(7);
+    bool threw = false;
+    try {
+        (void)value[-1];
+    } catch (const std::out_of_range&) {
+        threw = true;
+    }
+    CHECK(threw);
+    CHECK(value.isInt());
+}
+
+TEST(size_t_index_supports_positive_builder_access) {
+    pjson arr;
+    const size_t index = 2;
+    arr[index] = int64_t(9);
+    CHECK_EQ(arr.size(), size_t(3));
+    expectInt(arr[2], int64_t(9));
 }
 
 TEST(find_returns_pointer_or_null) {
@@ -321,7 +355,7 @@ TEST(find_index_is_non_mutating) {
     CHECK_EQ(j.size(), size_t(2));
 }
 
-TEST(keys_are_sorted_and_read_only_iteration_uses_find) {
+TEST(keys_are_complete_and_read_only_iteration_uses_find) {
     pjson j;
     j["b"] = static_cast<int64_t>(2);
     j["a"] = static_cast<int64_t>(1);
@@ -329,9 +363,11 @@ TEST(keys_are_sorted_and_read_only_iteration_uses_find) {
 
     const std::vector<std::string> keys = j.keys();
     CHECK_EQ(keys.size(), size_t(3));
-    CHECK_EQ(keys[0], std::string("a"));
-    CHECK_EQ(keys[1], std::string("b"));
-    CHECK_EQ(keys[2], std::string("c"));
+    for (size_t i = 0; i < keys.size(); ++i) {
+        CHECK(j.hasKey(keys[i]));
+        for (size_t k = i + 1; k < keys.size(); ++k)
+            CHECK(keys[i] != keys[k]);
+    }
 
     int64_t sum = 0;
     for (size_t i = 0; i < keys.size(); ++i) {

@@ -10,7 +10,7 @@
 #   out/
 #     release/{lib,bin,bin/examples}   Release library, tests, examples
 #     debug/{lib,bin,bin/examples}     Debug   library, tests, examples
-#     include/pjson.h                  public header
+#     include/{pjson,pjson_parser,pjson_schema}.h  public headers
 #     build-release/ build-debug/      CMake build trees
 #
 # Usage:
@@ -39,6 +39,8 @@
 #   ./build.sh --tidy         Run clang-tidy static analysis (fails on findings)
 #   ./build.sh --bench-input PATH
 #                             Add an extra JSON file for benchmark coverage
+#   ./build.sh --bench-json PATH
+#                             Write machine-readable benchmark results
 #   ./build.sh --auto         Never prompt; auto-install/download dependencies
 #
 # Flags combine freely. Missing tools and optional JSON/JSON-Schema conformance
@@ -77,6 +79,7 @@ Usage: ./build.sh [flags]
   --bench         Build, then run the Release benchmark suite
   --bench-compare Build, then run the Release benchmark comparison suite
   --bench-input   Add an extra JSON file to the benchmark corpus (repeatable)
+  --bench-json    Write a versioned JSON benchmark report to PATH
   --fuzz          Build libFuzzer targets and run bounded corpus smoke tests
   --docs          Build and validate the generated API reference
   --package       Run static/shared install and pkg-config consumer smoke tests
@@ -125,6 +128,7 @@ AUTO=0
 RELEASE_ONLY=0
 DEBUG_ONLY=0
 BENCH_INPUTS=()
+BENCH_JSON=""
 
 # No flags at all is a friendly shortcut for --all (do everything).
 if [ "$#" -eq 0 ]; then
@@ -159,6 +163,23 @@ while [ "$#" -gt 0 ]; do
             ;;
         --bench-input=*)
             BENCH_INPUTS+=("${1#--bench-input=}")
+            ;;
+        --bench-json)
+            shift
+            if [ "$#" -eq 0 ]; then
+                echo "Missing value for --bench-json" >&2
+                usage >&2
+                exit 2
+            fi
+            BENCH_JSON="$1"
+            ;;
+        --bench-json=*)
+            BENCH_JSON="${1#--bench-json=}"
+            if [ -z "${BENCH_JSON}" ]; then
+                echo "Missing value for --bench-json" >&2
+                usage >&2
+                exit 2
+            fi
             ;;
         --auto|--yes|-y) AUTO=1 ;;
         -h|--help)      usage; exit 0 ;;
@@ -470,7 +491,10 @@ source_files() {
     find "${SCRIPT_DIR}/pjsonlib" "${SCRIPT_DIR}/pjsontest" "${SCRIPT_DIR}/examples" \
         "${SCRIPT_DIR}/bench" "${SCRIPT_DIR}/fuzz" "${SCRIPT_DIR}/test_package" \
         "${SCRIPT_DIR}/tests" \
-        \( -name '*.cpp' -o -name '*.h' \) -type f | sort
+        \( -name '*.cpp' -o -name '*.h' \) -type f \
+        ! -path '*/third_party/*' \
+        ! -path '*/build/*' \
+        ! -path '*/out/*' | sort
 }
 
 # ---------------------------------------------------------------------------
@@ -567,7 +591,10 @@ build_one() {
     find "${bdir}/examples" -maxdepth 2 -type f \
         \( -perm -u+x -o -name '*.exe' \) ! -name '*.o' ! -name '*.obj' \
         -exec cp {} "${dest}/bin/examples/" \; 2>/dev/null || true
-    cp "${SCRIPT_DIR}/pjsonlib/include/pjson.h" "${OUT_DIR}/include/"
+    cp "${SCRIPT_DIR}/pjsonlib/include/pjson.h" \
+        "${SCRIPT_DIR}/pjsonlib/include/pjson_parser.h" \
+        "${SCRIPT_DIR}/pjsonlib/include/pjson_schema.h" \
+        "${OUT_DIR}/include/"
 
     LAST_BUILD_DIR="${bdir}"
 }
@@ -759,6 +786,9 @@ if [ "${DO_BENCH}" -eq 1 ]; then
     if [ "${DO_BENCH_COMPARE}" -eq 1 ]; then
         BENCH_ARGS+=(--compare)
     fi
+    if [ -n "${BENCH_JSON}" ]; then
+        BENCH_ARGS+=(--json "${BENCH_JSON}")
+    fi
 
     echo ">> Running benchmarks (Release)"
     if [ "${#BENCH_ARGS[@]}" -gt 0 ]; then
@@ -772,7 +802,7 @@ fi
 # Optional fuzz, documentation, and packaging validation.
 # ---------------------------------------------------------------------------
 
-# Probes for a usable Clang/libFuzzer pair, builds all four harnesses, and
+# Probes for a usable Clang/libFuzzer pair, builds every harness, and
 # replays each checked-in seed corpus with deterministic bounds.
 run_fuzz_smoke() {
     case "$(uname -s)" in
@@ -859,15 +889,27 @@ run_fuzz_smoke() {
         -DPJSON_BUILD_FUZZERS=ON \
         ${GEN_ARG}
     "${CMAKE}" --build "${fuzz_build_dir}" --parallel --target \
-        pjson_fuzz_parse pjson_fuzz_stream pjson_fuzz_schema pjson_fuzz_patch
+        pjson_fuzz_parse pjson_fuzz_stream pjson_fuzz_serialize pjson_fuzz_schema \
+        pjson_fuzz_pointer pjson_fuzz_patch pjson_fuzz_merge_patch
 
     local target corpus_dir
-    for target in parse stream schema patch; do
+    for target in parse stream serialize schema pointer patch merge_patch; do
         corpus_dir="${OUT_DIR}/fuzz-corpus/${target}"
         mkdir -p "${corpus_dir}" "${OUT_DIR}/fuzz-artifacts/${target}"
         echo ">> Fuzz corpus smoke: pjson_fuzz_${target}"
-        "${fuzz_build_dir}/fuzz/pjson_fuzz_${target}" \
-            -runs=1000 -seed=1337 -max_len=4096 -timeout=5 -verbosity=0 \
+        # Homebrew LLVM's libFuzzer runtime can be built against libc++ with
+        # container annotations that differ from the active macOS SDK headers.
+        # That mismatch produces a false container-overflow while libFuzzer
+        # scans its corpus, before LLVMFuzzerTestOneInput is called. Disable
+        # only container annotation checking on macOS; ordinary ASan and UBSan
+        # instrumentation remain enabled for pjson and the fuzz harnesses.
+        local fuzz_asan_options="${ASAN_OPTIONS:-}"
+        if [ "$(uname -s)" = "Darwin" ]; then
+            fuzz_asan_options="${fuzz_asan_options:+${fuzz_asan_options}:}detect_container_overflow=0"
+        fi
+        ASAN_OPTIONS="${fuzz_asan_options}" \
+            "${fuzz_build_dir}/fuzz/pjson_fuzz_${target}" \
+            -runs=1000 -seed=1337 -max_len=65536 -timeout=5 -verbosity=0 \
             -dict="${SCRIPT_DIR}/fuzz/json.dict" \
             -artifact_prefix="${OUT_DIR}/fuzz-artifacts/${target}/" \
             "${corpus_dir}" "${SCRIPT_DIR}/fuzz/corpus/${target}"

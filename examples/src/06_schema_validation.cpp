@@ -5,11 +5,13 @@
 //===----------------------------------------------------------------------===//
 // 06 — Schema validation
 //
-// Validate a document against a JSON-Schema-subset schema (itself a pjson
-// value), collecting applicable failures within configured budgets.
+// Validate a document against a schema (itself a pjson value), using pjson's
+// default subset dialect and collecting failures within configured budgets.
 // Referenced by docs/06-schema-validation.md.
 //
 #include "pjson.h"
+#include "pjson_parser.h"
+#include "pjson_schema.h"
 
 #include <iostream>
 #include <vector>
@@ -22,7 +24,8 @@ int main() {
     // --- Define the schema -------------------------------------------------
     // Local $defs keep shared constraints in one place; $ref resolves them by
     // RFC 6901 fragment pointers within this same schema document.
-    auto schema = pjson::parse(R"({
+    pJsonParser::Error parseError;
+    pjson schema = pJsonParser().parse(R"({
         "$defs": {
             "displayName": { "type": "string", "minLength": 1 },
             "emailAddress": { "type": "string", "pattern": "@" }
@@ -40,43 +43,58 @@ int main() {
                 "items": { "type": "string", "enum": ["admin", "user", "guest"] }
             }
         }
-    })");
+    })",
+                                       parseError);
 
     // --- Validate a conforming instance -----------------------------------
-    auto good = pjson::parse(R"({
+    pJsonParser::Error goodError;
+    pjson good = pJsonParser().parse(R"({
         "name": "Ada", "age": 36, "email": "ada@example.com",
         "joined": "2025-01-02", "roles": ["admin"]
-    })");
-    if (!schema || !good) {
+    })",
+                                     goodError);
+    if (!parseError.ok || !goodError.ok) {
         std::cerr << "could not parse schema or valid example\n";
         return 1;
     }
 
     // These limits bound traversal and reference work. Known string formats,
     // such as the date above, are checked because validateFormats is enabled.
-    pjson::SchemaOptions options;
+    // The schema is compiled once into a reusable validator; validate() then
+    // checks any number of instances against it.
+    pJsonSchemaValidator::Options options;
     options.maxValidationDepth = 64;
     options.maxRefResolutions = 1024;
     options.validateFormats = true;
-    std::cout << "good is valid: " << (good->validate(*schema, options) ? "yes" : "no") << "\n";
+    pJsonSchemaValidator validator(schema, options);
+    if (!validator.isSchemaValid()) {
+        for (const pJsonSchemaValidator::Error& e : validator.schemaErrors()) {
+            std::cerr << "invalid schema at " << e.schemaLocation << ": " << e.message << "\n";
+        }
+        return 1;
+    }
+    std::cout << "good is valid: " << (validator.validate(good) ? "yes" : "no") << "\n";
 
     // --- Collect failures for a non-conforming instance -------------------
-    auto bad = pjson::parse(R"({
+    pJsonParser::Error badError;
+    pjson bad = pJsonParser().parse(R"({
         "name": "", "age": 200, "email": "nope",
         "joined": "2025-01-02", "roles": ["root"], "extra": 1
-    })");
-    if (!bad) {
+    })",
+                                    badError);
+    if (!badError.ok) {
         std::cerr << "could not parse invalid example\n";
         return 1;
     }
-    std::vector<pjson::SchemaError> errors;
+    std::vector<pJsonSchemaValidator::Error> errors;
     // This overload appends applicable failures up to the configured budget;
     // each path is an RFC 6901 JSON Pointer identifying the offending value.
-    bool ok = bad->validate(*schema, errors, options);
+    bool ok = validator.validate(bad, errors);
     std::cout << "bad is valid: " << (ok ? "yes" : "no") << "\n";
     std::cout << "failures:\n";
-    for (const pjson::SchemaError& e : errors) {
-        std::cout << "  " << (e.path.empty() ? "(root)" : e.path) << ": " << e.message << "\n";
+    for (const pJsonSchemaValidator::Error& e : errors) {
+        std::cout << "  " << (e.instanceLocation.empty() ? "(root)" : e.instanceLocation) << ": "
+                  << e.message << "\n";
     }
     return 0;
 }

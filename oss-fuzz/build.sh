@@ -36,13 +36,15 @@ cmake -S "${PJSON_SOURCE_DIR}" -B "${PJSON_FUZZ_BUILD_DIR}" \
     -DPJSON_BUILD_FUZZERS=ON \
     -DPJSON_FUZZING_ENGINE="${LIB_FUZZING_ENGINE}"
 cmake --build "${PJSON_FUZZ_BUILD_DIR}" --parallel --target \
-    pjson_fuzz_parse pjson_fuzz_stream pjson_fuzz_schema pjson_fuzz_patch
+    pjson_fuzz_parse pjson_fuzz_stream pjson_fuzz_serialize pjson_fuzz_schema \
+    pjson_fuzz_pointer pjson_fuzz_patch pjson_fuzz_merge_patch
 
 # ---- Runtime bundle -----------------------------------------------------
 
 # Each executable receives matching runtime options and the shared JSON token
 # dictionary under the basename convention understood by OSS-Fuzz.
-for target in pjson_fuzz_parse pjson_fuzz_stream pjson_fuzz_schema pjson_fuzz_patch; do
+for target in pjson_fuzz_parse pjson_fuzz_stream pjson_fuzz_serialize pjson_fuzz_schema \
+              pjson_fuzz_pointer pjson_fuzz_patch pjson_fuzz_merge_patch; do
     cp "${PJSON_FUZZ_BUILD_DIR}/fuzz/${target}" "${OUT}/${target}"
     cp "${PJSON_SOURCE_DIR}/oss-fuzz/${target}.options" "${OUT}/${target}.options"
     cp "${PJSON_SOURCE_DIR}/fuzz/json.dict" "${OUT}/${target}.dict"
@@ -51,7 +53,7 @@ done
 # Package each checked-in seed directory at the archive root, as required by
 # OSS-Fuzz's <target>_seed_corpus.zip discovery convention. The subshell keeps
 # the loop's working directory stable between harnesses.
-for corpus in parse stream schema patch; do
+for corpus in parse stream serialize schema pointer patch merge_patch; do
     (
         cd "${PJSON_SOURCE_DIR}/fuzz/corpus/${corpus}"
         zip -q -r "${OUT}/pjson_fuzz_${corpus}_seed_corpus.zip" .

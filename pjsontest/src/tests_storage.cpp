@@ -13,11 +13,12 @@
 // limitations under the License.
 //
 //===----------------------------------------------------------------------===//
-// Storage-focused tests: inline scalar copy/move/swap behavior, transitions
-// between inline and heap-backed kinds, and noexcept trait guarantees.
+// Storage-focused tests: scalar copy/move/swap behavior, transitions between
+// scalar and container kinds, and ABI/noexcept guarantees.
 //
 #include "pjson.h"
 #include "test_harness.h"
+#include "test_util.h"
 
 #include <string>
 #include <type_traits>
@@ -26,8 +27,12 @@
 
 using namespace ByteDance;
 
+static_assert(std::is_nothrow_default_constructible<pjson>::value,
+              "pjson null construction must remain noexcept");
 static_assert(std::is_nothrow_move_constructible<pjson>::value,
               "pjson move construction must remain noexcept");
+static_assert(sizeof(pjson) == sizeof(void*) * 2, "pjson ABI must remain a two-pointer handle");
+static_assert(alignof(pjson) == alignof(void*), "pjson ABI alignment must remain pointer-aligned");
 static_assert(noexcept(std::declval<pjson&>().swap(std::declval<pjson&>())),
               "pjson::swap must remain noexcept");
 
@@ -60,7 +65,7 @@ namespace {
 } // namespace
 
 //===----------------------------------------------------------------------===//
-// Copy and move preserve inline scalar values and reset moved-from sources
+// Copy and move preserve scalar values and reset moved-from sources
 //===----------------------------------------------------------------------===//
 
 TEST(storage_copy_constructs_inline_scalars) {
@@ -268,7 +273,7 @@ TEST(storage_scalar_type_transitions_preserve_behavior) {
 }
 
 TEST(storage_scalar_parse_copy_move_and_serialize_round_trip) {
-    pjson::unique_ptr parsed = pjson::parse(R"({"i":1,"d":2.5,"b":true})");
+    pjson_test::Parsed parsed = pjson_test::parse(R"({"i":1,"d":2.5,"b":true})");
     CHECK(parsed != nullptr);
     expectInt((*parsed)["i"], int64_t(1));
     expectDouble((*parsed)["d"], 2.5);
@@ -279,5 +284,8 @@ TEST(storage_scalar_parse_copy_move_and_serialize_round_trip) {
     pjson moved(std::move(copied));
     CHECK(moved == *parsed);
     CHECK(copied.isNull());
-    CHECK_EQ(moved.toString(), std::string("{\"b\":true,\"d\":2.5,\"i\":1}"));
+    pjson_test::Parsed expected = pjson_test::parse(R"({"b":true,"d":2.5,"i":1})");
+    CHECK(expected != nullptr);
+    if (expected != nullptr)
+        CHECK(moved == *expected);
 }

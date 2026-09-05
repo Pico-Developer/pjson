@@ -18,11 +18,13 @@
 // they exercise unusually expensive paths without introducing timing flakes.
 //===----------------------------------------------------------------------===//
 #include "pjson.h"
+#include "pjson_parser.h"
 #include "test_harness.h"
 #include "test_util.h"
 
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <sstream>
 #include <string>
@@ -126,14 +128,14 @@ TEST(pathological_mixed_numeric_equality_is_exact_above_binary64_integer_precisi
 
 // A long finite mantissa and a long, zero-padded exponent must be scanned in
 // full without changing their values. Very large positive values fail at a
-// stable location, while a very negative exponent remains a valid finite JSON
-// number (normally underflowing to zero).
+// stable location, while a very negative exponent is rejected unless the
+// caller opts in to its lossy conversion to zero.
 TEST(pathological_very_long_numeric_tokens) {
     const size_t digitCount = 65536;
-    pjson::ParseError err;
+    pJsonParser::Error err;
 
     const std::string longMantissa = "1." + std::string(digitCount, '0');
-    auto mantissa = pjson::parse(longMantissa, err);
+    auto mantissa = pjson_test::parse(longMantissa, err);
     CHECK(mantissa != nullptr);
     CHECK(err.ok);
     if (mantissa) {
@@ -142,7 +144,7 @@ TEST(pathological_very_long_numeric_tokens) {
     }
 
     const std::string paddedExponent = "1e+" + std::string(digitCount, '0') + std::string("1");
-    auto finiteExponent = pjson::parse(paddedExponent, err);
+    auto finiteExponent = pjson_test::parse(paddedExponent, err);
     CHECK(finiteExponent != nullptr);
     CHECK(err.ok);
     if (finiteExponent)
@@ -151,23 +153,32 @@ TEST(pathological_very_long_numeric_tokens) {
     // IEC 60559 implementations have infinities, so strtod must expose these
     // positive overflows and pjson must reject them rather than storing inf.
     if (std::numeric_limits<double>::has_infinity) {
+        // A very long all-nines integer exceeds the exact 64-bit range, so the
+        // default policy rejects it with the integer-range diagnostic before any
+        // double fallback is attempted.
         const std::string hugeInteger(digitCount, '9');
-        CHECK(pjson::parse(hugeInteger, err) == nullptr);
+        CHECK(pjson_test::parse(hugeInteger, err) == nullptr);
         CHECK(!err.ok);
         CHECK_EQ(err.offset, size_t(0));
         CHECK_EQ(err.line, size_t(1));
         CHECK_EQ(err.column, size_t(1));
-        CHECK_EQ(err.message, std::string("number out of range"));
+        CHECK_EQ(err.message,
+                 std::string("integer out of range; enable AllowLossyNumbers to store as double"));
 
         const std::string hugePositiveExponent = "1e+" + std::string(digitCount, '9');
-        CHECK(pjson::parse(hugePositiveExponent, err) == nullptr);
+        CHECK(pjson_test::parse(hugePositiveExponent, err) == nullptr);
         CHECK(!err.ok);
         CHECK_EQ(err.offset, size_t(0));
         CHECK_EQ(err.message, std::string("number out of range"));
     }
 
     const std::string hugeNegativeExponent = "1e-" + std::string(digitCount, '9');
-    auto underflow = pjson::parse(hugeNegativeExponent, err);
+    CHECK(pjson_test::parse(hugeNegativeExponent, err) == nullptr);
+    CHECK(!err.ok);
+    CHECK_EQ(err.code, pJsonParser::Error::NumberRange);
+    pJsonParser::Options lossy;
+    lossy.numberPolicy = pJsonParser::Options::AllowLossyNumbers;
+    auto underflow = pjson_test::parse(hugeNegativeExponent, err, lossy);
     CHECK(underflow != nullptr);
     CHECK(err.ok);
     if (underflow) {
@@ -175,6 +186,61 @@ TEST(pathological_very_long_numeric_tokens) {
         CHECK(std::isfinite(doubleValue(*underflow)));
         if (isIeeeBinary64())
             CHECK_EQ(doubleValue(*underflow), 0.0);
+    }
+}
+
+TEST(pathological_binary64_halfway_rounding) {
+    if (!isIeeeBinary64()) {
+        CHECK(std::numeric_limits<double>::is_specialized);
+        return;
+    }
+
+    struct Case {
+        const char* text;
+        double expected;
+    };
+    const Case cases[] = {
+        {"1.00000000000000011102230246251565404236316680908203125", 1.0},
+        {"1.00000000000000011102230246251565404236316680908203126", std::nextafter(1.0, 2.0)},
+        {"2.47032822920623272088284396434110686182529901307162382212792841250337753635104375e-324",
+         0.0},
+        {"2.47032822920623272088284396434110686182529901307162382212792841250337753635104376e-324",
+         std::numeric_limits<double>::denorm_min()},
+    };
+    pJsonParser::Options lossy;
+    lossy.numberPolicy = pJsonParser::Options::AllowLossyNumbers;
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+        pJsonParser::Error error;
+        pjson value = pJsonParser(lossy).parse(cases[i].text, error);
+        CHECK(error.ok);
+        CHECK_EQ(doubleValue(value), cases[i].expected);
+    }
+}
+
+TEST(pathological_random_binary64_round_trips_bit_exactly) {
+    if (!isIeeeBinary64()) {
+        CHECK(std::numeric_limits<double>::is_specialized);
+        return;
+    }
+
+    uint64_t state = UINT64_C(0x9e3779b97f4a7c15);
+    for (size_t i = 0; i < size_t(10000); ++i) {
+        state ^= state >> 12;
+        state ^= state << 25;
+        state ^= state >> 27;
+        const uint64_t bits = state * UINT64_C(2685821657736338717);
+        double value = 0.0;
+        std::memcpy(&value, &bits, sizeof(value));
+        if (!std::isfinite(value))
+            continue;
+        pjson node;
+        node = value;
+        pJsonParser::Error error;
+        pjson reparsed = pJsonParser().parse(node.toString(), error);
+        CHECK(error.ok);
+        double result = 0.0;
+        CHECK(reparsed.tryGet(result));
+        CHECK(std::memcmp(&result, &value, sizeof(value)) == 0);
     }
 }
 
@@ -249,11 +315,11 @@ TEST(pathological_wide_array_node_budget_boundary) {
     const std::string json = makeFlatArray(width);
     CHECK_EQ(json.size(), width * 2U + 1U);
 
-    pjson::ParseOptions opts;
+    pJsonParser::Options opts;
     opts.maxNodes = width + 1U;
     opts.maxInputBytes = json.size();
-    pjson::ParseError err;
-    auto atLimit = pjson::parse(json, err, opts);
+    pJsonParser::Error err;
+    auto atLimit = pjson_test::parse(json, err, opts);
     CHECK(atLimit != nullptr);
     CHECK(err.ok);
     if (atLimit) {
@@ -263,7 +329,7 @@ TEST(pathological_wide_array_node_budget_boundary) {
     }
 
     opts.maxNodes = width;
-    CHECK(pjson::parse(json, err, opts) == nullptr);
+    CHECK(pjson_test::parse(json, err, opts) == nullptr);
     CHECK(!err.ok);
     CHECK_EQ(err.offset, json.size() - 2U);
     CHECK_EQ(err.line, size_t(1));
@@ -279,11 +345,11 @@ TEST(pathological_wide_object_node_budget_boundary) {
     size_t lastValueOffset = 0;
     const std::string json = makeFlatObject(width, lastValueOffset);
 
-    pjson::ParseOptions opts;
+    pJsonParser::Options opts;
     opts.maxNodes = width + 1U;
     opts.maxInputBytes = json.size();
-    pjson::ParseError err;
-    auto atLimit = pjson::parse(json, err, opts);
+    pJsonParser::Error err;
+    auto atLimit = pjson_test::parse(json, err, opts);
     CHECK(atLimit != nullptr);
     CHECK(err.ok);
     if (atLimit) {
@@ -296,7 +362,7 @@ TEST(pathological_wide_object_node_budget_boundary) {
     }
 
     opts.maxNodes = width;
-    CHECK(pjson::parse(json, err, opts) == nullptr);
+    CHECK(pjson_test::parse(json, err, opts) == nullptr);
     CHECK(!err.ok);
     CHECK_EQ(err.offset, lastValueOffset);
     CHECK_EQ(err.line, size_t(1));
@@ -325,24 +391,24 @@ TEST(pathological_large_escaped_payload_and_byte_budget) {
     CHECK_EQ(raw.size(), repeats * 5U);
     CHECK_EQ(json.size(), repeats * 13U + 2U);
 
-    pjson::ParseOptions opts;
+    pJsonParser::Options opts;
     opts.maxInputBytes = json.size();
-    pjson::ParseError err;
-    auto fromBuffer = pjson::parse(json, err, opts);
+    pJsonParser::Error err;
+    auto fromBuffer = pjson_test::parse(json, err, opts);
     CHECK(fromBuffer != nullptr);
     CHECK(err.ok);
     if (fromBuffer)
         CHECK_EQ(stringValue(*fromBuffer), raw);
 
     std::istringstream acceptedStream(json);
-    auto fromStream = pjson::parseStream(acceptedStream, err, opts);
+    auto fromStream = pjson_test::parseStream(acceptedStream, err, opts);
     CHECK(fromStream != nullptr);
     CHECK(err.ok);
     if (fromStream)
         CHECK_EQ(stringValue(*fromStream), raw);
 
     opts.maxInputBytes = json.size() - 1U;
-    CHECK(pjson::parse(json, err, opts) == nullptr);
+    CHECK(pjson_test::parse(json, err, opts) == nullptr);
     CHECK(!err.ok);
     CHECK_EQ(err.offset, json.size() - 1U);
     CHECK_EQ(err.line, size_t(1));
@@ -350,7 +416,7 @@ TEST(pathological_large_escaped_payload_and_byte_budget) {
     CHECK_EQ(err.message, std::string(kInputBudgetError));
 
     std::istringstream rejectedStream(json);
-    CHECK(pjson::parseStream(rejectedStream, err, opts) == nullptr);
+    CHECK(pjson_test::parseStream(rejectedStream, err, opts) == nullptr);
     CHECK(!err.ok);
     CHECK_EQ(err.offset, json.size() - 1U);
     CHECK_EQ(err.line, size_t(1));

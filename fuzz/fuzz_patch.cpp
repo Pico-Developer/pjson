@@ -8,54 +8,60 @@
 #include <string>
 
 using ByteDance::pjson;
+using ByteDance::pJsonParser;
 
 namespace {
 
-    // Applies either RFC 6902 JSON Patch or RFC 7396 Merge Patch and checks the
-    // non-throwing API contracts that are observable from fuzz-side callers.
+    // Applies RFC 6902 JSON Patch and checks the non-throwing API contracts
+    // that are observable from fuzz-side callers.
     void exercisePatchVariant(const uint8_t* data, size_t size, const std::string& documentInput,
                               const std::string& patchInput, size_t variantOffset) {
-        const pjson::ParseOptions options =
+        const pJsonParser::Options options =
             pjson_fuzz::parseOptionsVariant(data, size, variantOffset);
-        pjson::unique_ptr original = pjson::parse(documentInput, options);
-        pjson::unique_ptr patch = pjson::parse(patchInput, options);
-        if (!original || !patch)
+        pJsonParser::Error originalError;
+        pJsonParser::Error patchError;
+        pjson original = pJsonParser(options).parse(documentInput, originalError);
+        pjson patch = pJsonParser(options).parse(patchInput, patchError);
+        if (!originalError.ok || !patchError.ok)
             return;
 
-        const bool useJsonPatch = patch->isArray();
-        pjson working = *original;
+        if (!patch.isArray())
+            return;
+        pjson working = original;
         pjson::PatchError detailedError;
-        const bool detailedOk = useJsonPatch ? working.applyPatch(*patch, detailedError)
-                                             : working.applyMergePatch(*patch, detailedError);
+        const pjson::PatchOptions patchOptions =
+            pjson_fuzz::patchOptionsVariant(data, size, variantOffset);
+        const bool detailedOk = working.applyPatch(patch, detailedError, patchOptions);
         pjson_fuzz::require(detailedOk == detailedError.ok);
 
-        pjson simple = *original;
-        const bool simpleOk =
-            useJsonPatch ? simple.applyPatch(*patch) : simple.applyMergePatch(*patch);
+        pjson simple = original;
+        const bool simpleOk = simple.applyPatch(patch, patchOptions);
         pjson_fuzz::require(simpleOk == detailedOk);
 
         if (!detailedOk) {
             // Failure must leave the document unchanged because patch application is atomic.
-            pjson_fuzz::require(working == *original);
-            pjson_fuzz::require(simple == *original);
+            pjson_fuzz::require(working == original);
+            pjson_fuzz::require(simple == original);
             return;
         }
 
         // Successful mutation must serialize and reparse stably.
         pjson_fuzz::require(working == simple);
         const std::string compact = working.toString();
-        pjson::ParseOptions compactOptions = options;
+        pJsonParser::Options compactOptions = options;
         compactOptions.maxInputBytes = compact.size();
-        pjson::unique_ptr reparsed = pjson::parse(compact, compactOptions);
-        pjson_fuzz::require(reparsed != nullptr);
-        pjson_fuzz::require(*reparsed == working);
+        pJsonParser::Error reparsedError;
+        pjson reparsed = pJsonParser(compactOptions).parse(compact, reparsedError);
+        pjson_fuzz::require(reparsedError.ok);
+        pjson_fuzz::require(reparsed == working);
 
         const std::string pretty = working.toString(pjson::SerializeOptions::prettyPrinted());
-        pjson::ParseOptions prettyOptions = options;
+        pJsonParser::Options prettyOptions = options;
         prettyOptions.maxInputBytes = pretty.size();
-        pjson::unique_ptr prettyParsed = pjson::parse(pretty, prettyOptions);
-        pjson_fuzz::require(prettyParsed != nullptr);
-        pjson_fuzz::require(*prettyParsed == working);
+        pJsonParser::Error prettyError;
+        pjson prettyParsed = pJsonParser(prettyOptions).parse(pretty, prettyError);
+        pjson_fuzz::require(prettyError.ok);
+        pjson_fuzz::require(prettyParsed == working);
     }
 
 } // namespace

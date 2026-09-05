@@ -15,6 +15,8 @@
 #define PJSON_FUZZ_UTIL_H
 
 #include "pjson.h"
+#include "pjson_parser.h"
+#include "pjson_schema.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -43,18 +45,18 @@ namespace pjson_fuzz {
 
     // Builds a parser configuration while varying duplicate-key
     // policy and resource budgets across inputs.
-    inline ByteDance::pjson::ParseOptions parseOptionsVariant(const uint8_t* data, size_t size,
-                                                              size_t offset = 0) {
-        ByteDance::pjson::ParseOptions options;
+    inline ByteDance::pJsonParser::Options parseOptionsVariant(const uint8_t* data, size_t size,
+                                                               size_t offset = 0) {
+        ByteDance::pJsonParser::Options options;
         switch (pickByte(data, size, offset, 0) % 3U) {
             case 0:
-                options.duplicateKeys = ByteDance::pjson::ParseOptions::RejectDuplicateKeys;
+                options.duplicateKeys = ByteDance::pJsonParser::Options::RejectDuplicateKeys;
                 break;
             case 1:
-                options.duplicateKeys = ByteDance::pjson::ParseOptions::KeepFirstDuplicate;
+                options.duplicateKeys = ByteDance::pJsonParser::Options::KeepFirstDuplicate;
                 break;
             default:
-                options.duplicateKeys = ByteDance::pjson::ParseOptions::KeepLastDuplicate;
+                options.duplicateKeys = ByteDance::pJsonParser::Options::KeepLastDuplicate;
                 break;
         }
 
@@ -70,9 +72,9 @@ namespace pjson_fuzz {
 
     // Schema validation gets its own bounded knobs so one input can drive both
     // parser and validator resource limits.
-    inline ByteDance::pjson::SchemaOptions boundedSchemaOptions(const uint8_t* data, size_t size,
-                                                                size_t offset = 0) {
-        ByteDance::pjson::SchemaOptions options;
+    inline ByteDance::pJsonSchemaValidator::Options
+    boundedSchemaOptions(const uint8_t* data, size_t size, size_t offset = 0) {
+        ByteDance::pJsonSchemaValidator::Options options;
         static const size_t kPatternBudgets[] = {32U, 64U, 256U, 1024U};
         static const size_t kSubjectBudgets[] = {128U, 512U, 4096U, 16384U};
         static const size_t kValidationDepths[] = {16U, 64U, 256U, 1024U};
@@ -87,6 +89,20 @@ namespace pjson_fuzz {
         options.maxValidationWork = kWorkBudgets[pickByte(data, size, offset + 4U, 4) % 4U];
         options.maxErrors = kErrorBudgets[pickByte(data, size, offset + 5U, 5) % 4U];
         options.validateFormats = (pickByte(data, size, offset + 6U, 6) & 1U) != 0;
+        return options;
+    }
+
+    inline ByteDance::pjson::PatchOptions patchOptionsVariant(const uint8_t* data, size_t size,
+                                                              size_t offset = 0) {
+        ByteDance::pjson::PatchOptions options;
+        static const size_t kOperationBudgets[] = {1U, 8U, 64U, 10000U};
+        static const size_t kNodeBudgets[] = {8U, 128U, 4096U, 1000000U};
+        static const size_t kByteBudgets[] = {64U, 4096U, 65536U, 64U * 1024U * 1024U};
+        static const size_t kWorkBudgets[] = {16U, 512U, 16384U, 1000000U};
+        options.maxOperations = kOperationBudgets[pickByte(data, size, offset, 0) % 4U];
+        options.maxClonedNodes = kNodeBudgets[pickByte(data, size, offset + 1U, 1) % 4U];
+        options.maxClonedBytes = kByteBudgets[pickByte(data, size, offset + 2U, 2) % 4U];
+        options.maxWork = kWorkBudgets[pickByte(data, size, offset + 3U, 3) % 4U];
         return options;
     }
 

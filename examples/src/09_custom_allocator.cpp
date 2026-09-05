@@ -7,6 +7,7 @@
 // Referenced by docs/12-custom-allocators.md.
 //
 #include "pjson.h"
+#include "pjson_parser.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -15,6 +16,7 @@
 #include <utility>
 
 using ByteDance::pjson;
+using ByteDance::pJsonParser;
 
 // Minimal instrumentation allocator for the example. It delegates storage to
 // global new/delete while counting pjson's four persistent allocation kinds.
@@ -24,7 +26,7 @@ public:
     // maintaining per-kind lifetime totals and one aggregate live-block count.
     CountingAllocator()
             : _liveBlocks(0) {
-        for (size_t i = 0; i < 4; ++i) {
+        for (size_t i = 0; i < kAllocationKindCount; ++i) {
             _allocations[i] = 0;
             _deallocations[i] = 0;
         }
@@ -59,13 +61,16 @@ public:
     size_t liveBlocks() const { return _liveBlocks; }
 
 private:
+    static const size_t kAllocationKindCount =
+        static_cast<size_t>(pjson::Allocator::ImplementationAllocation) + size_t(1);
+
     // AllocationKind is deliberately contiguous, so it is a safe statistics index.
     static size_t index(AllocationKind kind) { return static_cast<size_t>(kind); }
 
     // Keep allocation and deallocation totals even after all live blocks have
     // been released so the example can report lifetime activity separately.
-    size_t _allocations[4];
-    size_t _deallocations[4];
+    size_t _allocations[kAllocationKindCount];
+    size_t _deallocations[kAllocationKindCount];
     size_t _liveBlocks;
 };
 
@@ -73,9 +78,10 @@ private:
 // and transfers both within and across allocator domains.
 int main() {
     // --- Default allocation ------------------------------------------------
-    // Every parse overload uses the provenance-aware pjson::unique_ptr owner.
-    pjson::unique_ptr ordinary = pjson::parse(R"({"storage":"default"})");
-    if (!ordinary)
+    // Every parse overload returns a pjson value bound to the default allocator.
+    pJsonParser::Error ordinaryError;
+    pjson ordinary = pJsonParser().parse(R"({"storage":"default"})", ordinaryError);
+    if (!ordinaryError.ok)
         return 1;
 
     // --- Custom allocator domains -----------------------------------------
@@ -91,21 +97,20 @@ int main() {
         direct["values"] += int64_t(1);
         direct["values"] += int64_t(2);
 
-        pjson::ParseError error;
-        // Allocator-aware parsing returns pjson::unique_ptr; its custom deleter
-        // returns the dynamically allocated root through `first`.
-        pjson::unique_ptr parsed =
-            pjson::parse(R"({"kind":"parsed root","values":[3,4]})", error, first);
-        if (!parsed) {
+        pJsonParser::Error error;
+        // Allocator-aware parsing returns a pjson value bound to `first`; its
+        // storage is released through `first` when the value is destroyed.
+        pjson parsed = pJsonParser(first).parse(R"({"kind":"parsed root","values":[3,4]})", error);
+        if (!error.ok) {
             std::cerr << error.message << '\n';
             return 1;
         }
 
         // --- Transfer between domains -------------------------------------
         // Explicit allocator construction deep-copies into another domain.
-        pjson rehomed(*parsed, second);
-        if (direct.canSwap(*parsed))
-            direct.swap(*parsed); // same allocator: constant-time exchange
+        pjson rehomed(parsed, second);
+        if (direct.canSwap(parsed))
+            direct.swap(parsed); // same allocator: constant-time exchange
 
         // Move assignment preserves the destination allocator. Because these
         // allocators differ, this may allocate while deep-transferring the tree.

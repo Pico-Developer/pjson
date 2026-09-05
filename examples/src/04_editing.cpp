@@ -9,6 +9,7 @@
 // elements, and re-serialize. Referenced by docs/04-editing.md.
 //
 #include "pjson.h"
+#include "pjson_parser.h"
 
 #include <iostream>
 #include <vector>
@@ -18,16 +19,17 @@ using namespace ByteDance;
 // Parses a seed document, mutates it through several APIs, and prints the result.
 int main() {
     // --- Parse a mutable document -----------------------------------------
-    auto doc = pjson::parse(R"({
+    pJsonParser::Error parseError;
+    pjson j = pJsonParser().parse(R"({
         "user": { "name": "Ada", "roles": ["admin", "dev"] },
         "count": 2,
         "deprecated": true
-    })");
-    if (!doc) {
+    })",
+                                  parseError);
+    if (!parseError.ok) {
         std::cerr << "parse failed\n";
         return 1;
     }
-    pjson& j = *doc;
 
     // --- Direct DOM edits -------------------------------------------------
     // Change a value in place.
@@ -49,31 +51,30 @@ int main() {
     // --- Standards-based transformations ---------------------------------
     // Apply a sequence of JSON Pointer edits atomically (RFC 6902): the test
     // must succeed before the reviewer role is appended.
-    pjson::ParseError parseError;
-    auto patch = pjson::parse(R"([
+    pjson patch = pJsonParser().parse(R"([
         {"op":"test", "path":"/count", "value":"two"},
         {"op":"add", "path":"/user/roles/-", "value":"reviewer"}
     ])",
-                              parseError);
-    if (!patch) {
+                                      parseError);
+    if (!parseError.ok) {
         std::cerr << "could not parse patch: " << parseError.message << "\n";
         return 1;
     }
     pjson::PatchError error;
     pjson::PatchOptions limits;
-    if (!j.applyPatch(*patch, error, limits)) {
+    if (!j.applyPatch(patch, error, limits)) {
         std::cerr << "patch failed at operation " << error.opIndex << ": " << error.message << "\n";
         return 1;
     }
 
     // Merge Patch recursively updates objects; null removes an object member.
     // Removing a missing member, as here, is a successful no-op.
-    auto merge = pjson::parse(R"({"user":{"nickname":null}})", parseError);
-    if (!merge) {
+    pjson merge = pJsonParser().parse(R"({"user":{"nickname":null}})", parseError);
+    if (!parseError.ok) {
         std::cerr << "could not parse merge patch: " << parseError.message << "\n";
         return 1;
     }
-    if (!j.applyMergePatch(*merge, error, limits)) {
+    if (!j.applyMergePatch(merge, error, limits)) {
         std::cerr << "merge patch failed: " << error.message << "\n";
         return 1;
     }

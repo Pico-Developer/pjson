@@ -5,22 +5,25 @@
 
 ## Harnesses
 
-The fuzz build provides four Clang/libFuzzer targets:
+The fuzz build provides seven Clang/libFuzzer targets:
 
 - `pjson_fuzz_parse` exercises strict DOM parsing only, while varying
   duplicate-key policy and bounded parse budgets across the same bytes.
 - `pjson_fuzz_stream` compares DOM, buffered stream, SAX-buffer, and chunked
   SAX-stream behavior under the same option variants.
+- `pjson_fuzz_serialize` checks transactional structured serialization, stream
+  equivalence, output budgets, UTF-8 rejection, and non-finite policies.
 - `pjson_fuzz_schema` parses a schema and instance and verifies agreement
   between both validation overloads. Its input is `schema`, one newline byte,
   then `instance`; inputs without a newline are split at their midpoint.
-- `pjson_fuzz_patch` splits its input into `document` and `patch`, then drives
-  RFC 6902 JSON Patch when the second half parses as an array, otherwise RFC
-  7396 Merge Patch. It checks atomic failure and stable serialization after
-  success.
+- `pjson_fuzz_pointer` compares mutable, const, string, and C-string RFC 6901
+  lookups and verifies that lookups never mutate the document.
+- `pjson_fuzz_patch` drives RFC 6902 JSON Patch with varied resource limits.
+- `pjson_fuzz_merge_patch` independently drives RFC 7396 Merge Patch. Both
+  mutation targets check atomic failure and stable serialization after success.
 
-Inputs under `corpus/patch/` intentionally cover both successful and failing
-patch documents so coverage includes rollback and diagnostic paths.
+Inputs under `corpus/{serialize,pointer,patch,merge_patch}` cover successful,
+failing, Unicode, embedded-NUL, output-limit, and deep/wide paths.
 
 ## Bounded local smoke
 
@@ -31,12 +34,12 @@ Run the bounded smoke used in CI with:
 ```
 
 On Linux and macOS, `build.sh --fuzz` probes for a usable Clang/libFuzzer
-toolchain, configures `-DPJSON_BUILD_FUZZERS=ON`, builds all four harnesses,
+toolchain, configures `-DPJSON_BUILD_FUZZERS=ON`, builds all seven harnesses,
 and replays each checked-in seed corpus with deterministic bounds:
 
 - `-runs=1000`
 - `-seed=1337`
-- `-max_len=4096`
+- `-max_len=65536`
 - `-timeout=5`
 
 Checked-in seeds are read-only inputs under `corpus/`; generated corpus entries
@@ -59,7 +62,8 @@ cmake -S . -B out/build-fuzz \
   -DPJSON_BUILD_BENCHMARKS=OFF \
   -DPJSON_BUILD_FUZZERS=ON
 cmake --build out/build-fuzz --parallel --target \
-  pjson_fuzz_parse pjson_fuzz_stream pjson_fuzz_schema pjson_fuzz_patch
+  pjson_fuzz_parse pjson_fuzz_stream pjson_fuzz_serialize pjson_fuzz_schema \
+  pjson_fuzz_pointer pjson_fuzz_patch pjson_fuzz_merge_patch
 ```
 
 External-engine builds pass linker input through the cache variable
@@ -79,5 +83,5 @@ cmake -S . -B out/build-fuzz \
 
 Repository-local OSS-Fuzz wiring is under `../oss-fuzz/`. Its build script
 configures `PJSON_BUILD_FUZZERS=ON`, passes
-`PJSON_FUZZING_ENGINE="${LIB_FUZZING_ENGINE}"`, builds all four harnesses, and
-packages per-target seed corpora from `fuzz/corpus/{parse,stream,schema,patch}`.
+`PJSON_FUZZING_ENGINE="${LIB_FUZZING_ENGINE}"`, builds all seven harnesses, and
+packages per-target seed corpora from their matching `fuzz/corpus/` directories.

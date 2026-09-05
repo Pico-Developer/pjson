@@ -96,6 +96,11 @@ if [ ! -d "${DEST}/tests/draft7" ]; then
     exit 1
 fi
 
+if [ ! -d "${DEST}/tests/draft2020-12" ]; then
+    echo "Expected tests/draft2020-12 directory not found under ${DEST}" >&2
+    exit 1
+fi
+
 if [ "$(git -C "${DEST}" rev-parse HEAD)" != "${PINNED_COMMIT}" ]; then
     echo "JSON-Schema-Test-Suite checkout is not at the pinned commit ${PINNED_COMMIT}" >&2
     exit 1
@@ -106,4 +111,4 @@ echo "Pinned commit: ${PINNED_COMMIT}"
 echo "Run tests with:"
 echo "  export PJSON_JSON_SCHEMA_TEST_SUITE_DIR=${DEST}"
 echo "  ctest --test-dir ${REPO_ROOT}/out/build-debug"
-echo "    -R schema_official_draft7_optional -V"
+echo "    -R 'schema_official_(draft7|draft2020)_optional' -V"

@@ -6,25 +6,33 @@ it into a `pjson` you can read. Follow along with
 
 ## Parsing with `parse()`
 
-`pjson::parse()` takes JSON text and returns a `pjson::unique_ptr`:
+Include the parser separately from the DOM, then construct a parser and call
+`parse()`. The dependency is one-way: `pJsonParser` uses `pjson`; `pjson` does
+not depend on the parser.
 
 ```cpp
-auto doc = pjson::parse(R"({ "name": "Ada", "age": 36 })");
-if (!doc) {
+#include "pjson.h"
+#include "pjson_parser.h"
+
+pJsonParser parser;
+pJsonParser::Error err;
+pjson doc = parser.parse(R"({ "name": "Ada", "age": 36 })", err);
+if (!err.ok) {
     // parsing failed — the text was not valid JSON
 }
 ```
 
 Two things to understand:
 
-- **`pjson::unique_ptr`** is a smart pointer that automatically frees the value
-  when it goes out of scope. You never call `delete`. Use `*doc` to get the
-  `pjson`, or `doc->method()` to call methods. Its deleter preserves allocator
-  provenance, so every DOM parse overload uses the same ownership type.
-- On a JSON or DOM-allocation **failure** the pointer is empty (`!doc` is true);
-  malformed input does not escape as an exception. Stream objects configured to
-  throw can still propagate I/O exceptions from `parseStream()`. (Chapter 05
-  shows how to find out why JSON parsing failed.)
+- **`parse()` returns a `pjson` by value** that owns its subtree and frees it
+  when it goes out of scope. You never call `delete`, and there is no smart
+  pointer in the API. Use `doc.method()` directly. To move the result into
+  another document, `dest["k"] = std::move(doc);`.
+- On a JSON failure the terse `parse(text)` returns a JSON `null` value; pass a
+  `pJsonParser::Error` (as above) to tell failure apart from a successfully parsed
+  literal `null`. Malformed input does not escape as an exception. Stream
+  objects configured to throw can still propagate I/O exceptions from
+  `parseStream()`. (Chapter 05 shows how to find out why JSON parsing failed.)
 
 > `R"(...)"` is a C++ *raw string literal*. Inside it, quotes and backslashes
 > are literal, so you can paste JSON without escaping every `"`. Very handy.
@@ -36,7 +44,7 @@ when the value has the requested type and leaves the output unchanged on
 failure:
 
 ```cpp
-const pjson& j = *doc;
+const pjson& j = doc;
 
 int64_t age = 0;
 if (!j.tryGet("age", age)) {
@@ -157,7 +165,7 @@ or mutating internal storage:
 ```cpp
 if (const pjson* node = j.find("scores")) {
     for (size_t i = 0; node->isArray() && i < node->size(); ++i) {
-        const pjson* score = node->find(static_cast<int>(i));
+        const pjson* score = node->findIndex(i);
         int64_t value = 0;
         if (score && score->tryGet(value))
             std::cout << value << " ";
@@ -192,7 +200,7 @@ Combine iteration with per-element lookup:
 if (const pjson* friends = j.find("friends")) {
     if (friends->isArray()) {
         for (size_t i = 0; i < friends->size(); ++i) {
-            const pjson* friend_ = friends->find(static_cast<int>(i));
+            const pjson* friend_ = friends->findIndex(i);
             pjson::StringView name;
             if (friend_ && friend_->tryGet("name", name))
                 std::cout.write(name.data(), static_cast<std::streamsize>(name.size()));
@@ -226,7 +234,7 @@ for any failure.
 
 ## Iterating an object
 
-To iterate an object's keys, use `keys()` (returned sorted):
+To iterate an object's keys, use `keys()`. The returned order is unspecified:
 
 ```cpp
 for (const std::string& key : j.keys()) {
@@ -241,8 +249,8 @@ for (const std::string& key : j.keys()) {
 
 ## What you learned
 
-- `parse()` returns a `pjson::unique_ptr` and reports JSON/DOM-allocation failures with
-  an empty result.
+- `parse()` returns a `pjson` value and reports failures through a `pJsonParser::Error`
+  out-param (the terse overload yields a JSON `null` on failure).
 - `tryGet()` provides exact-type node/key/index reads and leaves outputs unchanged
   on failure; `StringView` offers a mutation-sensitive, copy-free string view.
 - `find`, `findPointer`, `hasKey`, and `hasIndex` inspect without creating; use

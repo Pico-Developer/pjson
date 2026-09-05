@@ -144,8 +144,23 @@ endforeach()
 if(NOT EXISTS "${relocated_prefix}/include/pjson.h")
     message(FATAL_ERROR "Installed package is missing include/pjson.h")
 endif()
+if(NOT EXISTS "${relocated_prefix}/include/pjson_parser.h")
+    message(FATAL_ERROR "Installed package is missing include/pjson_parser.h")
+endif()
+if(NOT EXISTS "${relocated_prefix}/include/pjson_schema.h")
+    message(FATAL_ERROR "Installed package is missing include/pjson_schema.h")
+endif()
 list(GET pc_files 0 pc_file)
 get_filename_component(pc_dir "${pc_file}" DIRECTORY)
+file(READ "${pc_file}" pc_contents)
+string(FIND "${pc_contents}" "-DPJSON_SHARED" pc_shared_definition)
+if(DEFINED PJSON_BUILD_SHARED_LIBS AND PJSON_BUILD_SHARED_LIBS)
+    if(pc_shared_definition EQUAL -1)
+        message(FATAL_ERROR "Shared pkg-config metadata does not define PJSON_SHARED")
+    endif()
+elseif(NOT pc_shared_definition EQUAL -1)
+    message(FATAL_ERROR "Static pkg-config metadata unexpectedly defines PJSON_SHARED")
+endif()
 file(RELATIVE_PATH pc_dir_from_prefix "${relocated_prefix}" "${pc_dir}")
 set(expected_pc_prefix ".")
 cmake_path(RELATIVE_PATH expected_pc_prefix
@@ -205,7 +220,7 @@ if(PJSON_PKG_CONFIG_EXECUTABLE)
         "${CMAKE_COMMAND}" -E env
         "PKG_CONFIG_PATH=${pc_dir}"
         "PKG_CONFIG_LIBDIR=${pc_dir}"
-        "${PJSON_PKG_CONFIG_EXECUTABLE}" --exact-version=1.0.0 pjson)
+        "${PJSON_PKG_CONFIG_EXECUTABLE}" --exact-version=2.0.0 pjson)
 
     set(pkgconfig_consumer_configure
         "${CMAKE_COMMAND}" -E env

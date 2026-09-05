@@ -248,7 +248,7 @@ TEST(copy_construct_is_deep_and_independent) {
     a["nested"]["deep"] = static_cast<int64_t>(9);
 
     pjson b(a);
-    CHECK_EQ(b.toString(), a.toString());
+    CHECK(b == a);
 
     b["name"] = std::string("changed");
     b["nested"]["deep"] = static_cast<int64_t>(100);
@@ -264,7 +264,7 @@ TEST(copy_assign_is_deep) {
     pjson b;
     b = static_cast<int64_t>(12345);
     b = a;
-    CHECK_EQ(b.toString(), a.toString());
+    CHECK(b == a);
     b["x"][0] = std::string("z");
     expectString(a["x"][0], "p");
 }
@@ -314,13 +314,16 @@ TEST(copyfrom_deep_copies) {
     a["arr"] = std::vector<double>({1.5, 2.5});
     pjson b;
     b.copyFrom(a);
-    CHECK_EQ(b.toString(), a.toString());
+    CHECK(b == a);
     b["arr"][0] = double(9.9);
     expectDouble(a["arr"][0], 1.5);
 }
 
-TEST(unique_ptr_owns_ordinary_root_values) {
-    pjson::unique_ptr owned(new pjson());
+TEST(ordinary_new_root_frees_correctly) {
+    // A `new pjson()` root is freed correctly by a std::unique_ptr with the
+    // default deleter: an ordinary (non-allocator-owned) node destructs and
+    // returns its storage through operator delete.
+    std::unique_ptr<pjson> owned(new pjson());
     CHECK(owned != nullptr);
     (*owned)["value"] = static_cast<int64_t>(1);
     expectInt((*owned)["value"], int64_t(1));

@@ -3,7 +3,7 @@
 
 [libfuzzer]
 # Bound generated inputs so routine mutations emphasize schema state coverage.
-max_len = 4096
+max_len = 65536
 # Stop one schema/instance pair if validation exceeds five seconds.
 timeout = 5
 # Leave enough headroom for sanitizer overhead while catching runaway growth.

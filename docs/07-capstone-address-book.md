@@ -11,7 +11,11 @@ serializes the whole thing.
 ## 1. Define what a valid contact looks like
 
 ```cpp
-pjson::unique_ptr schema = pjson::parse(R"({
+#include "pjson_parser.h"
+#include "pjson_schema.h"
+
+pJsonParser::Error err;
+pjson schema = pJsonParser().parse(R"({
     "type": "object",
     "required": ["id", "name", "emails"],
     "properties": {
@@ -21,9 +25,13 @@ pjson::unique_ptr schema = pjson::parse(R"({
                     "items": { "type": "string", "pattern": "@" } },
         "tags":   { "type": "array", "items": { "type": "string" } }
     }
-})");
-if (!schema)
+})",
+                            err);
+if (!err.ok)
     return 1;
+
+// Compile the schema once into a reusable validator.
+pJsonSchemaValidator validator(schema);
 ```
 
 Every contact must have a positive `id`, a non-empty `name`, and at least one
@@ -32,26 +40,24 @@ email address containing `@`.
 ## 2. A gatekeeper that validates before storing
 
 ```cpp
-bool addContact(pjson& book, const pjson& schema, const pjson& contact) {
-    std::vector<pjson::SchemaError> errors;
-    if (!contact.validate(schema, errors)) {
-        for (const pjson::SchemaError& e : errors) {
-            std::cout << "    " << (e.path.empty() ? "(root)" : e.path)
+bool addContact(pjson& book, const pJsonSchemaValidator& validator,
+                const pjson& contact) {
+    std::vector<pJsonSchemaValidator::Error> errors;
+    if (!validator.validate(contact, errors)) {
+        for (const pJsonSchemaValidator::Error& e : errors) {
+            std::cout << "    "
+                      << (e.instanceLocation.empty() ? "(root)" : e.instanceLocation)
                       << ": " << e.message << "\n";
         }
         return false;                   // rejected
     }
-    pjson& contacts = book["contacts"];
-    if (contacts.size() > static_cast<size_t>(INT_MAX))
-        return false;
-    contacts[static_cast<int>(contacts.size())] = contact;
+    book["contacts"].pushBack(contact); // promotes to an array and deep-copies
     return true;
 }
 ```
 
-The checked conversion is necessary because `size()` returns `size_t` while
-the builder index is `int`. Assigning the index one past the end auto-extends
-the array.
+`pushBack` promotes the target to an array if needed and appends a deep copy of
+the whole contact value.
 
 ```mermaid
 flowchart TD
@@ -78,27 +84,28 @@ ada["id"] = int64_t(1);
 ada["name"] = "Ada Lovelace";
 ada["emails"] += "ada@example.com";
 ada["tags"] += "pioneer";
-addContact(book, *schema, ada);
+addContact(book, validator, ada);
 ```
 
 **From a JSON payload** (e.g. arriving over a network):
 
 ```cpp
-auto incoming = pjson::parse(R"({
+pjson incoming = pJsonParser().parse(R"({
     "id": 2, "name": "Bob", "emails": ["bob@example.com", "b@work.com"]
-})");
-if (incoming)
-    addContact(book, *schema, *incoming);
+})",
+                              err);
+if (err.ok)
+    addContact(book, validator, incoming);
 ```
 
 **An invalid one is rejected** with precise messages:
 
 ```cpp
-auto invalid = pjson::parse(R"({ "id": 0, "name": "", "emails": [] })");
-if (invalid)
-    addContact(book, *schema, *invalid);
+pjson invalid = pJsonParser().parse(R"({ "id": 0, "name": "", "emails": [] })", err);
+if (err.ok)
+    addContact(book, validator, invalid);
 // /emails: array has 0 items, below minItems 1
-// /id: value 0.0 is below minimum 1.0
+// /id: value 0 is below minimum 1
 // /name: string length 0 is below minLength 1
 ```
 
@@ -111,7 +118,7 @@ book["contacts"][0]["emails"] += "ada@lovelace.org";
 // Find the contact with id == 2 without creating anything.
 const pjson* contacts = book.find("contacts");
 for (size_t i = 0; contacts && i < contacts->size(); ++i) {
-    const pjson* contact = contacts->find(static_cast<int>(i));
+    const pjson* contact = contacts->findIndex(i);
     int64_t id = 0;
     std::string name;
     if (contact && contact->tryGet("id", id) && id == int64_t(2) &&
@@ -128,8 +135,8 @@ output.maxOutputBytes = size_t(64) * 1024 * 1024;
 std::cout << book.toString(output) << "\n";
 ```
 
-produces a tidy, sorted-key document with both accepted contacts and their
-edits.
+produces a tidy document with both accepted contacts and their edits. Object
+member order is unspecified.
 
 ## What this demonstrates
 

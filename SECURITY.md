@@ -10,7 +10,8 @@ against `main` are also welcome and fixes are released as soon as practical.
 
 | Version | Supported |
 | --- | --- |
-| 1.0.x | Yes |
+| 2.0.x | Yes |
+| 1.0.x | No |
 | 0.0.x | No |
 
 Users of an unsupported version should upgrade before reporting a problem that

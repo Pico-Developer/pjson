@@ -18,7 +18,9 @@
 // output, parse ownership, and deep equality/copy behavior.
 //
 #include "pjson.h"
+#include "pjson_parser.h"
 #include "test_harness.h"
+#include "test_util.h"
 
 #include <climits>
 #include <cstdint>
@@ -61,8 +63,8 @@ TEST(api_int64_boundaries_round_trip) {
     CHECK_EQ(mx.toString(), std::string("9223372036854775807"));
     CHECK_EQ(mn.toString(), std::string("-9223372036854775808"));
 
-    pjson::unique_ptr pmx = pjson::parse("9223372036854775807");
-    pjson::unique_ptr pmn = pjson::parse("-9223372036854775808");
+    pjson_test::Parsed pmx = pjson_test::parse("9223372036854775807");
+    pjson_test::Parsed pmn = pjson_test::parse("-9223372036854775808");
     CHECK(pmx != nullptr);
     CHECK(pmn != nullptr);
     if (pmx)
@@ -89,7 +91,7 @@ TEST(api_double_formatting_edges) {
     for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
         pjson j;
         j = cases[i].v;
-        pjson::unique_ptr rt = pjson::parse(j.toString());
+        pjson_test::Parsed rt = pjson_test::parse(j.toString());
         CHECK(rt != nullptr);
         if (rt)
             CHECK_EQ(mustGetDouble(*rt), cases[i].v);
@@ -110,7 +112,7 @@ TEST(api_large_string_round_trip) {
     pjson j;
     j["blob"] = big;
 
-    pjson::unique_ptr rt = pjson::parse(j.toString());
+    pjson_test::Parsed rt = pjson_test::parse(j.toString());
     CHECK(rt != nullptr);
     if (!rt)
         return;
@@ -133,7 +135,7 @@ TEST(api_string_with_every_escape) {
     pjson j;
     j["s"] = s;
 
-    pjson::unique_ptr rt = pjson::parse(j.toString());
+    pjson_test::Parsed rt = pjson_test::parse(j.toString());
     CHECK(rt != nullptr);
     if (rt) {
         const pjson* field = rt->find("s");
@@ -156,7 +158,7 @@ TEST(api_empty_string_and_empty_key) {
         CHECK(view.empty());
     }
 
-    pjson::unique_ptr rt = pjson::parse(j.toString());
+    pjson_test::Parsed rt = pjson_test::parse(j.toString());
     CHECK(rt != nullptr);
     if (rt)
         CHECK(*rt == j);
@@ -309,19 +311,21 @@ TEST(api_find_haskey_on_non_object) {
     CHECK(num.isInt());
 }
 
-TEST(api_keys_sorted_and_empty) {
+TEST(api_keys_complete_and_empty) {
     pjson j;
     j["z"] = static_cast<int64_t>(1);
     j["a"] = static_cast<int64_t>(2);
     j["m"] = static_cast<int64_t>(3);
     std::vector<std::string> k = j.keys();
     CHECK_EQ(k.size(), size_t(3));
-    CHECK_EQ(k[0], std::string("a"));
-    CHECK_EQ(k[1], std::string("m"));
-    CHECK_EQ(k[2], std::string("z"));
+    for (size_t i = 0; i < k.size(); ++i) {
+        CHECK(j.hasKey(k[i]));
+        for (size_t other = i + 1; other < k.size(); ++other)
+            CHECK(k[i] != k[other]);
+    }
 
-    pjson::unique_ptr array = pjson::parse("[1,2]");
-    pjson::unique_ptr scalar = pjson::parse("5");
+    pjson_test::Parsed array = pjson_test::parse("[1,2]");
+    pjson_test::Parsed scalar = pjson_test::parse("5");
     CHECK(array != nullptr);
     CHECK(scalar != nullptr);
     if (array)
@@ -331,13 +335,13 @@ TEST(api_keys_sorted_and_empty) {
 }
 
 TEST(api_size_empty_all_types) {
-    pjson::unique_ptr array = pjson::parse("[1,2,3]");
-    pjson::unique_ptr object = pjson::parse(R"({"a":1,"b":2})");
-    pjson::unique_ptr emptyArray = pjson::parse("[]");
-    pjson::unique_ptr emptyObject = pjson::parse("{}");
-    pjson::unique_ptr scalar = pjson::parse("5");
-    pjson::unique_ptr string = pjson::parse("\"hello\"");
-    pjson::unique_ptr nullValue = pjson::parse("null");
+    pjson_test::Parsed array = pjson_test::parse("[1,2,3]");
+    pjson_test::Parsed object = pjson_test::parse(R"({"a":1,"b":2})");
+    pjson_test::Parsed emptyArray = pjson_test::parse("[]");
+    pjson_test::Parsed emptyObject = pjson_test::parse("{}");
+    pjson_test::Parsed scalar = pjson_test::parse("5");
+    pjson_test::Parsed string = pjson_test::parse("\"hello\"");
+    pjson_test::Parsed nullValue = pjson_test::parse("null");
     CHECK(array != nullptr);
     CHECK(object != nullptr);
     CHECK(emptyArray != nullptr);
@@ -379,15 +383,15 @@ TEST(api_serialization_forms_agree) {
 }
 
 TEST(api_pretty_reparses_to_same_data) {
-    pjson::unique_ptr value =
-        pjson::parse(R"({ "nested": { "arr": [1, 2, {"x": true}] }, "s": "v" })");
+    pjson_test::Parsed value =
+        pjson_test::parse(R"({ "nested": { "arr": [1, 2, {"x": true}] }, "s": "v" })");
     CHECK(value != nullptr);
     if (!value)
         return;
 
     pjson::SerializeOptions pretty = pjson::SerializeOptions::prettyPrinted();
     std::string text = value->toString(pretty);
-    pjson::unique_ptr rt = pjson::parse(text);
+    pjson_test::Parsed rt = pjson_test::parse(text);
     CHECK(rt != nullptr);
     if (rt)
         CHECK(*rt == *value);
@@ -398,7 +402,7 @@ TEST(api_pretty_reparses_to_same_data) {
 //===----------------------------------------------------------------------===//
 TEST(api_parse_stream_success_and_failure) {
     std::istringstream good(R"({ "k": [1,2,3] })");
-    pjson::unique_ptr p = pjson::parseStream(good);
+    pjson_test::Parsed p = pjson_test::parseStream(good);
     CHECK(p != nullptr);
     if (p) {
         const pjson* field = p->find("k");
@@ -408,52 +412,52 @@ TEST(api_parse_stream_success_and_failure) {
     }
 
     std::istringstream bad("{not valid");
-    pjson::ParseError err;
-    pjson::unique_ptr q = pjson::parseStream(bad, err);
+    pJsonParser::Error err;
+    pjson_test::Parsed q = pjson_test::parseStream(bad, err);
     CHECK(q == nullptr);
     CHECK(!err.ok);
     CHECK(!err.message.empty());
 }
 
 TEST(api_parse_ptr_size_edges) {
-    pjson::unique_ptr p = pjson::parse("12345xyz", 3);
+    pjson_test::Parsed p = pjson_test::parse("12345xyz", 3);
     CHECK(p != nullptr);
     if (p)
         CHECK_EQ(mustGetInt(*p), int64_t(123));
 
     const char raw[] = {'"', 'a', '\0', 'b', '"'};
-    CHECK(pjson::parse(raw, sizeof(raw)) == nullptr);
+    CHECK(pjson_test::parse(raw, sizeof(raw)) == nullptr);
 
-    CHECK(pjson::parse(nullptr, 5) == nullptr);
-    CHECK(pjson::parse("x", 0) == nullptr);
+    CHECK(pjson_test::parse(nullptr, 5) == nullptr);
+    CHECK(pjson_test::parse("x", 0) == nullptr);
 }
 
 TEST(api_parse_resource_budgets) {
-    const pjson::ParseOptions defaults;
+    const pJsonParser::Options defaults;
     CHECK_EQ(defaults.maxDepth, 512);
     CHECK_EQ(defaults.maxNodes, size_t(1000000));
     CHECK_EQ(defaults.maxInputBytes, size_t(64) * 1024U * 1024U);
-    CHECK_EQ(defaults.duplicateKeys, pjson::ParseOptions::RejectDuplicateKeys);
+    CHECK_EQ(defaults.duplicateKeys, pJsonParser::Options::RejectDuplicateKeys);
 
-    pjson::ParseOptions nodes;
+    pJsonParser::Options nodes;
     nodes.maxNodes = 3;
-    pjson::ParseError err;
-    CHECK(pjson::parse("[1,2]", err, nodes) != nullptr);
+    pJsonParser::Error err;
+    CHECK(pjson_test::parse("[1,2]", err, nodes) != nullptr);
     CHECK(err.ok);
 
-    CHECK(pjson::parse("[1,2,3]", err, nodes) == nullptr);
+    CHECK(pjson_test::parse("[1,2,3]", err, nodes) == nullptr);
     CHECK(!err.ok);
     CHECK(err.message.find("node budget") != std::string::npos);
 
-    pjson::ParseOptions bytes;
+    pJsonParser::Options bytes;
     bytes.maxInputBytes = 4;
-    CHECK(pjson::parse("null", err, bytes) != nullptr);
-    CHECK(pjson::parse("false", err, bytes) == nullptr);
+    CHECK(pjson_test::parse("null", err, bytes) != nullptr);
+    CHECK(pjson_test::parse("false", err, bytes) == nullptr);
     CHECK(!err.ok);
     CHECK(err.message.find("maxInputBytes") != std::string::npos);
 
     std::istringstream oversizedStream("false");
-    CHECK(pjson::parseStream(oversizedStream, err, bytes) == nullptr);
+    CHECK(pjson_test::parseStream(oversizedStream, err, bytes) == nullptr);
     CHECK(!err.ok);
     CHECK_EQ(err.offset, size_t(4));
     CHECK_EQ(err.line, size_t(1));
@@ -501,17 +505,17 @@ TEST(api_move_leaves_source_null) {
 // Equality: cross-type numeric cases, including above-2^53 exactness.
 //===----------------------------------------------------------------------===//
 TEST(api_equality_rules) {
-    CHECK(*pjson::parse("1") == *pjson::parse("1.0"));
-    CHECK(*pjson::parse("1.5") == *pjson::parse("1.5"));
-    CHECK(*pjson::parse("[1,2]") != *pjson::parse("[2,1]"));
-    CHECK(*pjson::parse(R"({"a":1,"b":2})") == *pjson::parse(R"({"b":2,"a":1})"));
-    CHECK(*pjson::parse("true") != *pjson::parse("1"));
-    CHECK(*pjson::parse("null") == *pjson::parse("null"));
-    CHECK(*pjson::parse("\"\"") != *pjson::parse("null"));
-    CHECK(*pjson::parse("{}") != *pjson::parse("[]"));
+    CHECK(*pjson_test::parse("1") == *pjson_test::parse("1.0"));
+    CHECK(*pjson_test::parse("1.5") == *pjson_test::parse("1.5"));
+    CHECK(*pjson_test::parse("[1,2]") != *pjson_test::parse("[2,1]"));
+    CHECK(*pjson_test::parse(R"({"a":1,"b":2})") == *pjson_test::parse(R"({"b":2,"a":1})"));
+    CHECK(*pjson_test::parse("true") != *pjson_test::parse("1"));
+    CHECK(*pjson_test::parse("null") == *pjson_test::parse("null"));
+    CHECK(*pjson_test::parse("\"\"") != *pjson_test::parse("null"));
+    CHECK(*pjson_test::parse("{}") != *pjson_test::parse("[]"));
 
-    CHECK(*pjson::parse("9007199254740994") == *pjson::parse("9007199254740994.0"));
-    CHECK(*pjson::parse("9007199254740993") != *pjson::parse("9007199254740992.0"));
+    CHECK(*pjson_test::parse("9007199254740994") == *pjson_test::parse("9007199254740994.0"));
+    CHECK(*pjson_test::parse("9007199254740993") != *pjson_test::parse("9007199254740992.0"));
 }
 
 //===----------------------------------------------------------------------===//
@@ -598,15 +602,25 @@ TEST(api_extreme_builder_indexes_are_safe_and_preserve_state_on_failure) {
     CHECK(populatedThrew);
     CHECK_EQ(array.toString(), before);
 
-    array[INT_MIN] = int64_t(11);
+    bool negativeThrew = false;
+    try {
+        array[INT_MIN] = int64_t(11);
+    } catch (const std::out_of_range&) {
+        negativeThrew = true;
+    }
+    CHECK(negativeThrew);
     CHECK_EQ(array.size(), size_t(1));
-    CHECK_EQ(mustGetInt(array[0]), int64_t(11));
+    CHECK_EQ(mustGetInt(array[0]), int64_t(7));
 
     pjson empty;
-    empty[INT_MIN] = int64_t(3);
-    CHECK(empty.isArray());
-    CHECK_EQ(empty.size(), size_t(1));
-    CHECK_EQ(mustGetInt(empty[0]), int64_t(3));
+    bool emptyNegativeThrew = false;
+    try {
+        empty[INT_MIN] = int64_t(3);
+    } catch (const std::out_of_range&) {
+        emptyNegativeThrew = true;
+    }
+    CHECK(emptyNegativeThrew);
+    CHECK(empty.isNull());
 }
 
 TEST(api_null_cstring_mutations_throw_and_preserve_prior_value) {

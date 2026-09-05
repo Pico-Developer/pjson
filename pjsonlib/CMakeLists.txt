@@ -9,7 +9,34 @@ set (INCLUDE_DIR "include")
 
 set (SRC_FILES ${SRC_FILES}
 ${SRC_DIR}/pjson.cpp
+${SRC_DIR}/pjson_parser.cpp
+${SRC_DIR}/pjson_patch.cpp
+${SRC_DIR}/pjson_pointer.cpp
+${SRC_DIR}/pjson_schema.cpp
+${SRC_DIR}/pjson_schema_dialect.cpp
+${SRC_DIR}/pjson_schema_format.cpp
+${SRC_DIR}/pjson_schema_regex.cpp
+${SRC_DIR}/pjson_schema_uri.cpp
+${SRC_DIR}/pjson_schema_value.cpp
+${SRC_DIR}/pjson_serialize.cpp
+${SRC_DIR}/third_party/ryu/ryu/d2s.c
 )
+set_source_files_properties(${SRC_DIR}/third_party/ryu/ryu/d2s.c PROPERTIES LANGUAGE CXX)
+
+set(PJSON_META_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/src/third_party/json-schema-2020-12")
+file(READ "${PJSON_META_ROOT}/schema.json" PJSON_META_SCHEMA)
+file(READ "${PJSON_META_ROOT}/meta/core.json" PJSON_META_CORE)
+file(READ "${PJSON_META_ROOT}/meta/applicator.json" PJSON_META_APPLICATOR)
+file(READ "${PJSON_META_ROOT}/meta/unevaluated.json" PJSON_META_UNEVALUATED)
+file(READ "${PJSON_META_ROOT}/meta/validation.json" PJSON_META_VALIDATION)
+file(READ "${PJSON_META_ROOT}/meta/meta-data.json" PJSON_META_METADATA)
+file(READ "${PJSON_META_ROOT}/meta/format-annotation.json" PJSON_META_FORMAT_ANNOTATION)
+file(READ "${PJSON_META_ROOT}/meta/format-assertion.json" PJSON_META_FORMAT_ASSERTION)
+file(READ "${PJSON_META_ROOT}/meta/content.json" PJSON_META_CONTENT)
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/pjson_schema_builtins.h.in
+    ${CMAKE_CURRENT_BINARY_DIR}/generated/pjson_schema_builtins.h
+    @ONLY)
 
 # Warning flags differ by compiler: GCC/Clang use -Wall -Wextra, MSVC uses /W4.
 if (MSVC)
@@ -25,13 +52,26 @@ add_library(pjson::pjson ALIAS ${TARGET_NAME})
 
 target_compile_features(${TARGET_NAME} PUBLIC cxx_std_11)
 target_compile_options(${TARGET_NAME} PRIVATE ${PJSON_WARN_FLAGS})
+target_compile_definitions(${TARGET_NAME} PRIVATE PJSON_BUILDING_LIBRARY)
+if(BUILD_SHARED_LIBS)
+    target_compile_definitions(${TARGET_NAME} PUBLIC PJSON_SHARED)
+endif()
+target_include_directories(${TARGET_NAME} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
+target_include_directories(${TARGET_NAME} SYSTEM PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/third_party
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/third_party/ryu)
 set_target_properties(${TARGET_NAME} PROPERTIES
     VERSION "${PROJECT_VERSION}"
-    SOVERSION "${PROJECT_VERSION_MAJOR}"
+    SOVERSION "${PJSON_ABI_VERSION}"
     CXX_EXTENSIONS OFF
     EXPORT_NAME pjson
-    WINDOWS_EXPORT_ALL_SYMBOLS ON
 )
+if(BUILD_SHARED_LIBS)
+    set_target_properties(${TARGET_NAME} PROPERTIES
+        CXX_VISIBILITY_PRESET hidden
+        VISIBILITY_INLINES_HIDDEN YES
+    )
+endif()
 
 # Consumers get the include dir whether they build in-tree or install.
 target_include_directories(${TARGET_NAME} PUBLIC
@@ -51,7 +91,10 @@ install(TARGETS ${TARGET_NAME}
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
 )
 
-install(FILES ${INCLUDE_DIR}/pjson.h
+install(FILES
+    ${INCLUDE_DIR}/pjson.h
+    ${INCLUDE_DIR}/pjson_parser.h
+    ${INCLUDE_DIR}/pjson_schema.h
     DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
 )
 
@@ -94,6 +137,11 @@ set(PJSON_PC_PREFIX_FROM_PCFILEDIR ".")
 cmake_path(RELATIVE_PATH PJSON_PC_PREFIX_FROM_PCFILEDIR
     BASE_DIRECTORY "${PJSON_INSTALL_PKGCONFIGDIR}")
 cmake_path(NORMAL_PATH PJSON_PC_PREFIX_FROM_PCFILEDIR)
+if(BUILD_SHARED_LIBS)
+    set(PJSON_PC_COMPILE_FLAGS "-DPJSON_SHARED")
+else()
+    set(PJSON_PC_COMPILE_FLAGS "")
+endif()
 configure_file(
     "${CMAKE_CURRENT_LIST_DIR}/../cmake/pjson.pc.in"
     "${CMAKE_CURRENT_BINARY_DIR}/pjson.pc"
@@ -106,3 +154,15 @@ install(FILES "${CMAKE_CURRENT_BINARY_DIR}/pjson.pc"
 install(FILES "${CMAKE_CURRENT_LIST_DIR}/../LICENSE"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/pjson"
 )
+install(FILES
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/third_party/srell/LICENSE.txt"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/pjson"
+    RENAME "LICENSE-SRELL")
+install(FILES
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/third_party/json-schema-2020-12/LICENSE.txt"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/pjson"
+    RENAME "LICENSE-JSON-SCHEMA")
+install(FILES
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/third_party/ryu/LICENSE.txt"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/pjson"
+    RENAME "LICENSE-RYU")

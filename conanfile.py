@@ -14,7 +14,7 @@ import os
 # pkg-config metadata installed by pjsonlib/CMakeLists.txt.
 class PjsonConan(ConanFile):
     name = "pjson"
-    version = "1.0.0"
+    version = "2.0.0"
     package_type = "library"
 
     license = "Apache-2.0"
@@ -100,3 +100,5 @@ class PjsonConan(ConanFile):
         self.cpp_info.set_property("cmake_target_name", "pjson::pjson")
         self.cpp_info.set_property("pkg_config_name", "pjson")
         self.cpp_info.libs = ["pjson"]
+        if self.options.shared:
+            self.cpp_info.defines.append("PJSON_SHARED")

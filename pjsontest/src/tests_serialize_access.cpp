@@ -17,10 +17,12 @@
 //
 #include "pjson.h"
 #include "test_harness.h"
+#include "test_util.h"
 
 #include <climits>
 #include <cstdint>
 #include <ios>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -217,22 +219,9 @@ TEST(serialize_options_empty_containers_stay_inline) {
 
     pjson::SerializeOptions options = pjson::SerializeOptions::prettyPrinted();
     options.indentWidth = 1;
-    CHECK_EQ(value.toString(options), std::string("{\n \"array\": [],\n \"object\": {}\n}"));
-}
-
-TEST(serialize_options_key_order_applies_at_every_depth) {
-    pjson value;
-    value["a"]["a"] = static_cast<int64_t>(1);
-    value["a"]["z"] = static_cast<int64_t>(2);
-    value["z"] = static_cast<int64_t>(3);
-
-    pjson::SerializeOptions ascending;
-    CHECK_EQ(value.toString(ascending), std::string("{\"a\":{\"a\":1,\"z\":2},\"z\":3}"));
-
-    pjson::SerializeOptions descending;
-    descending.keyOrder = pjson::SerializeOptions::DescendingKeys;
-    CHECK_EQ(value.toString(descending), std::string("{\"z\":3,\"a\":{\"z\":2,\"a\":1}}"));
-    CHECK_EQ(streamed(value, descending), value.toString(descending));
+    const std::string output = value.toString(options);
+    CHECK(output == std::string("{\n \"array\": [],\n \"object\": {}\n}") ||
+          output == std::string("{\n \"object\": {},\n \"array\": []\n}"));
 }
 
 TEST(serialize_options_ascii_only_values_and_keys) {
@@ -250,7 +239,7 @@ TEST(serialize_options_ascii_only_values_and_keys) {
     CHECK(isAscii(text));
     CHECK_EQ(streamed(value, options), text);
 
-    pjson::unique_ptr reparsed = pjson::parse(text);
+    pjson_test::Parsed reparsed = pjson_test::parse(text);
     CHECK(reparsed != nullptr);
     if (reparsed)
         CHECK(*reparsed == value);
@@ -355,6 +344,13 @@ TEST(value_find_index_const_and_wrong_types_do_not_mutate) {
                   "const indexed lookup must return const pjson*");
     CHECK(constArray.find(0) != nullptr);
     CHECK(constArray.find(1) == nullptr);
+    const size_t zero = 0;
+    const size_t one = 1;
+    static_assert(std::is_same<decltype(constArray.findIndex(zero)), const pjson*>::value,
+                  "const size_t lookup must return const pjson*");
+    CHECK(constArray.findIndex(zero) != nullptr);
+    CHECK(constArray.findIndex(one) == nullptr);
+    CHECK(constArray.findIndex(std::numeric_limits<size_t>::max()) == nullptr);
 
     pjson empty;
     empty.resetTo(pjson::jsonArray);

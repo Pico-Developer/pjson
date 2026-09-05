@@ -54,12 +54,11 @@ int main() {
 
     // --- Serialization options --------------------------------------------
     // Start with pretty-print defaults, then make the relevant layout choices
-    // explicit. Key ordering applies independently at every object level.
+    // explicit. Object member order is intentionally unspecified.
     pjson::SerializeOptions options = pjson::SerializeOptions::prettyPrinted();
     options.indentWidth = 2;
     options.indentCharacter = ' ';
     options.escapeNonAscii = false;
-    options.keyOrder = pjson::SerializeOptions::AscendingKeys;
     options.maxOutputBytes = size_t(64) * 1024 * 1024;
     std::cout << doc.toString(options) << "\n";
     return 0;

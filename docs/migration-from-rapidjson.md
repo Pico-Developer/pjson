@@ -7,13 +7,14 @@ limited schema vocabulary.
 
 ```cpp
 #include "pjson.h"
+#include "pjson_parser.h"
 using ByteDance::pjson;
+using ByteDance::pJsonParser;
 ```
 
-pjson requires C++11 or newer and is a compiled library. Link `pjson::pjson` or
-compile `pjsonlib/src/pjson.cpp` with the application.
-`pjsonlib/include/pjson.h` and `pjsonlib/src/pjson.cpp` are the canonical API
-and behavior sources; this guide describes how to adapt RapidJSON code to them.
+pjson requires C++11 or newer and is a compiled library. Link `pjson::pjson`,
+which contains the decomposed implementation. Include `pjson_parser.h` only in
+translation units that parse input.
 
 ## Migration map
 
@@ -29,14 +30,14 @@ and behavior sources; this guide describes how to adapt RapidJSON code to them.
 | `operator[]` for lookup | `find` / `tryGet` | pjson subscripting is builder-only and may mutate. |
 | member iteration | `keys()` + `find(key)` | No public raw object container. |
 | array iteration | `size()` + `find(index)` | No public raw array container. |
-| `Document::Parse(...)` | `pjson::parse(...)` | Every DOM overload returns `pjson::unique_ptr`. |
+| `Document::Parse(...)` | `pJsonParser().parse(...)` | Every DOM overload returns a `pjson` value; pass a `pJsonParser::Error` for status. |
 | `Reader` + handler | `parseSax(...)` / `parseSaxStream(...)` | SAX callbacks return `bool` to continue. |
 | `Writer` / `PrettyWriter` | `write(out[, options])` | Configure `SerializeOptions`; inspect stream state. |
 | `StringBuffer` + Writer | `toString([options])` | Returns the serialized string. |
 | `Pointer::Get` | `findPointer(...)` | Non-vivifying RFC 6901 lookup. |
 | Pointer mutation | normal building or `applyPatch(...[, options])` | RFC 6902 patching is atomic and bounded. |
 | Merge Patch helper code | `applyMergePatch(...[, options])` | Atomic RFC 7396 with the same limits. |
-| `SchemaDocument` + `SchemaValidator` | `value.validate(schema, ...)` | No compiled schema; only the documented subset is enforced. |
+| `SchemaDocument` + `SchemaValidator` | `pJsonSchemaValidator v(schema[, options]); v.validate(value, ...)` | Compile once into the standalone validator; subset by default, required Draft 2020-12 vocabularies via `Options::draft2020()`. |
 
 ## Values, ownership, and allocators
 
@@ -47,6 +48,9 @@ an object and creates a missing null child. Integer access promotes it to an
 array and grows it with null children. Use explicit final scalar types:
 One indexed access that would create more than 1,000,000 children throws
 `std::length_error` before mutation.
+Valid negative `int` indexes count from the end; an index before the beginning
+throws `std::out_of_range`. Prefer the `size_t` overload for non-negative
+builder indexes.
 
 ```cpp
 pjson document;
@@ -66,37 +70,40 @@ arrays with indexed assignment:
 array[static_cast<int>(array.size())] = child;
 ```
 
-### Parsed roots always use `pjson::unique_ptr`
+### Parsed roots are returned by value
 
-Every DOM `parse` and `parseStream` overload returns `pjson::unique_ptr`, for
-both default and custom allocation. Failure produces an empty pointer. The
-custom deleter follows allocator provenance stored in the root, so do not call
-`delete` or substitute another smart-pointer deleter.
+Every DOM `parse` and `parseStream` overload returns a `pjson` **by value**, for
+both default and custom allocation. There is no smart pointer and no manual
+`delete`; the value owns its subtree and frees it on destruction. The terse
+overloads return JSON `null` on failure; pass a `pJsonParser::Error` to distinguish
+failure from a successfully parsed literal `null`.
 
 ```cpp
-pjson::ParseError error;
-pjson::unique_ptr document = pjson::parse(jsonBytes, byteCount, error);
-if (!document) {
+pJsonParser::Error error;
+pjson document = pJsonParser().parse(jsonBytes, byteCount, error);
+if (!error.ok) {
     std::cerr << error.line << ':' << error.column
               << ": " << error.message << '\n';
     return;
 }
 ```
 
-An allocator passed to a constructor or parse overload is borrowed and must
-outlive the complete tree. Persistent nodes and wrapper objects use it; backing
-storage inside standard containers and parser scratch space use their normal
-standard allocators. Copying a `pjson` is deep. Assignment preserves the
-destination allocator; a cross-allocator move may allocate. `swap()` is O(1)
-only when `canSwap()` is true.
+An allocator passed to a `pjson` or `pJsonParser` constructor is borrowed and must
+outlive the complete tree. The returned value is bound to that allocator.
+Persistent nodes and wrapper objects use it; backing storage inside standard
+containers and parser scratch space use their normal standard allocators.
+Copying a `pjson` is deep. Assignment preserves the destination allocator; a
+cross-allocator move may allocate. `swap()` is O(1) only when `canSwap()` is
+true.
 
 ### Parse diagnostics have a reusable lifecycle
 
-Reporting parse and SAX overloads reset `ParseError` on entry. Success leaves
-`ok == true`, offset zero, line one, column one, and an empty message. Failure
-sets `ok == false` and reports the first problem. Offset is a zero-based byte
-position; line and byte-column are one-based. A reused error never intentionally
-retains diagnostics from the previous call.
+Reporting parse and SAX overloads reset `pJsonParser::Error` on entry. Success leaves
+`ok == true`, `code == None`, offset zero, line one, column one, and an empty
+message. Failure sets `ok == false`, a stable `code`, and reports the first
+problem. Offset is a zero-based byte position; line and byte-column are
+one-based. A reused error never intentionally retains diagnostics from the
+previous call.
 
 ## Parsing always enforces RFC 8259
 
@@ -105,16 +112,16 @@ All DOM and SAX entry points reject malformed UTF-8, invalid escapes, lone
 surrogates, raw string controls, non-lowercase literals, comments, trailing
 commas, invalid numbers, `NaN`, `Infinity`, and trailing non-whitespace data.
 
-`ParseOptions` controls only work budgets and duplicate names:
+`pJsonParser::Options` controls only work budgets and duplicate names:
 
 ```cpp
-pjson::ParseOptions options;
+pJsonParser::Options options;
 options.maxDepth = 512;
 options.maxNodes = 1000000;
 options.maxInputBytes = size_t(64) * 1024 * 1024;
-options.duplicateKeys = pjson::ParseOptions::RejectDuplicateKeys;
+options.duplicateKeys = pJsonParser::Options::RejectDuplicateKeys;
 
-pjson::unique_ptr document = pjson::parse(json, error, options);
+pjson document = pJsonParser(options).parse(json, error);
 ```
 
 Zero means unlimited for node and input-byte budgets. A non-positive depth
@@ -134,7 +141,7 @@ and can replace the receiver's type. Use `find` for a borrowed node and
 `tryGet` for a typed value:
 
 ```cpp
-const pjson& root = *document;
+const pjson& root = document;
 
 int64_t count = 0;
 if (root.tryGet("count", count))
@@ -147,16 +154,17 @@ if (const pjson* settings = root.find("settings")) {
 }
 ```
 
-`tryGet` supports `int64_t`, `double`, `bool`, `std::string`, and
-`StringView`. It performs no coercion except integer-to-double widening, and it
-leaves the destination unchanged on failure. `StringView` is valid only while
-the owning node remains alive and unchanged.
+`tryGet` supports `int64_t`, `uint64_t`, `double`, `bool`, `std::string`, and
+`StringView`. It performs no coercion except integer-to-double widening and the
+exact signed/unsigned reads described in the numeric section, and it leaves the
+destination unchanged on failure. `StringView` is valid only while the owning
+node remains alive and unchanged.
 
 Iterate without exposing container internals:
 
 ```cpp
 for (size_t i = 0; i < array.size(); ++i) {
-    if (const pjson* value = array.find(static_cast<int>(i)))
+    if (const pjson* value = array.findIndex(i))
         consume(*value);
 }
 
@@ -168,21 +176,25 @@ for (const std::string& key : object.keys()) {
 
 `find(index)` supports negative end-relative indexes, but normal forward loops
 should convert their checked `size_t` position to `int`. `keys()` returns a
-copy in deterministic map order. Child pointers are borrowed and can be
-invalidated by mutation of the child or an ancestor.
+copy in private native storage order; `forEachMember()` uses that same
+unspecified order. Child
+pointers are borrowed and can be invalidated by mutation of the child or an ancestor.
 
 ## Numeric migration
 
-pjson stores numbers as signed `int64_t` or `double`; it has no unsigned type.
-Use `isInt()`/`isDouble()` to inspect storage and `tryGet` for extraction.
-Reading an integer into `double` is allowed but may lose precision beyond
-`2^53`; reading a double into `int64_t` is not an implicit `tryGet` conversion.
+pjson stores numbers as signed `int64_t`, unsigned `uint64_t` (for values above
+`INT64_MAX`), or `double`. Use `isInt()`/`isUInt()`/`isInteger()`/`isDouble()`
+to inspect storage and `tryGet` for extraction. Reading an integer into `double`
+is allowed but may lose precision beyond `2^53`; reading a double into an integer
+is not an implicit `tryGet` conversion.
 
-Before migrating `SetUint64`, `GetUint64`, or `IsUint64` code, define an
-application policy. Values above `INT64_MAX` cannot be represented exactly as
-the integer kind. Reject them, store them as strings, or accept documented
-double precision loss. Use explicit `int64_t` and `double` at all API
-boundaries rather than relying on C++ overload selection.
+`SetUint64`, `GetUint64`, and `IsUint64` map directly onto
+`operator=(uint64_t)`, `tryGet(uint64_t&)`, and `isUInt()`; the full `uint64_t`
+range round-trips exactly. Values above `UINT64_MAX`, and non-finite floats, are
+rejected by default (`pJsonParser::Options::AllowLossyNumbers` and
+`SerializeOptions::NonFinitePolicy` opt out). Use explicit `int64_t`,
+`uint64_t`, and `double` at all API boundaries rather than relying on C++
+overload selection.
 
 ## JSON Pointer and patching
 
@@ -194,14 +206,15 @@ unsigned decimal indices, and `-` is not a lookup index. Use
 For general pointer mutation, apply an RFC 6902 patch:
 
 ```cpp
-auto patch = pjson::parse(R"([
+pjson patch = pJsonParser().parse(R"([
   {"op":"replace", "path":"/address/city", "value":"Paris"},
   {"op":"add", "path":"/tags/-", "value":"new"}
-])");
+])",
+                           error);
 
 pjson::PatchError patchError;
 pjson::PatchOptions patchOptions;
-if (!patch || !document->applyPatch(*patch, patchError, patchOptions)) {
+if (!error.ok || !document.applyPatch(patch, patchError, patchOptions)) {
     // The document is unchanged on failure.
 }
 ```
@@ -224,7 +237,7 @@ Moving the document root beneath itself reports
 
 ## SAX input and serialized output
 
-Derive from `pjson::SaxHandler` and override the callbacks of interest. Integer
+Derive from `pJsonParser::SaxHandler` and override the callbacks of interest. Integer
 events use `int64_t`; floating events use `double`. Returning `false` cancels
 the parse. Callback string and key references are borrowed only for the
 callback duration.
@@ -237,22 +250,23 @@ pjson::SerializeOptions options = pjson::SerializeOptions::prettyPrinted();
 options.indentWidth = 2;
 options.indentCharacter = ' ';
 options.escapeNonAscii = true;
-options.keyOrder = pjson::SerializeOptions::AscendingKeys;
 options.maxOutputBytes = size_t(64) * 1024 * 1024;
 
-document->write(output, options);
+document.write(output, options);
 if (!output)
     reportWriteFailure();
 
-std::string encoded = document->toString(options);
+std::string encoded = document.toString(options);
 ```
 
 The defaults are compact layout, two-space indentation, space indentation,
-UTF-8 output, ascending keys, and a 64 MiB output limit. Zero explicitly makes
-`maxOutputBytes` unlimited. Object insertion order is not retained. Non-finite
-stored doubles serialize as JSON null. Finite doubles use locale-independent,
-stable round-trip formatting with 15–17 significant digits; shortest spelling
-is not part of the contract.
+UTF-8 output, and a 64 MiB output limit. Zero explicitly makes
+`maxOutputBytes` unlimited. Object insertion order is not retained, and
+serialization order is unspecified. A stored
+non-finite double fails serialization by default (`SerializeOptions::nonFinite`
+selects `RejectNonFinite`, `NonFiniteToNull`, or `NonFiniteToString`). Finite
+doubles use pinned Ryu shortest-round-trip conversion followed by pjson's
+documented fixed/scientific spelling policy.
 
 Invalid UTF-8 in any stored string or object key is a serialization failure,
 regardless of `escapeNonAscii`: `toString()` throws `std::invalid_argument`.
@@ -264,45 +278,61 @@ the parser itself accepts only valid UTF-8.
 
 ## Schema validation
 
-RapidJSON 1.1 validates compiled draft-04 schemas. pjson instead validates an
-already-built value directly against another `pjson`, with no compiled-schema
-object and no SAX validation. The error overload appends `SchemaError` values;
-clear a reused vector first. Error paths are RFC 6901 pointers, with `""`
-denoting the root.
+RapidJSON 1.1 validates compiled draft-04 schemas. pjson instead compiles a
+schema (itself a `pjson`) into a standalone `ByteDance::pJsonSchemaValidator`
+(declared in `<pjson_schema.h>`), then validates already-built values against
+it, with no SAX validation. The validator is a pure consumer of pjson's public
+API. The error overload appends `pJsonSchemaValidator::Error` values; clear a
+reused vector first. Error paths are RFC 6901 pointers, with `""` denoting the
+root.
 
-The documented pjson subset is the complete enforced vocabulary; it is not a
-complete JSON Schema draft implementation:
+Default construction implements pjson's explicitly named subset dialect, not
+RapidJSON's Draft 4 behavior. `Options::draft2020()` selects the official Draft
+2020-12 URI, bundled standard meta-schema validation, modern `$ref` behavior,
+and per-resource vocabulary activation. Custom meta-schema URIs and external
+resources are loaded only through the explicit resolver. An unsupported root
+`$schema` or required `$vocabulary` makes `isSchemaValid()` false; inspect
+`schemaErrors()` before trusting validation. Unknown optional vocabularies are
+accepted as annotations.
+
+The following keywords form the default subset and the required Draft 2020-12
+vocabularies implemented by the opt-in mode:
 
 | Area | Supported keywords/forms |
 |---|---|
 | Any value | `type`, `enum`, `const` |
-| References | local-fragment `$ref` into the root schema |
-| Objects | `properties`, `patternProperties`, `propertyNames`, `required`, `dependentRequired`, `dependencies`, `additionalProperties`, `minProperties`, `maxProperties` |
-| Arrays | schema or tuple-array `items`, `minItems`, `maxItems`, `uniqueItems` |
+| References | `$id`, `$anchor`, `$dynamicAnchor`, `$ref`, `$dynamicRef`; explicit resolver for external documents |
+| Objects | `properties`, `patternProperties`, `propertyNames`, `required`, `dependentRequired`, `dependencies`, `dependentSchemas`, `additionalProperties`, `unevaluatedProperties`, `minProperties`, `maxProperties` |
+| Arrays | `items`, `prefixItems`, `contains`, `minContains`, `maxContains`, `unevaluatedItems`, `minItems`, `maxItems`, `uniqueItems` |
 | Numbers | `minimum`, `maximum`, numeric `exclusiveMinimum`, numeric `exclusiveMaximum`, `multipleOf` |
 | Strings | `minLength`, `maxLength`, `pattern`, supported `format` names |
-| Composition | `allOf`, `anyOf`, `oneOf`, `not` |
+| Composition | `allOf`, `anyOf`, `oneOf`, `not`, `if`, `then`, `else` |
 | Schema values | Boolean schemas |
 
-Unknown or unsupported schema keywords are ignored and therefore are not
-enforced. Treat this as a warning, not forward-compatible validation: typos and
-unsupported security constraints can silently weaken a schema. Audit every
-schema against this table and retain RapidJSON or another validator when the
-application depends on any other vocabulary. Remote references are unsupported.
+Unknown or unsupported schema keywords are ignored in permissive subset mode
+and therefore are not constraints. `Options::strict()` rejects unsupported
+standard keywords; `Options::draft2020()` applies the implemented official
+dialect and per-resource vocabulary policy. The complete optional
+format-assertion vocabulary, arbitrary-precision numbers, and other drafts
+remain out of scope. URI resources, anchors, dynamic
+references, and `unevaluated*` are available through the modern subset option.
+External documents require an explicit resolver callback; pjson never performs
+network I/O.
 
 `minLength` and `maxLength` count Unicode code points rather than UTF-8 bytes.
 `pattern` uses ECMAScript syntax and search semantics, but the default policy is
 intentionally narrower: pattern and subject sizes are capped and expressions
 outside a conservative safe subset fail validation.
-`SchemaOptions::trustedRegex()` removes only regex restrictions and is
-appropriate only for trusted schemas and instances. Traversal, reference, work,
-and collected-error budgets remain active. Known formats are checked by default;
-unknown format names are ignored.
+`pJsonSchemaValidator::Options::trustedRegex()` removes only regex restrictions
+and is appropriate only for trusted schemas and instances. Traversal, reference,
+work, and collected-error budgets remain active. Known formats are checked by
+default; unknown format names are ignored.
 
 ## Practical migration sequence
 
-1. Change every DOM parse result to `pjson::unique_ptr` and check it before use.
-2. Replace parse-error inspection and exceptions with `ParseError`; account for
+1. Change every DOM parse result to a `pjson` value plus a `pJsonParser::Error`, and
+   check `error.ok` before use.
+2. Replace parse-error inspection and exceptions with `pJsonParser::Error`; account for
    its reset-on-entry lifecycle.
 3. Remove permissive syntax flags and choose explicit budgets and duplicate-key
    policy.
@@ -310,9 +340,9 @@ unknown format names are ignored.
    only for construction and intentional mutation.
 5. Replace member/array container iteration with `keys()`/`find(key)` and
    `size()`/`find(index)`.
-6. Normalize numeric interfaces to `int64_t` and `double`, including SAX
-   callbacks and vectors.
+6. Normalize numeric interfaces to `int64_t`, `uint64_t`, and `double`, including
+   SAX callbacks and vectors.
 7. Replace Writer and pretty-boolean configuration with `SerializeOptions`, and
    handle invalid-UTF-8 output failure.
-8. Verify every schema keyword is in pjson's documented subset and add
-   accepted/rejected tests for every relied-upon constraint.
+8. Choose the default/strict subset or `Options::draft2020()` deliberately and
+   add accepted/rejected tests for every relied-upon constraint.

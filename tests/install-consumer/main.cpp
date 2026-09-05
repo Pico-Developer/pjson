@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-static_assert(PJSON_ABI_VERSION == 4, "unexpected pjson ABI generation");
+static_assert(PJSON_ABI_VERSION == 2, "unexpected pjson ABI generation");
 static_assert(sizeof(ByteDance::pjson) == sizeof(void*) * 2,
               "installed pjson must use the two-pointer ABI");
 static_assert(sizeof(ByteDance::pJsonParser) == sizeof(void*),
@@ -28,8 +28,8 @@ int main() {
 
     // The public macro and linked library function must identify the same
     // release; this also detects stale headers paired with a different binary.
-    if (std::strcmp(PJSON_VERSION, "4.0.0") != 0 ||
-        std::strcmp(pjson::getVersion(), "4.0.0") != 0) {
+    if (std::strcmp(PJSON_VERSION, "2.0.0") != 0 ||
+        std::strcmp(pjson::getVersion(), "2.0.0") != 0) {
         std::cerr << "unexpected pjson version" << std::endl;
         return 1;
     }

@@ -9,9 +9,8 @@ Applies to: `pjson.h`, `pjson_parser.h`, `pjson_schema.h`, and the `pjson::pjson
 This page consolidates the guarantees that applications may rely on. The public
 headers remain authoritative for overload signatures and enum members. Examples,
 benchmarks, private layout, exact diagnostic prose, and undocumented implementation
-details are not compatibility promises. pjson follows Semantic Versioning for source
-and documented behavior, but does not promise a stable C++ ABI; rebuild the library
-and dependents together after an upgrade.
+details are not compatibility promises. pjson follows Semantic Versioning for
+source, documented behavior, and its same-major ABI baseline.
 
 ## 1. Value and ownership model
 
@@ -30,12 +29,13 @@ The representations are:
 | fractional/exponent number | `jsonNumberDouble` | `double` |
 | boolean | `jsonBoolean` | `bool` |
 | array | `jsonArray` | ordered children |
-| object | `jsonObject` | bytewise-sorted, unique `std::string` keys |
+| object | `jsonObject` | unique `std::string` keys; storage order unspecified |
 
 Object keys and strings may contain embedded NUL bytes. `std::string` and
 `StringView` APIs preserve their full lengths; `const char*` APIs are conventionally
-NUL-terminated and reject null pointers where documented. Objects do not retain
-insertion order.
+NUL-terminated and reject null pointers where documented. Objects use private,
+process-seeded hash storage. Insertion, `keys()`, callback traversal, and
+serialization order are unspecified.
 
 `size()` is the member/element count for containers and zero for scalars, so
 `empty()` is true for every scalar. `clear()` keeps an array or object container but
@@ -164,11 +164,10 @@ trip. Exact lexical spelling is not otherwise guaranteed.
 
 ## 6. Serialization contract
 
-Defaults are compact output, raw valid UTF-8, ascending bytewise object-key order,
-non-finite rejection, and a 64 MiB output limit. Pretty output defaults to two spaces.
-Descending key order and non-ASCII escaping are explicit options; an indentation
-character other than space/tab is normalized to space. A zero output limit means
-unlimited.
+Defaults are compact output, raw valid UTF-8, non-finite rejection, and a 64 MiB
+output limit. Pretty output defaults to two spaces. Non-ASCII escaping is an
+explicit option; an indentation character other than space/tab is normalized to
+space. Object-member output order is unspecified. A zero output limit means unlimited.
 
 Stored invalid UTF-8 is never emitted. NaN and infinity fail by default; explicit
 policies may emit `null` or the strings `"NaN"`, `"Infinity"`, and
@@ -252,11 +251,23 @@ Validation/reference/work/error/resource budgets remain active.
 
 | Facility | Contract | Scope caveat |
 |---|---|---|
-| JSON parse/output | RFC 8259 and ECMA-404 data model | duplicate-name policy is explicit; object order is library-defined |
+| JSON parse/output | RFC 8259 and ECMA-404 data model | duplicate-name policy is explicit; object order is unspecified |
 | JSON Pointer | RFC 6901 | lookup API only; `-` is Patch syntax, not lookup |
 | JSON Patch | RFC 6902 | bounded and document-atomic |
 | JSON Merge Patch | RFC 7396 | bounded and document-atomic |
 | JSON Schema | pjson subset by default; required Draft 2020-12 vocabularies through `Options::draft2020()` | optional format-assertion, bignum, and cross-draft behavior is not complete |
+
+## 12. ABI baseline
+
+`PJSON_ABI_VERSION` is 2. Within compatible 2.x releases, `pjson` remains a
+two-pointer opaque handle and `pJsonParser`/`pJsonSchemaValidator` remain
+one-pointer opaque handles. Public option/error layouts, virtual interfaces,
+enum values, signatures, calling conventions, and exported symbols remain
+compatible. Private representation and source organization may change.
+
+ABI compatibility assumes the same compiler ABI, standard-library ABI,
+architecture, and compatible build settings. A different major version, ABI
+version, or shared-library SOVERSION is an explicit rebuild boundary.
 
 Stable public enum/code values and documented defaults are behavioral API. Exact error
 messages, private storage, benchmark numbers, and source-file organization may change

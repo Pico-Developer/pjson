@@ -31,11 +31,11 @@
 // Library version. PJSON_VERSION is the string form ("MAJOR.MINOR.PATCH");
 // the numeric parts allow compile-time checks, e.g.
 //   #if PJSON_VERSION_MAJOR >= 1
-#define PJSON_VERSION_MAJOR 4
+#define PJSON_VERSION_MAJOR 2
 #define PJSON_VERSION_MINOR 0
 #define PJSON_VERSION_PATCH 0
-#define PJSON_VERSION "4.0.0"
-#define PJSON_ABI_VERSION 4
+#define PJSON_VERSION "2.0.0"
+#define PJSON_ABI_VERSION 2
 
 #if defined(_WIN32) && defined(PJSON_SHARED)
 #if defined(PJSON_BUILDING_LIBRARY)

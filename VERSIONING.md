@@ -4,7 +4,7 @@
 # Versioning Policy
 
 pjson uses [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html). The
-current stable version is **4.0.0**. Historical `0.0.x` releases used a
+current stable version is **2.0.0**. Historical `0.0.x` releases used a
 `release-` tag prefix and predate this stability policy.
 
 ## Version meaning
@@ -32,7 +32,7 @@ Private implementation details, tests, benchmarks, examples, diagnostics not
 documented as stable, and repository layout outside installed artifacts are not
 public API.
 
-Beginning with 3.0.0, pjson also maintains ABI compatibility within a major
+Beginning with 2.0.0, pjson also maintains ABI compatibility within a major
 release for the same compiler ABI, standard-library ABI, architecture, and
 compatible build settings. `PJSON_ABI_VERSION` identifies that ABI generation.
 The `pjson`, `pJsonParser`, and `pJsonSchemaValidator` object layouts are fixed

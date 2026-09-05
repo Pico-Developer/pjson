@@ -9,7 +9,35 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases follow
 
 ## [Unreleased]
 
-## [4.0.0] - 2026-09-04
+## [2.0.0] - 2026-09-05
+
+This release contains the complete audited change set since 1.0.0. It includes
+source- and ABI-breaking API improvements, so it is a major version bump.
+
+### Added
+
+- Added an exact unsigned-integer representation (`jsonNumberUInt`): `uint64_t`
+  assignment/append/vectors, `isUInt()`, `isInteger()`, `tryGet(uint64_t&)`, the
+  `SaxHandler::onUInt(uint64_t)` event, and exact signed/unsigned/double
+  comparison and decimal serialization without converting through `double`.
+- Added a structured `ParseError::Code` category (syntax, invalid encoding,
+  duplicate key, number range, depth/input/node limits, allocation failure,
+  stream error, callback error, invalid argument) alongside the existing
+  message and byte/line/column coordinates.
+- Added non-allocating traversal: `forEachMember` and `forEachElement`
+  (const and mutable) that visit borrowed children without copying keys.
+- Added construction and mutation primitives: `null()`, `object()`, `array()`
+  factories, `operator=(std::nullptr_t)`, `pushBack()` (copy and move),
+  `insertOrAssign()`, `reserve()`, checked `at()` for keys and indices, and
+  `contains()`.
+- Added `SerializeOptions::NonFinitePolicy` (`RejectNonFinite` default,
+  `NonFiniteToNull`, `NonFiniteToString`) governing NaN/infinity output.
+- Added `ParseOptions::NumberPolicy` (`RejectUnrepresentableNumbers` default,
+  `AllowLossyNumbers`) governing numbers outside the exact 64-bit and binary64
+  ranges.
+- Added JSON Schema Draft 2020-12 applicator keywords to the validator:
+  `if`/`then`/`else`, `prefixItems`, `contains`/`minContains`/`maxContains`, and
+  `dependentSchemas`, plus a strict fail-closed subset mode.
 
 ### Changed
 
@@ -20,19 +48,12 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases follow
 - **BREAKING (API):** removed `SerializeOptions::KeyOrder` and `keyOrder`; JSON
   objects are unordered by specification, so the serializer no longer pays to
   impose an order.
-- **BREAKING (ABI):** advanced `PJSON_ABI_VERSION` and shared-library
-  `SOVERSION` to 4 because removing the public `SerializeOptions` field changes
-  its layout.
-
-### Fixed
+- **BREAKING (ABI):** established `PJSON_ABI_VERSION` and shared-library
+  `SOVERSION` 2 for the new opaque object layouts and public option structures.
 
 - Restored the primary builder syntax for native integral and floating-point
   values and common vectors. Numeric literals can again be assigned and
   appended without casts, while preserving signed versus unsigned storage.
-
-## [3.0.0] - 2026-09-03
-
-### Changed
 
 - **BREAKING (API):** parsing is now provided by the standalone
   `ByteDance::pJsonParser` class in `<pjson_parser.h>`. Parser `Options`,
@@ -48,12 +69,12 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases follow
   allocator identity and an opaque implementation pointer. Null values share an
   allocation-free private sentinel; non-null representation changes no longer
   alter `sizeof(pjson)`. `pJsonParser` is likewise a one-pointer PImpl. Explicit
-  symbol visibility replaces automatic Windows export, and ABI generation 3 is
+  symbol visibility replaces automatic Windows export, and ABI generation 2 is
   declared by `PJSON_ABI_VERSION` and shared-library `SOVERSION`.
 - Added `Allocator::ImplementationAllocation` for non-null `pjson` private-state
   allocation. Custom allocators must accept the appended allocation kind.
 - Default construction is now explicitly `noexcept`, matching its
-  allocation-free null-sentinel implementation and the 3.0 ABI contract.
+  allocation-free null-sentinel implementation and the 2.0 ABI contract.
 - Added non-vivifying `findIndex(size_t)` lookup so large non-negative indexes
   never narrow through the signed `find(int)` API.
 - Shared-library consumers now receive `PJSON_SHARED` through both exported
@@ -157,40 +178,6 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases follow
   dot segments before invoking an external resolver.
 - Hardened benchmark report comparison to reject missing, extra, duplicate, or
   invalid result rows instead of silently comparing only their intersection.
-
-## [2.0.0] - 2026-08-31
-
-This release contains correctness fixes, an ABI-breaking numeric-model change,
-and new APIs, so it is a major version bump.
-
-### Added
-
-- Added an exact unsigned-integer representation (`jsonNumberUInt`): `uint64_t`
-  assignment/append/vectors, `isUInt()`, `isInteger()`, `tryGet(uint64_t&)`, the
-  `SaxHandler::onUInt(uint64_t)` event, and exact signed/unsigned/double
-  comparison and decimal serialization without converting through `double`.
-- Added a structured `ParseError::Code` category (syntax, invalid encoding,
-  duplicate key, number range, depth/input/node limits, allocation failure,
-  stream error, callback error, invalid argument) alongside the existing
-  message and byte/line/column coordinates.
-- Added non-allocating traversal: `forEachMember` and `forEachElement`
-  (const and mutable) that visit borrowed children without copying keys.
-- Added construction and mutation primitives: `null()`, `object()`, `array()`
-  factories, `operator=(std::nullptr_t)`, `pushBack()` (copy and move),
-  `insertOrAssign()`, `reserve()`, checked `at()` for keys and indices, and
-  `contains()`.
-- Added `SerializeOptions::NonFinitePolicy` (`RejectNonFinite` default,
-  `NonFiniteToNull`, `NonFiniteToString`) governing NaN/infinity output.
-- Added `ParseOptions::NumberPolicy` (`RejectUnrepresentableNumbers` default,
-  `AllowLossyNumbers`) governing numbers outside the exact 64-bit and binary64
-  ranges.
-- Added JSON Schema Draft 2020-12 applicator keywords to the validator:
-  `if`/`then`/`else`, `prefixItems`, `contains`/`minContains`/`maxContains`, and
-  `dependentSchemas`, plus a strict fail-closed subset mode
-  (`pJsonSchemaValidator::Options::strict()` / `strictSubset`) that rejects unsupported standard
-  keywords instead of ignoring them.
-
-### Changed
 
 - **BREAKING (API):** `parse()` and `parseStream()` now return a `pjson` value
   instead of `pjson::unique_ptr`; the `pjson::unique_ptr` typedef and
@@ -345,9 +332,7 @@ and new APIs, so it is a major version bump.
 
 - Initial pjson source release.
 
-[Unreleased]: https://github.com/Pico-Developer/pjson/compare/4.0.0...HEAD
-[4.0.0]: https://github.com/Pico-Developer/pjson/compare/3.0.0...4.0.0
-[3.0.0]: https://github.com/Pico-Developer/pjson/compare/2.0.0...3.0.0
+[Unreleased]: https://github.com/Pico-Developer/pjson/compare/2.0.0...HEAD
 [2.0.0]: https://github.com/Pico-Developer/pjson/compare/1.0.0...2.0.0
 [1.0.0]: https://github.com/Pico-Developer/pjson/compare/release-0.0.3...1.0.0
 [0.0.3]: https://github.com/Pico-Developer/pjson/compare/release-0.0.2...release-0.0.3

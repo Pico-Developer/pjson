@@ -60,7 +60,7 @@ The contract is:
 | `ObjectAllocation` | The internal wrapper for an object-valued node |
 | `ImplementationAllocation` | The private representation of a non-null `pjson` value |
 
-`ImplementationAllocation` was appended in ABI generation 3; custom allocators
+`ImplementationAllocation` is part of ABI generation 2; custom allocators
 must accept every defined kind and should avoid fixed-size tables that assume only
 the original four values. The hook deliberately does not replace every allocation
 in the process. The internal buffers/nodes allocated by `std::string`,

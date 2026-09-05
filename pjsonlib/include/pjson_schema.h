@@ -144,8 +144,8 @@ namespace ByteDance {
             size_t maxRegexPatternBytes; ///< 0 = unlimited (default: 256).
             size_t maxRegexSubjectBytes; ///< 0 = unlimited (default: 4096).
             bool allowUnsafeRegex;       ///< Permits unrestricted ECMAScript regex (default false).
-            /// Recursive validation depth (default and absolute hard ceiling: 64).
-            /// Zero selects 64, and larger values are clamped to 64.
+            /// Recursive validation depth (default and absolute hard ceiling: 32).
+            /// Zero selects 32, and larger values are clamped to 32.
             size_t maxValidationDepth; ///< Recursive validation depth budget.
             /// Resolved references (default 1024); zero selects the hard ceiling of 1024.
             size_t maxRefResolutions; ///< Resolved-reference budget.

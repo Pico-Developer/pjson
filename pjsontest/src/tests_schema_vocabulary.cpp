@@ -300,9 +300,9 @@ TEST(schema_vocab_ref_chain_still_obeys_depth_budget) {
 
 TEST(schema_vocab_ref_zero_depth_uses_hard_ceiling) {
     pjson_test::SchemaOptions opts = optionsWithDepthBudget(0);
-    CHECK_EQ(pjson_test::SchemaOptions().maxValidationDepth, size_t(64));
-    const pjson schema = makeNestedPropertySchema(64);
-    const pjson instance = makeNestedPropertyInstance(64);
+    CHECK_EQ(pjson_test::SchemaOptions().maxValidationDepth, size_t(32));
+    const pjson schema = makeNestedPropertySchema(32);
+    const pjson instance = makeNestedPropertyInstance(32);
 
     std::vector<pjson_test::SchemaError> errors;
     CHECK(!pjson_test::schemaValidate(instance, schema, errors, opts));
@@ -311,10 +311,10 @@ TEST(schema_vocab_ref_zero_depth_uses_hard_ceiling) {
 
 TEST(schema_vocab_ref_requested_depth_is_clamped_to_hard_ceiling) {
     pjson_test::SchemaOptions opts = optionsWithDepthBudget(2048);
-    const pjson withinLimitSchema = makeNestedPropertySchema(63);
-    const pjson withinLimitInstance = makeNestedPropertyInstance(63);
-    const pjson schema = makeNestedPropertySchema(64);
-    const pjson instance = makeNestedPropertyInstance(64);
+    const pjson withinLimitSchema = makeNestedPropertySchema(31);
+    const pjson withinLimitInstance = makeNestedPropertyInstance(31);
+    const pjson schema = makeNestedPropertySchema(32);
+    const pjson instance = makeNestedPropertyInstance(32);
 
     CHECK(pjson_test::schemaValidate(withinLimitInstance, withinLimitSchema, opts));
     std::vector<pjson_test::SchemaError> errors;
@@ -712,7 +712,7 @@ TEST(schema_additional_properties_large_object_stays_within_work_budget) {
 
 TEST(schema_validation_zero_work_budget_uses_hard_ceiling) {
     pjson_test::SchemaOptions opts = optionsWithWorkBudget(0);
-    opts.maxValidationDepth = 64;
+    opts.maxValidationDepth = 32;
     opts.maxRefResolutions = 2000000;
     const pjson schema = makeBranchingWorkSchema(20);
     pjson instance;

@@ -236,7 +236,7 @@ pJsonSchemaValidator::Options options;
 options.maxRegexPatternBytes = 256;
 options.maxRegexSubjectBytes = 4096;
 options.allowUnsafeRegex = false;
-options.maxValidationDepth = 64;
+options.maxValidationDepth = 32;
 options.maxRefResolutions = 1024;
 options.maxValidationWork = 1000000;
 options.maxErrors = 100;
@@ -261,8 +261,9 @@ These are the defaults. A zero regex byte limit disables that individual regex
 limit and should be reserved for trusted input. Zero for the validation-depth,
 reference-resolution, work, or error-count budget retains that budget's
 documented hard ceiling rather than disabling it.
-Validation depth has an absolute hard ceiling of 64; larger configured values
-are clamped to 64 to bound native-stack use during recursive keyword evaluation.
+Validation depth has an absolute hard ceiling of 32; larger configured values
+are clamped to 32 to bound native-stack use during recursive keyword evaluation
+on every supported platform, including Windows' smaller default thread stack.
 `pJsonSchemaValidator::Options::trustedRegex()` disables both regex byte limits
 and permits unsafe regular expressions while retaining all other defaults. Set
 `validateFormats = false` when known formats should act only as annotations.

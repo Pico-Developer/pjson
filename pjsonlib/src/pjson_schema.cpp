@@ -56,7 +56,7 @@ namespace {
     // Recursive validation still uses native recursion for applicator keywords.
     // Keep its logical depth below a conservative stack-safe ceiling even when a
     // caller requests a larger value.
-    const size_t kSchemaValidationDepthHardLimit = 64;
+    const size_t kSchemaValidationDepthHardLimit = 32;
 
     //===------------------------------------------------------------------===//
     // Public-API accessors

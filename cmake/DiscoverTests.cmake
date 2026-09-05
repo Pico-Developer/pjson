@@ -1,6 +1,8 @@
 # SPDX-FileCopyrightText: 2026 ByteDance Ltd. and/or its affiliates
 # SPDX-License-Identifier: Apache-2.0
 
+cmake_policy(SET CMP0057 NEW)
+
 if(NOT DEFINED PJSON_TEST_EXECUTABLE OR NOT DEFINED PJSON_TEST_OUTPUT)
     message(FATAL_ERROR "PJSON_TEST_EXECUTABLE and PJSON_TEST_OUTPUT are required")
 endif()

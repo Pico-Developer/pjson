@@ -20,11 +20,118 @@
 #include "pjson.h"
 #include "test_harness.h"
 
+#include <algorithm>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
 using namespace ByteDance;
+
+//===----------------------------------------------------------------------===//
+// Ordinary C++ integer expressions must remain usable by the builder API.
+// The explicit int64_t/uint64_t overload pair otherwise makes common literals
+// ambiguous against bool and double, defeating the library's primary syntax.
+//===----------------------------------------------------------------------===//
+TEST(native_numeric_builder_types_are_unambiguous) {
+    pjson object;
+    const short signedShort = -2;
+    const unsigned short unsignedShort = 2;
+    const unsigned int unsignedInt = 3U;
+    const long signedLong = -4L;
+    const unsigned long unsignedLong = 5UL;
+    const long long signedLongLong = -6LL;
+    const unsigned long long unsignedLongLong = 7ULL;
+
+    object["literal"] = 42;
+    object["signedShort"] = signedShort;
+    object["unsignedShort"] = unsignedShort;
+    object["unsignedInt"] = unsignedInt;
+    object["signedLong"] = signedLong;
+    object["unsignedLong"] = unsignedLong;
+    object["signedLongLong"] = signedLongLong;
+    object["unsignedLongLong"] = unsignedLongLong;
+    object["bool"] = true;
+
+    int64_t signedValue = 0;
+    uint64_t unsignedValue = 0;
+    bool boolValue = false;
+    CHECK(object.tryGet("literal", signedValue));
+    CHECK_EQ(signedValue, int64_t(42));
+    CHECK(object.tryGet("signedShort", signedValue));
+    CHECK_EQ(signedValue, int64_t(-2));
+    CHECK(object.tryGet("unsignedShort", unsignedValue));
+    CHECK_EQ(unsignedValue, uint64_t(2));
+    CHECK(object.tryGet("unsignedInt", unsignedValue));
+    CHECK_EQ(unsignedValue, uint64_t(3));
+    CHECK(object.at("unsignedInt").isUInt());
+    CHECK(object.tryGet("signedLong", signedValue));
+    CHECK_EQ(signedValue, int64_t(-4));
+    CHECK(object.tryGet("unsignedLong", unsignedValue));
+    CHECK_EQ(unsignedValue, uint64_t(5));
+    CHECK(object.tryGet("signedLongLong", signedValue));
+    CHECK_EQ(signedValue, int64_t(-6));
+    CHECK(object.tryGet("unsignedLongLong", unsignedValue));
+    CHECK_EQ(unsignedValue, uint64_t(7));
+    CHECK(object.tryGet("bool", boolValue));
+    CHECK(boolValue);
+
+    pjson array;
+    array += 7;
+    array += 8U;
+    array += 9.5F;
+    array += signedShort;
+    array += unsignedShort;
+    array += 10L;
+    array += 11UL;
+    array += 12LL;
+    array += 13ULL;
+    array += static_cast<long double>(14.5);
+    CHECK(array.at(0).isInt());
+    CHECK(array.at(1).isUInt());
+    CHECK(array.tryGet(0, signedValue));
+    CHECK_EQ(signedValue, int64_t(7));
+    CHECK(array.tryGet(1, unsignedValue));
+    CHECK_EQ(unsignedValue, uint64_t(8));
+    double floatingValue = 0.0;
+    CHECK(array.tryGet(2, floatingValue));
+    CHECK_EQ(floatingValue, 9.5);
+    CHECK(array.at(3).isInt());
+    CHECK(array.at(4).isUInt());
+    CHECK(array.at(5).isInt());
+    CHECK(array.at(6).isUInt());
+    CHECK(array.at(7).isInt());
+    CHECK(array.at(8).isUInt());
+    CHECK(array.tryGet(9, floatingValue));
+    CHECK_EQ(floatingValue, 14.5);
+
+    pjson vectors;
+    vectors = std::vector<int>({-1, 2});
+    vectors += std::vector<unsigned int>({3U, 4U});
+    vectors += std::vector<short>({-5});
+    vectors += std::vector<unsigned short>({6});
+    vectors += std::vector<long>({5L});
+    vectors += std::vector<unsigned long>({6UL});
+    vectors += std::vector<long long>({7LL});
+    vectors += std::vector<unsigned long long>({8ULL});
+    CHECK_EQ(vectors.size(), size_t(10));
+    CHECK(vectors.at(0).isInt());
+    CHECK(vectors.at(2).isUInt());
+    CHECK(vectors.tryGet(0, signedValue));
+    CHECK_EQ(signedValue, int64_t(-1));
+    CHECK(vectors.tryGet(3, unsignedValue));
+    CHECK_EQ(unsignedValue, uint64_t(4));
+
+    pjson floats;
+    floats = std::vector<float>({1.25F});
+    floats += std::vector<float>({2.5F});
+    floats += std::vector<long double>({3.75L});
+    CHECK(floats.tryGet(0, floatingValue));
+    CHECK_EQ(floatingValue, 1.25);
+    CHECK(floats.tryGet(1, floatingValue));
+    CHECK_EQ(floatingValue, 2.5);
+    CHECK(floats.tryGet(2, floatingValue));
+    CHECK_EQ(floatingValue, 3.75);
+}
 
 //===----------------------------------------------------------------------===//
 // Factories build each JSON kind without relying on default construction.
@@ -160,7 +267,7 @@ TEST(contains_matches_haskey) {
 }
 
 //===----------------------------------------------------------------------===//
-// forEachMember visits every member (sorted) with a borrowed key view.
+// forEachMember visits every member in unspecified storage order.
 //===----------------------------------------------------------------------===//
 namespace {
     struct MemberSum {
@@ -186,7 +293,8 @@ TEST(for_each_member_visits_all) {
     MemberSum state;
     const bool completed = obj.forEachMember(&accumulateMember, &state);
     CHECK(completed);
-    CHECK_EQ(state.keysConcat, std::string("abc")); // sorted order
+    std::sort(state.keysConcat.begin(), state.keysConcat.end());
+    CHECK_EQ(state.keysConcat, std::string("abc"));
     CHECK_EQ(state.sum, int64_t(6));
 }
 

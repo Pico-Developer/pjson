@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-static_assert(PJSON_ABI_VERSION == 3, "unexpected pjson ABI generation");
+static_assert(PJSON_ABI_VERSION == 4, "unexpected pjson ABI generation");
 static_assert(sizeof(ByteDance::pjson) == sizeof(void*) * 2,
               "installed pjson must use the two-pointer ABI");
 static_assert(sizeof(ByteDance::pJsonParser) == sizeof(void*),
@@ -28,8 +28,8 @@ int main() {
 
     // The public macro and linked library function must identify the same
     // release; this also detects stale headers paired with a different binary.
-    if (std::strcmp(PJSON_VERSION, "3.0.0") != 0 ||
-        std::strcmp(pjson::getVersion(), "3.0.0") != 0) {
+    if (std::strcmp(PJSON_VERSION, "4.0.0") != 0 ||
+        std::strcmp(pjson::getVersion(), "4.0.0") != 0) {
         std::cerr << "unexpected pjson version" << std::endl;
         return 1;
     }
@@ -38,9 +38,22 @@ int main() {
     // any source-tree-only headers or test helpers.
     pJsonParser::Error error;
     pjson document = pJsonParser().parse("{\"answer\":42}", error);
+    pjson built;
+    built["answer"] = 42;
+    built["values"] = std::vector<int>({1, 2, 3});
+    built["long"] = 4L;
+    built["unsignedLong"] = 5UL;
+    built["longLong"] = 6LL;
+    built["unsignedLongLong"] = 7ULL;
+    built["longDouble"] = 8.5L;
+    pJsonParser::Error expectedError;
+    pjson expectedBuilt =
+        pJsonParser().parse("{\"answer\":42,\"values\":[1,2,3],\"long\":4,\"unsignedLong\":5,"
+                            "\"longLong\":6,\"unsignedLongLong\":7,\"longDouble\":8.5}",
+                            expectedError);
     int64_t answer = 0;
     if (!error.ok || !document.tryGet("answer", answer) || answer != 42 ||
-        document.toString() != "{\"answer\":42}") {
+        document.toString() != "{\"answer\":42}" || !expectedError.ok || built != expectedBuilt) {
         std::cerr << "installed pjson failed its consumer smoke test" << std::endl;
         return 1;
     }

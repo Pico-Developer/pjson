@@ -258,7 +258,6 @@ pjson::SerializeOptions options = pjson::SerializeOptions::prettyPrinted();
 options.indentWidth = 4;
 options.indentCharacter = ' ';
 options.escapeNonAscii = true;
-options.keyOrder = pjson::SerializeOptions::AscendingKeys;
 options.maxOutputBytes = size_t(64) * 1024 * 1024;
 
 std::string text = document.toString(options);
@@ -266,10 +265,11 @@ document.write(output, options);
 ```
 
 Default construction selects compact output, two-space indentation, a space
-indent character, UTF-8 output, ascending keys, and a 64 MiB output limit. Set
+indent character, UTF-8 output, and a 64 MiB output limit. Set
 `maxOutputBytes = 0` only when explicitly requesting unlimited output. Objects
-are inherently map-ordered; insertion order is unavailable. Non-finite stored
-doubles fail serialization unless `SerializeOptions::nonFinite` explicitly
+use unspecified native storage order for traversal and serialization; insertion
+order is not retained.
+Non-finite stored doubles fail serialization unless `SerializeOptions::nonFinite` explicitly
 selects `NonFiniteToNull` or `NonFiniteToString`. Finite doubles use pinned Ryu
 shortest-round-trip conversion followed by pjson's documented
 fixed/scientific spelling policy.

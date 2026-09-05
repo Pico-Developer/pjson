@@ -4,7 +4,7 @@
 # Versioning Policy
 
 pjson uses [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html). The
-current stable version is **3.0.0**. Historical `0.0.x` releases used a
+current stable version is **4.0.0**. Historical `0.0.x` releases used a
 `release-` tag prefix and predate this stability policy.
 
 ## Version meaning

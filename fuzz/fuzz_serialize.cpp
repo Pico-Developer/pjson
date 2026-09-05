@@ -20,13 +20,10 @@ namespace {
         options.indentCharacter =
             (pjson_fuzz::pickByte(data, size, offset + 2U, 0) & 1U) != 0 ? '\t' : ' ';
         options.escapeNonAscii = (pjson_fuzz::pickByte(data, size, offset + 3U, 0) & 1U) != 0;
-        options.keyOrder = (pjson_fuzz::pickByte(data, size, offset + 4U, 0) & 1U) != 0
-                               ? pjson::SerializeOptions::DescendingKeys
-                               : pjson::SerializeOptions::AscendingKeys;
         options.nonFinite = static_cast<pjson::SerializeOptions::NonFinitePolicy>(
-            pjson_fuzz::pickByte(data, size, offset + 5U, 0) % 3U);
+            pjson_fuzz::pickByte(data, size, offset + 4U, 0) % 3U);
         const size_t limits[] = {0U, 1U, 32U, 4096U, pjson_fuzz::kMaxInputBytes};
-        options.maxOutputBytes = limits[pjson_fuzz::pickByte(data, size, offset + 6U, 0) % 5U];
+        options.maxOutputBytes = limits[pjson_fuzz::pickByte(data, size, offset + 5U, 0) % 5U];
 
         std::string output = "preserved";
         pjson::SerializeError error;

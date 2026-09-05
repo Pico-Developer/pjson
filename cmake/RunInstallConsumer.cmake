@@ -220,7 +220,7 @@ if(PJSON_PKG_CONFIG_EXECUTABLE)
         "${CMAKE_COMMAND}" -E env
         "PKG_CONFIG_PATH=${pc_dir}"
         "PKG_CONFIG_LIBDIR=${pc_dir}"
-        "${PJSON_PKG_CONFIG_EXECUTABLE}" --exact-version=3.0.0 pjson)
+        "${PJSON_PKG_CONFIG_EXECUTABLE}" --exact-version=4.0.0 pjson)
 
     set(pkgconfig_consumer_configure
         "${CMAKE_COMMAND}" -E env

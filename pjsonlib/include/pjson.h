@@ -31,11 +31,11 @@
 // Library version. PJSON_VERSION is the string form ("MAJOR.MINOR.PATCH");
 // the numeric parts allow compile-time checks, e.g.
 //   #if PJSON_VERSION_MAJOR >= 1
-#define PJSON_VERSION_MAJOR 3
+#define PJSON_VERSION_MAJOR 4
 #define PJSON_VERSION_MINOR 0
 #define PJSON_VERSION_PATCH 0
-#define PJSON_VERSION "3.0.0"
-#define PJSON_ABI_VERSION 3
+#define PJSON_VERSION "4.0.0"
+#define PJSON_ABI_VERSION 4
 
 #if defined(_WIN32) && defined(PJSON_SHARED)
 #if defined(PJSON_BUILDING_LIBRARY)
@@ -86,7 +86,7 @@ namespace ByteDance {
             jsonNumberDouble, ///< Binary64 number value.
             jsonBoolean,      ///< Boolean value.
             jsonArray,        ///< Ordered array value.
-            jsonObject,       ///< Key-sorted object value.
+            jsonObject,       ///< Object with unique string keys.
             jsonNumberUInt,   ///< Unsigned 64-bit integer value.
         };
 
@@ -206,22 +206,14 @@ namespace ByteDance {
 
         /// Controls JSON serialization.
         ///
-        /// The default produces the same compact, ascending-key output as
-        /// toString()/write() without options. Pretty output places each array
+        /// The default produces compact output in native object-storage order.
+        /// Pretty output places each array
         /// element/object member on its own line. Only space and tab are valid
         /// indentation characters; any other value is treated as a space so
         /// serialization always remains valid JSON.
         ///
-        /// Objects are stored in std::map, so source/insertion order is not
-        /// available. Key ordering is therefore explicitly ascending or
-        /// descending according to std::map's bytewise std::string ordering.
+        /// Object storage and serialization order are unspecified.
         struct PJSON_API SerializeOptions {
-            /// Selects ascending or descending deterministic object-key order.
-            enum KeyOrder {
-                AscendingKeys, ///< Emit keys in ascending std::map order.
-                DescendingKeys ///< Emit keys in descending std::map order.
-            };
-
             // Governs how a stored non-finite double (NaN, +/-infinity) is
             // serialized. JSON has no non-finite literal, so the default fails
             // with a structured error rather than silently changing the value's
@@ -241,12 +233,10 @@ namespace ByteDance {
             size_t indentWidth;        ///< Indentation characters per nesting level.
             char indentCharacter;      ///< Space or tab; invalid values are treated as space.
             bool escapeNonAscii;       ///< Emits non-ASCII code points as Unicode escapes.
-            KeyOrder keyOrder;         ///< Deterministic object-key ordering.
             NonFinitePolicy nonFinite; ///< Policy for NaN and infinity values.
             size_t maxOutputBytes;     ///< Output ceiling; zero explicitly means unlimited.
 
-            /// Selects compact output, two-space indentation, ascending keys,
-            /// and non-finite rejection.
+            /// Selects compact output, two-space indentation, and non-finite rejection.
             SerializeOptions();
             /// Returns the defaults with pretty printing enabled.
             static SerializeOptions prettyPrinted();
@@ -408,7 +398,7 @@ namespace ByteDance {
         /// Empties a container without changing its type, or resets a scalar to null.
         void clear();
 
-        /// Returns copied object keys in std::map order, or an empty vector otherwise.
+        /// Returns copied object keys in unspecified storage order, or an empty vector otherwise.
         std::vector<std::string> keys() const;
 
         //== Non-allocating traversal =======================================
@@ -422,8 +412,8 @@ namespace ByteDance {
         typedef bool (*ElementVisitor)(pjson& aValue, void* aContext);
         ///
         /// Traversal copies no object names and performs no per-member lookup.
-        /// Object members are visited in sorted key order and array elements in
-        /// index order. Borrowed arguments are valid only for the callback. The
+        /// Object members are visited in unspecified storage order and array
+        /// elements in index order. Borrowed arguments are valid only for the callback. The
         /// opaque context is forwarded unchanged. Returning false stops early.
         /// A callback must not resize the traversed container. Calling a traversal
         /// method on the wrong container type is a no-op that returns true.
@@ -607,12 +597,28 @@ namespace ByteDance {
         pjson& operator=(const char* aCString);
         /// Replaces this value with aBool.
         pjson& operator=(const bool aBool);
-        /// Replaces this value with aInt.
-        pjson& operator=(const int64_t aInt);
-        /// Replaces this value with an unsigned integer, keeping unsigned identity.
-        pjson& operator=(const uint64_t aUInt);
+        /// Replaces this value with a signed integer.
+        pjson& operator=(const int aInt);
+        /// Replaces this value with an unsigned integer.
+        pjson& operator=(const unsigned int aUInt);
+        /// Replaces this value with a signed short integer.
+        pjson& operator=(const short aInt);
+        /// Replaces this value with an unsigned short integer.
+        pjson& operator=(const unsigned short aUInt);
+        /// Replaces this value with a signed long integer.
+        pjson& operator=(const long aInt);
+        /// Replaces this value with an unsigned long integer.
+        pjson& operator=(const unsigned long aUInt);
+        /// Replaces this value with a signed long-long integer.
+        pjson& operator=(const long long aInt);
+        /// Replaces this value with an unsigned long-long integer.
+        pjson& operator=(const unsigned long long aUInt);
+        /// Replaces this value with a floating-point number.
+        pjson& operator=(const float aFloat);
         /// Replaces this value with aDouble; the non-finite policy governs output.
         pjson& operator=(const double aDouble);
+        /// Narrows a long double to the library's binary64 number representation.
+        pjson& operator=(const long double aDouble);
 
         // Vector assignment atomically replaces this node with an array of copied
         // children allocated through this node's allocator.
@@ -620,12 +626,28 @@ namespace ByteDance {
         pjson& operator=(const std::vector<std::string>& aValueArray);
         /// Replaces this value with a copied boolean array.
         pjson& operator=(const std::vector<bool>& aValueArray);
-        /// Replaces this value with a copied integer array.
-        pjson& operator=(const std::vector<int64_t>& aValueArray);
-        /// Replaces this value with a copied unsigned-integer array.
-        pjson& operator=(const std::vector<uint64_t>& aValueArray);
+        /// Replaces this value with a copied native-integer array.
+        pjson& operator=(const std::vector<int>& aValueArray);
+        /// Replaces this value with a copied native unsigned-integer array.
+        pjson& operator=(const std::vector<unsigned int>& aValueArray);
+        /// Replaces this value with a copied signed-short array.
+        pjson& operator=(const std::vector<short>& aValueArray);
+        /// Replaces this value with a copied unsigned-short array.
+        pjson& operator=(const std::vector<unsigned short>& aValueArray);
+        /// Replaces this value with a copied signed-long array.
+        pjson& operator=(const std::vector<long>& aValueArray);
+        /// Replaces this value with a copied unsigned-long array.
+        pjson& operator=(const std::vector<unsigned long>& aValueArray);
+        /// Replaces this value with a copied signed-long-long array.
+        pjson& operator=(const std::vector<long long>& aValueArray);
+        /// Replaces this value with a copied unsigned-long-long array.
+        pjson& operator=(const std::vector<unsigned long long>& aValueArray);
+        /// Replaces this value with a copied float array.
+        pjson& operator=(const std::vector<float>& aValueArray);
         /// Replaces this value with a copied double array.
         pjson& operator=(const std::vector<double>& aValueArray);
+        /// Replaces this value with a copied long-double array, narrowing each value to double.
+        pjson& operator=(const std::vector<long double>& aValueArray);
 
         // Scalar append adds one copied child. If this node is not already an
         // array, its previous value is discarded rather than retained.
@@ -635,12 +657,28 @@ namespace ByteDance {
         pjson& operator+=(const char* aValue);
         /// Appends aValue as a boolean child.
         pjson& operator+=(const bool aValue);
-        /// Appends aValue as an integer child.
-        pjson& operator+=(const int64_t aValue);
-        /// Appends aValue as an unsigned-integer child.
-        pjson& operator+=(const uint64_t aValue);
+        /// Appends aValue as a signed integer child.
+        pjson& operator+=(const int aValue);
+        /// Appends aValue as an unsigned integer child.
+        pjson& operator+=(const unsigned int aValue);
+        /// Appends aValue as a signed-short child.
+        pjson& operator+=(const short aValue);
+        /// Appends aValue as an unsigned-short child.
+        pjson& operator+=(const unsigned short aValue);
+        /// Appends aValue as a signed-long child.
+        pjson& operator+=(const long aValue);
+        /// Appends aValue as an unsigned-long child.
+        pjson& operator+=(const unsigned long aValue);
+        /// Appends aValue as a signed-long-long child.
+        pjson& operator+=(const long long aValue);
+        /// Appends aValue as an unsigned-long-long child.
+        pjson& operator+=(const unsigned long long aValue);
+        /// Appends aValue as a floating-point child.
+        pjson& operator+=(const float aValue);
         /// Appends aValue as a double child.
         pjson& operator+=(const double aValue);
+        /// Narrows aValue to the library's binary64 number representation and appends it.
+        pjson& operator+=(const long double aValue);
 
         // Vector append copies every element. A non-array's prior value is
         // discarded; even an empty vector promotes a non-array to an empty array.
@@ -648,12 +686,28 @@ namespace ByteDance {
         pjson& operator+=(const std::vector<std::string>& aValueArray);
         /// Appends every boolean in aValueArray.
         pjson& operator+=(const std::vector<bool>& aValueArray);
-        /// Appends every integer in aValueArray.
-        pjson& operator+=(const std::vector<int64_t>& aValueArray);
-        /// Appends every unsigned integer in aValueArray.
-        pjson& operator+=(const std::vector<uint64_t>& aValueArray);
+        /// Appends every native integer in aValueArray.
+        pjson& operator+=(const std::vector<int>& aValueArray);
+        /// Appends every native unsigned integer in aValueArray.
+        pjson& operator+=(const std::vector<unsigned int>& aValueArray);
+        /// Appends every signed short in aValueArray.
+        pjson& operator+=(const std::vector<short>& aValueArray);
+        /// Appends every unsigned short in aValueArray.
+        pjson& operator+=(const std::vector<unsigned short>& aValueArray);
+        /// Appends every signed long in aValueArray.
+        pjson& operator+=(const std::vector<long>& aValueArray);
+        /// Appends every unsigned long in aValueArray.
+        pjson& operator+=(const std::vector<unsigned long>& aValueArray);
+        /// Appends every signed long long in aValueArray.
+        pjson& operator+=(const std::vector<long long>& aValueArray);
+        /// Appends every unsigned long long in aValueArray.
+        pjson& operator+=(const std::vector<unsigned long long>& aValueArray);
+        /// Appends every float in aValueArray.
+        pjson& operator+=(const std::vector<float>& aValueArray);
         /// Appends every double in aValueArray.
         pjson& operator+=(const std::vector<double>& aValueArray);
+        /// Narrows and appends every long double in aValueArray.
+        pjson& operator+=(const std::vector<long double>& aValueArray);
 
         // Remove and free the child under a map key / at an array index.
         // Array indexes are zero-based and erasure shifts later elements left.

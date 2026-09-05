@@ -311,16 +311,18 @@ TEST(api_find_haskey_on_non_object) {
     CHECK(num.isInt());
 }
 
-TEST(api_keys_sorted_and_empty) {
+TEST(api_keys_complete_and_empty) {
     pjson j;
     j["z"] = static_cast<int64_t>(1);
     j["a"] = static_cast<int64_t>(2);
     j["m"] = static_cast<int64_t>(3);
     std::vector<std::string> k = j.keys();
     CHECK_EQ(k.size(), size_t(3));
-    CHECK_EQ(k[0], std::string("a"));
-    CHECK_EQ(k[1], std::string("m"));
-    CHECK_EQ(k[2], std::string("z"));
+    for (size_t i = 0; i < k.size(); ++i) {
+        CHECK(j.hasKey(k[i]));
+        for (size_t other = i + 1; other < k.size(); ++other)
+            CHECK(k[i] != k[other]);
+    }
 
     pjson_test::Parsed array = pjson_test::parse("[1,2]");
     pjson_test::Parsed scalar = pjson_test::parse("5");

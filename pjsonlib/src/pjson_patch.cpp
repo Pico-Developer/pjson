@@ -165,14 +165,12 @@ namespace {
                 const pjsonImpl::ObjectStorage& r = pjsonImpl::_object(rhs);
                 if (l.size() != r.size())
                     return true;
-                pjsonImpl::ObjectStorage::const_iterator li = l.begin();
-                pjsonImpl::ObjectStorage::const_iterator ri = r.begin();
-                for (; li != l.end(); ++li, ++ri) {
-                    if (!chargePatch(budget.work, budget.workLimit,
-                                     std::max(li->first.size(), ri->first.size()) + size_t(1),
+                for (pjsonImpl::ObjectStorage::const_iterator li = l.begin(); li != l.end(); ++li) {
+                    pjsonImpl::ObjectStorage::const_iterator ri = r.find(li->first);
+                    if (!chargePatch(budget.work, budget.workLimit, li->first.size() + size_t(1),
                                      error, "JSON Patch work budget exceeded"))
                         return false;
-                    if (li->first != ri->first)
+                    if (ri == r.end())
                         return true;
                     Pair child = {li->second, ri->second};
                     pending.push_back(child);

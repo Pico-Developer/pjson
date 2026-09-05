@@ -83,7 +83,7 @@ Expected output:
 
 Notice the compact form is one line, and the pretty form is indented. Also note
 the keys came out in the order `message`, then `year` — which happens to be
-alphabetical. (Recall from Chapter 00 that pjson keeps object keys sorted.)
+alphabetical. (Recall from Chapter 00 that pjson sorts object keys for output.)
 
 ```mermaid
 flowchart LR

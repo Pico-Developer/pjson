@@ -54,6 +54,12 @@ namespace {
         return doc;
     }
 
+    void expectJson(const pjson& actual, const char* expectedText) {
+        pjson_test::Parsed expected = parseChecked(expectedText);
+        if (expected != nullptr)
+            CHECK(actual == *expected);
+    }
+
     // Returns an explicitly typed empty patch document for programmatic operation assembly.
     pjson makePatchArray() {
         pjson patch;
@@ -407,7 +413,7 @@ TEST(patch_add_object_member_and_replace_existing_member) {
     pjson::PatchError err;
     CHECK(doc->applyPatch(patch, err));
     CHECK(err.ok);
-    CHECK_EQ(doc->toString(), std::string("{\"a\":9,\"b\":2}"));
+    expectJson(*doc, R"({"a":9,"b":2})");
 }
 
 TEST(patch_add_root_replaces_whole_document) {
@@ -422,7 +428,7 @@ TEST(patch_add_root_replaces_whole_document) {
     patch[0]["value"] = value;
 
     CHECK(doc->applyPatch(patch));
-    CHECK_EQ(doc->toString(), std::string("{\"n\":7,\"replaced\":true}"));
+    expectJson(*doc, R"({"n":7,"replaced":true})");
 }
 
 TEST(patch_add_array_inserts_and_appends) {
@@ -551,7 +557,7 @@ TEST(patch_move_object_member_and_same_array_reorder) {
     patch[1]["path"] = "/arr/2";
 
     CHECK(doc->applyPatch(patch));
-    CHECK_EQ(doc->toString(), std::string("{\"arr\":[\"b\",\"c\",\"a\"],\"obj\":{\"b\":1}}"));
+    expectJson(*doc, R"({"arr":["b","c","a"],"obj":{"b":1}})");
 }
 
 TEST(patch_move_from_must_exist_and_cannot_move_into_descendant) {
@@ -594,8 +600,7 @@ TEST(patch_copy_duplicates_value_without_mutating_source) {
     patch[0]["path"] = "/dst";
 
     CHECK(doc->applyPatch(patch));
-    CHECK_EQ(doc->toString(),
-             std::string("{\"dst\":{\"nested\":[1,2]},\"src\":{\"nested\":[1,2]}}"));
+    expectJson(*doc, R"({"dst":{"nested":[1,2]},"src":{"nested":[1,2]}})");
 
     pjson* copiedArray = doc->findPointer("/dst/nested");
     CHECK(copiedArray != nullptr);
@@ -877,10 +882,9 @@ TEST(merge_patch_rfc7396_primary_example) {
     pjson::PatchError err;
     CHECK(doc->applyMergePatch(*patch, err));
     CHECK(err.ok);
-    CHECK_EQ(doc->toString(),
-             std::string("{\"author\":{\"givenName\":\"John\"},\"content\":\"This will be "
-                         "unchanged\",\"phoneNumber\":\"+01-123-456-7890\",\"tags\":[\"example\"],"
-                         "\"title\":\"Hello!\"}"));
+    expectJson(
+        *doc,
+        R"({"author":{"givenName":"John"},"content":"This will be unchanged","phoneNumber":"+01-123-456-7890","tags":["example"],"title":"Hello!"})");
 }
 
 TEST(merge_patch_null_members_remove_object_keys) {
@@ -888,7 +892,7 @@ TEST(merge_patch_null_members_remove_object_keys) {
     pjson_test::Parsed patch = parseChecked(R"({"a":null,"c":{"y":null}})");
 
     CHECK(doc->applyMergePatch(*patch));
-    CHECK_EQ(doc->toString(), std::string("{\"b\":2,\"c\":{\"x\":1}}"));
+    expectJson(*doc, R"({"b":2,"c":{"x":1}})");
 }
 
 TEST(merge_patch_non_object_patch_replaces_entire_target) {
@@ -915,7 +919,7 @@ TEST(merge_patch_when_target_is_non_object_object_patch_starts_from_empty_object
     pjson_test::Parsed patch = parseChecked(R"({"a":1,"b":{"c":2}})");
 
     CHECK(doc.applyMergePatch(*patch));
-    CHECK_EQ(doc.toString(), std::string("{\"a\":1,\"b\":{\"c\":2}}"));
+    expectJson(doc, R"({"a":1,"b":{"c":2}})");
 }
 
 TEST(merge_patch_arrays_are_replaced_wholesale_not_merged_elementwise) {
@@ -923,7 +927,7 @@ TEST(merge_patch_arrays_are_replaced_wholesale_not_merged_elementwise) {
     pjson_test::Parsed patch = parseChecked(R"({"arr":[9],"obj":{"arr":[7,8,9]}})");
 
     CHECK(doc->applyMergePatch(*patch));
-    CHECK_EQ(doc->toString(), std::string("{\"arr\":[9],\"obj\":{\"arr\":[7,8,9]}}"));
+    expectJson(*doc, R"({"arr":[9],"obj":{"arr":[7,8,9]}})");
 }
 
 TEST(merge_patch_empty_object_is_no_op) {

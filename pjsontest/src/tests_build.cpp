@@ -355,7 +355,7 @@ TEST(find_index_is_non_mutating) {
     CHECK_EQ(j.size(), size_t(2));
 }
 
-TEST(keys_are_sorted_and_read_only_iteration_uses_find) {
+TEST(keys_are_complete_and_read_only_iteration_uses_find) {
     pjson j;
     j["b"] = static_cast<int64_t>(2);
     j["a"] = static_cast<int64_t>(1);
@@ -363,9 +363,11 @@ TEST(keys_are_sorted_and_read_only_iteration_uses_find) {
 
     const std::vector<std::string> keys = j.keys();
     CHECK_EQ(keys.size(), size_t(3));
-    CHECK_EQ(keys[0], std::string("a"));
-    CHECK_EQ(keys[1], std::string("b"));
-    CHECK_EQ(keys[2], std::string("c"));
+    for (size_t i = 0; i < keys.size(); ++i) {
+        CHECK(j.hasKey(keys[i]));
+        for (size_t k = i + 1; k < keys.size(); ++k)
+            CHECK(keys[i] != keys[k]);
+    }
 
     int64_t sum = 0;
     for (size_t i = 0; i < keys.size(); ++i) {

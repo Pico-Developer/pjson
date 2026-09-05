@@ -234,7 +234,7 @@ for any failure.
 
 ## Iterating an object
 
-To iterate an object's keys, use `keys()` (returned sorted):
+To iterate an object's keys, use `keys()`. The returned order is unspecified:
 
 ```cpp
 for (const std::string& key : j.keys()) {

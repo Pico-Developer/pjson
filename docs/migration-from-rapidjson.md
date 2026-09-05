@@ -176,8 +176,9 @@ for (const std::string& key : object.keys()) {
 
 `find(index)` supports negative end-relative indexes, but normal forward loops
 should convert their checked `size_t` position to `int`. `keys()` returns a
-copy in deterministic map order. Child pointers are borrowed and can be
-invalidated by mutation of the child or an ancestor.
+copy in private native storage order; `forEachMember()` uses that same
+unspecified order. Child
+pointers are borrowed and can be invalidated by mutation of the child or an ancestor.
 
 ## Numeric migration
 
@@ -249,7 +250,6 @@ pjson::SerializeOptions options = pjson::SerializeOptions::prettyPrinted();
 options.indentWidth = 2;
 options.indentCharacter = ' ';
 options.escapeNonAscii = true;
-options.keyOrder = pjson::SerializeOptions::AscendingKeys;
 options.maxOutputBytes = size_t(64) * 1024 * 1024;
 
 document.write(output, options);
@@ -260,8 +260,9 @@ std::string encoded = document.toString(options);
 ```
 
 The defaults are compact layout, two-space indentation, space indentation,
-UTF-8 output, ascending keys, and a 64 MiB output limit. Zero explicitly makes
-`maxOutputBytes` unlimited. Object insertion order is not retained. A stored
+UTF-8 output, and a 64 MiB output limit. Zero explicitly makes
+`maxOutputBytes` unlimited. Object insertion order is not retained, and
+serialization order is unspecified. A stored
 non-finite double fails serialization by default (`SerializeOptions::nonFinite`
 selects `RejectNonFinite`, `NonFiniteToNull`, or `NonFiniteToString`). Finite
 doubles use pinned Ryu shortest-round-trip conversion followed by pjson's

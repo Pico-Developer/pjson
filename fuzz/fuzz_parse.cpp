@@ -24,7 +24,7 @@ namespace {
         if (!error.ok)
             return;
 
-        // Compact output must be a stable, value-preserving representation.
+        // Compact output must be a valid, value-preserving representation.
         const std::string compact = value.toString();
         pJsonParser::Options compactOptions = options;
         compactOptions.maxInputBytes = compact.size();
@@ -32,7 +32,6 @@ namespace {
         pjson reparsed = pJsonParser(compactOptions).parse(compact, compactError);
         pjson_fuzz::require(compactError.ok);
         pjson_fuzz::require(reparsed == value);
-        pjson_fuzz::require(reparsed.toString() == compact);
 
         // Pretty printing may change whitespace, but never the represented JSON value.
         const std::string pretty = value.toString(pjson::SerializeOptions::prettyPrinted());

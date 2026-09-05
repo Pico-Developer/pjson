@@ -135,8 +135,8 @@ output.maxOutputBytes = size_t(64) * 1024 * 1024;
 std::cout << book.toString(output) << "\n";
 ```
 
-produces a tidy, sorted-key document with both accepted contacts and their
-edits.
+produces a tidy document with both accepted contacts and their edits. Object
+member order is unspecified.
 
 ## What this demonstrates
 

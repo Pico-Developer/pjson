@@ -4,6 +4,7 @@
 #include <pjson_parser.h>
 
 #include <string>
+#include <vector>
 
 // ---- Conan package consumer smoke test ---------------------------------
 
@@ -12,6 +13,8 @@
 int main() {
     ByteDance::pjson value;
     value["packaged"] = true;
+    value["answer"] = 42;
+    value["values"] = std::vector<int>({1, 2, 3});
 
     ByteDance::pJsonParser::Error error;
     const ByteDance::pjson parsed = ByteDance::pJsonParser().parse(value.toString(), error);

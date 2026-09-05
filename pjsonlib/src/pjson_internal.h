@@ -27,10 +27,10 @@
 
 #include "pjson.h"
 
-#include <map>
 #include <memory>
 #include <ostream>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 //===----------------------------------------------------------------------===//
@@ -42,7 +42,10 @@
 //===----------------------------------------------------------------------===//
 struct ByteDance::pjsonImpl {
     typedef std::vector<pjson*> ArrayStorage;
-    typedef std::map<std::string, pjson*> ObjectStorage;
+    struct ObjectHash {
+        size_t operator()(const std::string& aKey) const noexcept;
+    };
+    typedef std::unordered_map<std::string, pjson*, ObjectHash> ObjectStorage;
 
     // One suspended container in the iterative serializer. Exactly one of
     // array/object is active according to isObject; the associated cursor
@@ -55,7 +58,6 @@ struct ByteDance::pjsonImpl {
         size_t arrayIndex;
         const ObjectStorage* object;
         ObjectStorage::const_iterator objectIt;
-        ObjectStorage::const_reverse_iterator objectReverseIt;
     };
 
     static int _utf8Len(const char* src, size_t pos, size_t end);

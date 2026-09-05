@@ -7,7 +7,7 @@
   number, string, array, or object) and provides an ergonomic
   `obj["key"][i] = value` style API.
 - Licensed under Apache-2.0;
-- Current source version: **3.0.0** (`pjson::getVersion()` / the
+- Current source version: **4.0.0** (`pjson::getVersion()` / the
   `PJSON_VERSION` macro).
 
 ---
@@ -116,7 +116,7 @@ cmake --install build --config Release
 Consumers use the same target after pointing CMake at that prefix:
 
 ```cmake
-find_package(pjson 3.0 CONFIG REQUIRED)
+find_package(pjson 4.0 CONFIG REQUIRED)
 target_link_libraries(myapp PRIVATE pjson::pjson)
 ```
 
@@ -223,10 +223,11 @@ list += int64_t(3);                    // [1,"two",3]
 list += int64_t(4);                    // [1,"two",3,4]
 ```
 
-The `=` and `+=` operators accept strings, `bool`, `int64_t`, and `double`, as
-well as vectors of `std::string`, `bool`, `int64_t`, or `double`. Convenience
-overloads for `int`, `float`, and vectors of those types or C strings are not
-part of the API.
+The `=` and `+=` operators accept strings, `bool`, all standard non-character integer types,
+and `float`, `double`, or `long double`, as well as vectors of the supported
+non-character numeric types, `bool`, or `std::string`. Concrete overloads keep
+ordinary expressions unambiguous without putting templates in the public
+header. Values are stored as signed or unsigned 64-bit integers, or as `double`.
 
 The document built above serializes to:
 ```json
@@ -260,7 +261,7 @@ The document built above serializes to:
 }
 ```
 The skipped array position `[2]` is auto-filled with `null` by
-`doubles[3] = 4.4`. Object keys come out in sorted order.
+`doubles[3] = 4.4`. Object member order is unspecified.
 
 ---
 
@@ -273,14 +274,13 @@ pjson::SerializeOptions prettyOptions =
 std::string pretty = person.toString(prettyOptions);
 ```
 
-Use `SerializeOptions` when formatting must be explicit or reproducible:
+Use `SerializeOptions` when formatting choices must be explicit:
 
 ```cpp
 pjson::SerializeOptions output = pjson::SerializeOptions::prettyPrinted();
 output.indentWidth = 4;
 output.indentCharacter = ' '; // only space or tab; other values fall back to space
 output.escapeNonAscii = true;
-output.keyOrder = pjson::SerializeOptions::DescendingKeys;
 output.maxOutputBytes = size_t(64) * 1024 * 1024;
 
 std::string text = person.toString(output);
@@ -288,15 +288,15 @@ person.write(std::cout, output);
 ```
 
 Defaults are compact output, two-space indentation when `pretty` is enabled,
-raw UTF-8, ascending bytewise key order, and a 64 MiB output limit. Set
+raw UTF-8, and a 64 MiB output limit. Set
 `maxOutputBytes = 0` only when explicitly requesting unlimited output. Use
-`SerializeOptions::prettyPrinted()` for two-space pretty output. Because objects
-use `std::map`, insertion order is not retained; serialization can select
-ascending or descending order.
+`SerializeOptions::prettyPrinted()` for two-space pretty output. Objects use
+private process-seeded hash storage, so insertion, traversal, `keys()`, and
+serialization order are unspecified.
 
 For the document built in [Quick start](#quick-start):
 
-**Compact** — note that object keys are emitted in sorted order:
+**Compact** — one possible member order is:
 ```json
 {"active":true,"address":{"city":"London"},"age":36,"name":"Ada","scores":[90,82,77]}
 ```
@@ -565,8 +565,8 @@ if (const pjson* node = mixed.find("mixed")) {
 
 ## Reading objects / maps
 
-Use `keys()` to obtain object keys in sorted order, then `find(key)` to read each
-member without creating it.
+Use `keys()` to obtain object keys, then `find(key)` to read each member without
+creating it. The key order is unspecified.
 
 Given this document:
 ```json
@@ -582,7 +582,7 @@ Given this document:
 pjson j = pJsonParser().parse(
     R"({ "name": "Ada", "address": { "city": "London", "zip": "N1" } })");
 
-// Iterate top-level keys in sorted order -> "address", then "name"
+// Iterate top-level keys in unspecified order.
 for (const std::string& key : j.keys()) {
     const pjson* value = j.find(key);
     if (value) {
@@ -762,7 +762,7 @@ std::string name = "anon";
 j.tryGet("name", name);   // name remains "anon" on failure
 ```
 
-**Iterate object keys** (sorted):
+**Iterate object keys** (unspecified order):
 ```cpp
 for (const std::string& key : j.keys()) {
     const pjson* value = j.find(key);
@@ -1143,7 +1143,7 @@ DOM.
 | Type | `getType()`, `isNull/isString/isNumber/isInt/isUInt/isInteger/isDouble/isBool/isArray/isObject()` |
 | Typed read | node/key/index `tryGet(out&)` for `int64_t`, `uint64_t`, `double`, `bool`, `std::string`, or `StringView`; untouched on failure |
 | Inspect containers | `size()`, `empty()`, `keys()`, `hasKey(key)`, `contains(key)`, `hasIndex(index)`, `find(key\|index)` |
-| Traverse | `forEachMember(fn, ctx)`, `forEachElement(fn, ctx)` — non-allocating callback visitors; `ctx` carries caller state |
+| Traverse | `forEachMember(fn, ctx)` in unspecified object-storage order; `forEachElement(fn, ctx)` in array order — non-allocating callback visitors |
 | Checked read | `at(key)`, `at(index)` — throw `std::out_of_range`, never vivify |
 | JSON Pointer | `findPointer(pointer[, PointerError])`, `escapePointerToken(token)` |
 | JSON Patch | `applyPatch(patch[, PatchError][, PatchOptions])`, `applyMergePatch(patch[, PatchError][, PatchOptions])` |
@@ -1153,7 +1153,7 @@ DOM.
 | Build | `operator[](key\|index)` — **vivifying** |
 | Factories | `null()`, `object()`, `array()`; `operator=(nullptr)` |
 | Insert | `pushBack(pjson[&&])`, `insertOrAssign(key, pjson[&&])`, `reserve(n)` |
-| Assign | `operator=` for strings, `bool`, `int64_t`, `uint64_t`, `double`, and `std::vector` of `std::string`/`bool`/`int64_t`/`uint64_t`/`double` |
+| Assign | `operator=` for strings, `bool`, native and 64-bit integers, `float`, `double`, and matching `std::vector` types |
 | Append | `operator+=` for those same scalar and vector types; promotes the node to an array |
 | Lifetime / allocator | allocator-aware constructors, `getAllocator()`, `canSwap()`, `copyFrom()`, `swap()` |
 | Reset | `reset()` (→ null), `resetTo(jsonType)`, `resetIfNeeded(jsonType)` |
@@ -1338,7 +1338,7 @@ the exact timed work, dependency versions, methodology, and sample output.
 ## Documentation & project resources
 
 - [Tutorials](docs/README.md) and [streaming guide](docs/11-streaming.md)
-- [pjson 3.0 behavioral and ABI contract](docs/behavioral-contract-3.0.md)
+- [pjson 4.0 behavioral and ABI contract](docs/behavioral-contract-4.0.md)
 - [Browsable API reference](https://pico-developer.github.io/pjson/) and its
   [source landing page](docs/reference/mainpage.md)
 - Migration guides for [nlohmann/json](docs/migration-from-nlohmann-json.md) and
@@ -1370,8 +1370,9 @@ public API families fail validation.
 - pjson requires C++11 and owns a mutable DOM; it is not a zero-copy parser.
   `parseSaxStream()` avoids buffering the whole document, although its handler,
   current tokens, nesting state, and duplicate-key tracking still use memory.
-- Object insertion order is not preserved; keys are stored in `std::map` and
-  serialize in selectable ascending or descending bytewise order.
+- Object insertion and direct traversal order are not preserved. Private
+  process-seeded hash storage accelerates lookup; `keys()` and serialization
+  also use unspecified native storage order.
 - Duplicate object keys are rejected by default; `pJsonParser::Options` can explicitly
   keep the first or last value.
 - Signed integers use `int64_t`; unsigned integers above `INT64_MAX` use a

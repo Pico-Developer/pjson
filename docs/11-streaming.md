@@ -105,7 +105,6 @@ pjson::SerializeOptions options = pjson::SerializeOptions::prettyPrinted();
 options.indentWidth = 4;
 options.indentCharacter = ' ';
 options.escapeNonAscii = true;
-options.keyOrder = pjson::SerializeOptions::AscendingKeys;
 options.maxOutputBytes = size_t(64) * 1024 * 1024;
 document.write(output, options);
 if (!output) {
@@ -113,11 +112,12 @@ if (!output) {
 }
 ```
 
-This avoids a whole-document output buffer; traversal state scales with nesting
-depth, while escaping a key or string can use temporary memory proportional to
-that token. `SerializeOptions` controls indentation, non-ASCII escaping, and
-ascending or descending key traversal for both output APIs. The default output
-limit is 64 MiB; zero explicitly means unlimited. `write()` returns `void`, so
+This avoids a whole-document output buffer. Traversal state scales with nesting
+depth; escaping a key or string can use temporary memory proportional to that
+token. Object members are emitted in unspecified native storage order.
+`SerializeOptions` controls indentation, non-ASCII escaping, non-finite values,
+and output limits for both output APIs. The default output limit is 64 MiB; zero
+explicitly means unlimited. `write()` returns `void`, so
 check the stream state. Invalid stored UTF-8, crossing the configured byte
 limit, and indentation/size overflow are logical preflight failures: they set
 `failbit` before any bytes are emitted. The corresponding `toString()` call

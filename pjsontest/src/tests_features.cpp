@@ -53,12 +53,12 @@ namespace {
 // Library version.
 //===----------------------------------------------------------------------===//
 TEST(version_string) {
-    CHECK_EQ(std::string(pjson::getVersion()), std::string("3.0.0"));
-    CHECK_EQ(std::string(PJSON_VERSION), std::string("3.0.0"));
-    CHECK_EQ(PJSON_VERSION_MAJOR, 3);
+    CHECK_EQ(std::string(pjson::getVersion()), std::string("4.0.0"));
+    CHECK_EQ(std::string(PJSON_VERSION), std::string("4.0.0"));
+    CHECK_EQ(PJSON_VERSION_MAJOR, 4);
     CHECK_EQ(PJSON_VERSION_MINOR, 0);
     CHECK_EQ(PJSON_VERSION_PATCH, 0);
-    CHECK_EQ(PJSON_ABI_VERSION, 3);
+    CHECK_EQ(PJSON_ABI_VERSION, 4);
 }
 
 //===----------------------------------------------------------------------===//
@@ -435,16 +435,18 @@ TEST(erase_wrong_type_is_false) {
 //===----------------------------------------------------------------------===//
 // Listing object keys for iteration.
 //===----------------------------------------------------------------------===//
-TEST(keys_returns_sorted_keys) {
+TEST(keys_returns_each_object_key) {
     pjson j;
     j["gamma"] = static_cast<int64_t>(1);
     j["alpha"] = static_cast<int64_t>(2);
     j["beta"] = static_cast<int64_t>(3);
     std::vector<std::string> k = j.keys();
     CHECK_EQ(k.size(), size_t(3));
-    CHECK_EQ(k[0], std::string("alpha"));
-    CHECK_EQ(k[1], std::string("beta"));
-    CHECK_EQ(k[2], std::string("gamma"));
+    for (size_t i = 0; i < k.size(); ++i) {
+        CHECK(j.hasKey(k[i]));
+        for (size_t other = i + 1; other < k.size(); ++other)
+            CHECK(k[i] != k[other]);
+    }
 
     pjson notMap;
     notMap = static_cast<int64_t>(5);

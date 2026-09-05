@@ -248,7 +248,7 @@ TEST(copy_construct_is_deep_and_independent) {
     a["nested"]["deep"] = static_cast<int64_t>(9);
 
     pjson b(a);
-    CHECK_EQ(b.toString(), a.toString());
+    CHECK(b == a);
 
     b["name"] = std::string("changed");
     b["nested"]["deep"] = static_cast<int64_t>(100);
@@ -264,7 +264,7 @@ TEST(copy_assign_is_deep) {
     pjson b;
     b = static_cast<int64_t>(12345);
     b = a;
-    CHECK_EQ(b.toString(), a.toString());
+    CHECK(b == a);
     b["x"][0] = std::string("z");
     expectString(a["x"][0], "p");
 }
@@ -314,7 +314,7 @@ TEST(copyfrom_deep_copies) {
     a["arr"] = std::vector<double>({1.5, 2.5});
     pjson b;
     b.copyFrom(a);
-    CHECK_EQ(b.toString(), a.toString());
+    CHECK(b == a);
     b["arr"][0] = double(9.9);
     expectDouble(a["arr"][0], 1.5);
 }

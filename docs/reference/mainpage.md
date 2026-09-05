@@ -19,8 +19,8 @@ types are intentionally excluded.
 - @ref ByteDance::pjson::PointerError and @ref ByteDance::pjson::PatchError
   describe RFC 6901, RFC 6902, and RFC 7396 failures.
 - @ref ByteDance::pjson::PatchOptions bounds transactional patch amplification.
-- @ref ByteDance::pjson::SerializeOptions controls formatting, escaping, and
-  key order, and bounds output size.
+- @ref ByteDance::pjson::SerializeOptions controls formatting and escaping,
+  and bounds output size.
 - ByteDance::pjson::tryGet(), ByteDance::pjson::StringView, and
   ByteDance::pjson::findPointer() provide strict, non-vivifying reads.
 - ByteDance::pjson::applyPatch() and ByteDance::pjson::applyMergePatch() apply

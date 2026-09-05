@@ -13,7 +13,7 @@
 // limitations under the License.
 //
 //===----------------------------------------------------------------------===//
-// PJSON-SER-001/002: valid, stable output; deterministic key order; and an
+// PJSON-SER-001: valid output and an
 // overflow-safe output-size limit tested at limit-1, limit, and limit+1.
 //
 #include "pjson.h"
@@ -93,29 +93,20 @@ TEST(tostring_and_write_are_equivalent) {
 }
 
 //===----------------------------------------------------------------------===//
-// Deterministic key order: ascending and descending are exact reverses, and
-// output re-parses to a structurally equal document regardless of order.
+// Native object order is unspecified, but output remains valid and reparses to
+// a structurally equal document.
 //===----------------------------------------------------------------------===//
-TEST(deterministic_key_order) {
+TEST(native_object_order_round_trips) {
     pjson obj = pjson::object();
     obj["c"] = int64_t(3);
     obj["a"] = int64_t(1);
     obj["b"] = int64_t(2);
 
-    pjson::SerializeOptions asc;
-    asc.keyOrder = pjson::SerializeOptions::AscendingKeys;
-    pjson::SerializeOptions desc;
-    desc.keyOrder = pjson::SerializeOptions::DescendingKeys;
-
-    CHECK_EQ(obj.toString(asc), std::string("{\"a\":1,\"b\":2,\"c\":3}"));
-    CHECK_EQ(obj.toString(desc), std::string("{\"c\":3,\"b\":2,\"a\":1}"));
-
-    pjson_test::Parsed reAsc = pjson_test::parse(obj.toString(asc));
-    pjson_test::Parsed reDesc = pjson_test::parse(obj.toString(desc));
-    CHECK(reAsc != nullptr);
-    CHECK(reDesc != nullptr);
-    if (reAsc && reDesc)
-        CHECK(*reAsc == *reDesc); // order does not affect structural equality
+    const std::string text = obj.toString();
+    pjson_test::Parsed reparsed = pjson_test::parse(text);
+    CHECK(reparsed != nullptr);
+    if (reparsed)
+        CHECK(*reparsed == obj);
 }
 
 TEST(structured_serialization_success_and_output_limit) {

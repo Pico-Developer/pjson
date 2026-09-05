@@ -1,6 +1,6 @@
 {
   "name": "pjson",
-  "version-semver": "3.0.0",
+  "version-semver": "4.0.0",
   "description": "An ultra-simple JSON value type for C++11",
   "homepage": "https://github.com/Pico-Developer/pjson",
   "license": "Apache-2.0",

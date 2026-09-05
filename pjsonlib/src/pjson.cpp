@@ -18,11 +18,14 @@
 //
 #include "pjson_internal.h"
 
+#include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <limits>
 #include <new>
+#include <random>
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
@@ -35,6 +38,63 @@ const char* pjson::getVersion() {
 }
 
 namespace {
+    uint64_t mixObjectHashSeed(uint64_t value) noexcept {
+        value ^= value >> 30U;
+        value *= UINT64_C(0xbf58476d1ce4e5b9);
+        value ^= value >> 27U;
+        value *= UINT64_C(0x94d049bb133111eb);
+        return value ^ (value >> 31U);
+    }
+
+    struct ObjectHashKey {
+        uint64_t first;
+        uint64_t second;
+    };
+
+    const ObjectHashKey& objectHashKey() noexcept {
+        static const ObjectHashKey key = []() {
+            const uint64_t clock = static_cast<uint64_t>(
+                std::chrono::high_resolution_clock::now().time_since_epoch().count());
+            const uintptr_t address = reinterpret_cast<uintptr_t>(&objectHashKey);
+            ObjectHashKey result = {
+                mixObjectHashSeed(clock ^ static_cast<uint64_t>(address)),
+                mixObjectHashSeed(~clock ^ (static_cast<uint64_t>(address) << 1U))};
+            try {
+                std::random_device random;
+                const uint64_t first = (static_cast<uint64_t>(random()) << 32U) ^ random();
+                const uint64_t second = (static_cast<uint64_t>(random()) << 32U) ^ random();
+                result.first = mixObjectHashSeed(result.first ^ first);
+                result.second = mixObjectHashSeed(result.second ^ second);
+            } catch (...) {
+                // Clock and ASLR-derived state remain a non-throwing fallback.
+                (void)0;
+            }
+            return result;
+        }();
+        return key;
+    }
+
+    uint64_t rotateLeft(uint64_t value, unsigned int shift) noexcept {
+        return (value << shift) | (value >> (64U - shift));
+    }
+
+    void sipRound(uint64_t& v0, uint64_t& v1, uint64_t& v2, uint64_t& v3) noexcept {
+        v0 += v1;
+        v1 = rotateLeft(v1, 13U);
+        v1 ^= v0;
+        v0 = rotateLeft(v0, 32U);
+        v2 += v3;
+        v3 = rotateLeft(v3, 16U);
+        v3 ^= v2;
+        v0 += v3;
+        v3 = rotateLeft(v3, 21U);
+        v3 ^= v0;
+        v2 += v1;
+        v1 = rotateLeft(v1, 17U);
+        v1 ^= v2;
+        v2 = rotateLeft(v2, 32U);
+    }
+
     // Adapts the process-wide operator new/delete pair to the allocator API.
     class DefaultPjsonAllocator : public pjson::Allocator {
     public:
@@ -71,6 +131,41 @@ namespace {
         aAlloc.deallocate(aObject, sizeof(T), alignof(T), aKind);
     }
 } // namespace
+
+// SipHash-2-4 hashes untrusted object names with a process-specific key so
+// reusable collision sets cannot target the implementation's default hash.
+size_t pjsonImpl::ObjectHash::operator()(const std::string& aKey) const noexcept {
+    const ObjectHashKey& key = objectHashKey();
+    uint64_t v0 = UINT64_C(0x736f6d6570736575) ^ key.first;
+    uint64_t v1 = UINT64_C(0x646f72616e646f6d) ^ key.second;
+    uint64_t v2 = UINT64_C(0x6c7967656e657261) ^ key.first;
+    uint64_t v3 = UINT64_C(0x7465646279746573) ^ key.second;
+    size_t offset = 0;
+    while (aKey.size() - offset >= size_t(8)) {
+        uint64_t word = 0;
+        for (unsigned int byte = 0; byte < 8U; ++byte)
+            word |= static_cast<uint64_t>(static_cast<unsigned char>(aKey[offset + byte]))
+                    << (byte * 8U);
+        v3 ^= word;
+        sipRound(v0, v1, v2, v3);
+        sipRound(v0, v1, v2, v3);
+        v0 ^= word;
+        offset += 8;
+    }
+    uint64_t tail = static_cast<uint64_t>(aKey.size()) << 56U;
+    for (size_t byte = 0; offset + byte < aKey.size(); ++byte)
+        tail |= static_cast<uint64_t>(static_cast<unsigned char>(aKey[offset + byte]))
+                << (byte * 8U);
+    v3 ^= tail;
+    sipRound(v0, v1, v2, v3);
+    sipRound(v0, v1, v2, v3);
+    v0 ^= tail;
+    v2 ^= UINT64_C(0xff);
+    for (unsigned int round = 0; round < 4U; ++round)
+        sipRound(v0, v1, v2, v3);
+    return static_cast<size_t>(v0 ^ v1 ^ v2 ^ v3);
+}
+
 // Gives allocator implementations a safe virtual destruction point.
 pjson::Allocator::~Allocator() {}
 /*static*/
@@ -726,23 +821,59 @@ pjson& pjson::operator=(const bool aBool) {
     _pImpl->_valueBool = aBool;
     return *this;
 }
-// Replaces the current value with a JSON integer.
-pjson& pjson::operator=(const int64_t aInt) {
-    resetIfNeeded(pjson::jsonType::jsonNumberInt);
-    _pImpl->_valueInt = aInt;
+// Native integer overloads keep ordinary literals unambiguous while routing
+// storage through the exact-width numeric implementation.
+pjson& pjson::operator=(const int aInt) {
+    operator=(static_cast<int64_t>(aInt));
     return *this;
 }
-// Replaces the current value with an unsigned JSON integer, retaining unsigned
-// type identity even when the value would also fit in int64_t.
-pjson& pjson::operator=(const uint64_t aUInt) {
+pjson& pjson::operator=(const unsigned int aUInt) {
+    operator=(static_cast<uint64_t>(aUInt));
+    return *this;
+}
+pjson& pjson::operator=(const short aInt) {
+    operator=(static_cast<int64_t>(aInt));
+    return *this;
+}
+pjson& pjson::operator=(const unsigned short aUInt) {
+    operator=(static_cast<uint64_t>(aUInt));
+    return *this;
+}
+// Wider native integer overloads cover both LP64 and LLP64 without relying on
+// the platform-specific fundamental type selected by int64_t/uint64_t.
+pjson& pjson::operator=(const long aInt) {
+    resetIfNeeded(pjson::jsonType::jsonNumberInt);
+    _pImpl->_valueInt = static_cast<int64_t>(aInt);
+    return *this;
+}
+pjson& pjson::operator=(const unsigned long aUInt) {
     resetIfNeeded(pjson::jsonType::jsonNumberUInt);
-    _pImpl->_valueUInt = aUInt;
+    _pImpl->_valueUInt = static_cast<uint64_t>(aUInt);
+    return *this;
+}
+pjson& pjson::operator=(const long long aInt) {
+    resetIfNeeded(pjson::jsonType::jsonNumberInt);
+    _pImpl->_valueInt = static_cast<int64_t>(aInt);
+    return *this;
+}
+pjson& pjson::operator=(const unsigned long long aUInt) {
+    resetIfNeeded(pjson::jsonType::jsonNumberUInt);
+    _pImpl->_valueUInt = static_cast<uint64_t>(aUInt);
+    return *this;
+}
+// Float input is widened exactly to pjson's binary64 representation.
+pjson& pjson::operator=(const float aFloat) {
+    operator=(static_cast<double>(aFloat));
     return *this;
 }
 // Replaces the current value with a JSON double.
 pjson& pjson::operator=(const double aDouble) {
     resetIfNeeded(pjson::jsonType::jsonNumberDouble);
     _pImpl->_valueDouble = aDouble;
+    return *this;
+}
+pjson& pjson::operator=(const long double aDouble) {
+    operator=(static_cast<double>(aDouble));
     return *this;
 }
 namespace {
@@ -812,22 +943,62 @@ pjson& pjson::operator=(const std::vector<bool>& aValueArray) {
     return *this;
 }
 
+pjson& pjson::operator=(const std::vector<int>& aValueArray) {
+    assignDomArray(*this, aValueArray);
+    return *this;
+}
+
+pjson& pjson::operator=(const std::vector<unsigned int>& aValueArray) {
+    assignDomArray(*this, aValueArray);
+    return *this;
+}
+
+pjson& pjson::operator=(const std::vector<short>& aValueArray) {
+    assignDomArray(*this, aValueArray);
+    return *this;
+}
+
+pjson& pjson::operator=(const std::vector<unsigned short>& aValueArray) {
+    assignDomArray(*this, aValueArray);
+    return *this;
+}
+
 pjson& pjson::operator=(const std::vector<std::string>& aValueArray) {
     assignDomArray(*this, aValueArray);
     return *this;
 }
 
-pjson& pjson::operator=(const std::vector<int64_t>& aValueArray) {
+pjson& pjson::operator=(const std::vector<long>& aValueArray) {
     assignDomArray(*this, aValueArray);
     return *this;
 }
 
-pjson& pjson::operator=(const std::vector<uint64_t>& aValueArray) {
+pjson& pjson::operator=(const std::vector<unsigned long>& aValueArray) {
+    assignDomArray(*this, aValueArray);
+    return *this;
+}
+
+pjson& pjson::operator=(const std::vector<long long>& aValueArray) {
+    assignDomArray(*this, aValueArray);
+    return *this;
+}
+
+pjson& pjson::operator=(const std::vector<unsigned long long>& aValueArray) {
+    assignDomArray(*this, aValueArray);
+    return *this;
+}
+
+pjson& pjson::operator=(const std::vector<float>& aValueArray) {
     assignDomArray(*this, aValueArray);
     return *this;
 }
 
 pjson& pjson::operator=(const std::vector<double>& aValueArray) {
+    assignDomArray(*this, aValueArray);
+    return *this;
+}
+
+pjson& pjson::operator=(const std::vector<long double>& aValueArray) {
     assignDomArray(*this, aValueArray);
     return *this;
 }
@@ -847,20 +1018,72 @@ pjson& pjson::operator+=(const bool aValue) {
     appendDomValue(*this, aValue);
     return *this;
 }
-pjson& pjson::operator+=(const int64_t aValue) {
-    appendDomValue(*this, aValue);
+pjson& pjson::operator+=(const int aValue) {
+    appendDomValue(*this, static_cast<int64_t>(aValue));
     return *this;
 }
-pjson& pjson::operator+=(const uint64_t aValue) {
-    appendDomValue(*this, aValue);
+pjson& pjson::operator+=(const unsigned int aValue) {
+    appendDomValue(*this, static_cast<uint64_t>(aValue));
+    return *this;
+}
+pjson& pjson::operator+=(const short aValue) {
+    appendDomValue(*this, static_cast<int64_t>(aValue));
+    return *this;
+}
+pjson& pjson::operator+=(const unsigned short aValue) {
+    appendDomValue(*this, static_cast<uint64_t>(aValue));
+    return *this;
+}
+pjson& pjson::operator+=(const long aValue) {
+    appendDomValue(*this, static_cast<int64_t>(aValue));
+    return *this;
+}
+pjson& pjson::operator+=(const unsigned long aValue) {
+    appendDomValue(*this, static_cast<uint64_t>(aValue));
+    return *this;
+}
+pjson& pjson::operator+=(const long long aValue) {
+    appendDomValue(*this, static_cast<int64_t>(aValue));
+    return *this;
+}
+pjson& pjson::operator+=(const unsigned long long aValue) {
+    appendDomValue(*this, static_cast<uint64_t>(aValue));
+    return *this;
+}
+pjson& pjson::operator+=(const float aValue) {
+    appendDomValue(*this, static_cast<double>(aValue));
     return *this;
 }
 pjson& pjson::operator+=(const double aValue) {
     appendDomValue(*this, aValue);
     return *this;
 }
+pjson& pjson::operator+=(const long double aValue) {
+    appendDomValue(*this, static_cast<double>(aValue));
+    return *this;
+}
 // Vector append overloads share the rollback semantics documented by appendDomArray.
 pjson& pjson::operator+=(const std::vector<bool>& aValueArray) {
+    appendDomArray(*this, aValueArray);
+    return *this;
+}
+
+pjson& pjson::operator+=(const std::vector<int>& aValueArray) {
+    appendDomArray(*this, aValueArray);
+    return *this;
+}
+
+pjson& pjson::operator+=(const std::vector<unsigned int>& aValueArray) {
+    appendDomArray(*this, aValueArray);
+    return *this;
+}
+
+pjson& pjson::operator+=(const std::vector<short>& aValueArray) {
+    appendDomArray(*this, aValueArray);
+    return *this;
+}
+
+pjson& pjson::operator+=(const std::vector<unsigned short>& aValueArray) {
     appendDomArray(*this, aValueArray);
     return *this;
 }
@@ -870,7 +1093,27 @@ pjson& pjson::operator+=(const std::vector<std::string>& aValueArray) {
     return *this;
 }
 
-pjson& pjson::operator+=(const std::vector<int64_t>& aValueArray) {
+pjson& pjson::operator+=(const std::vector<long>& aValueArray) {
+    appendDomArray(*this, aValueArray);
+    return *this;
+}
+
+pjson& pjson::operator+=(const std::vector<unsigned long>& aValueArray) {
+    appendDomArray(*this, aValueArray);
+    return *this;
+}
+
+pjson& pjson::operator+=(const std::vector<long long>& aValueArray) {
+    appendDomArray(*this, aValueArray);
+    return *this;
+}
+
+pjson& pjson::operator+=(const std::vector<unsigned long long>& aValueArray) {
+    appendDomArray(*this, aValueArray);
+    return *this;
+}
+
+pjson& pjson::operator+=(const std::vector<float>& aValueArray) {
     appendDomArray(*this, aValueArray);
     return *this;
 }
@@ -880,7 +1123,7 @@ pjson& pjson::operator+=(const std::vector<double>& aValueArray) {
     return *this;
 }
 
-pjson& pjson::operator+=(const std::vector<uint64_t>& aValueArray) {
+pjson& pjson::operator+=(const std::vector<long double>& aValueArray) {
     appendDomArray(*this, aValueArray);
     return *this;
 }
@@ -1419,7 +1662,7 @@ void pjson::clear() {
             break;
     }
 }
-// Returns object keys in the map's deterministic sorted iteration order.
+// Returns copied object keys in the private container's unspecified native order.
 std::vector<std::string> pjson::keys() const {
     std::vector<std::string> result;
     if (_pImpl->_eType == pjson::jsonType::jsonObject) {
@@ -1631,13 +1874,13 @@ bool pjson::operator==(const pjson& aOther) const {
                 if (lhs._pImpl->_pValueMap->size() != rhs._pImpl->_pValueMap->size()) {
                     return false;
                 }
-                auto a = lhs._pImpl->_pValueMap->begin();
-                auto b = rhs._pImpl->_pValueMap->begin();
-                for (; a != lhs._pImpl->_pValueMap->end(); ++a, ++b) {
-                    if (a->first != b->first) {
-                        return false; // keys (sorted) differ
-                    }
-                    Pair p = {a->second, b->second};
+                for (pjsonImpl::ObjectStorage::const_iterator it = lhs._pImpl->_pValueMap->begin();
+                     it != lhs._pImpl->_pValueMap->end(); ++it) {
+                    pjsonImpl::ObjectStorage::const_iterator matching =
+                        rhs._pImpl->_pValueMap->find(it->first);
+                    if (matching == rhs._pImpl->_pValueMap->end())
+                        return false;
+                    Pair p = {it->second, matching->second};
                     work.push_back(p);
                 }
                 break;

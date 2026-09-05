@@ -9,6 +9,27 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases follow
 
 ## [Unreleased]
 
+## [4.0.0] - 2026-09-04
+
+### Changed
+
+- **BREAKING (behavior):** object members now use private, process-seeded
+  hash-table storage. Lookup and insertion are average constant time;
+  `keys()`, `forEachMember()`, and serialization use unspecified native storage
+  order. Object equality remains independent of storage order.
+- **BREAKING (API):** removed `SerializeOptions::KeyOrder` and `keyOrder`; JSON
+  objects are unordered by specification, so the serializer no longer pays to
+  impose an order.
+- **BREAKING (ABI):** advanced `PJSON_ABI_VERSION` and shared-library
+  `SOVERSION` to 4 because removing the public `SerializeOptions` field changes
+  its layout.
+
+### Fixed
+
+- Restored the primary builder syntax for native integral and floating-point
+  values and common vectors. Numeric literals can again be assigned and
+  appended without casts, while preserving signed versus unsigned storage.
+
 ## [3.0.0] - 2026-09-03
 
 ### Changed
@@ -139,10 +160,8 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases follow
 
 ## [2.0.0] - 2026-08-31
 
-This release responds to the external production-readiness requirements captured
-in `docs/featurerequest.md`; see `docs/featurerequest-response.md` for a
-per-requirement disposition. It contains correctness fixes, an ABI-breaking
-numeric-model change, and new APIs, so it is a major version bump.
+This release contains correctness fixes, an ABI-breaking numeric-model change,
+and new APIs, so it is a major version bump.
 
 ### Added
 
@@ -326,7 +345,8 @@ numeric-model change, and new APIs, so it is a major version bump.
 
 - Initial pjson source release.
 
-[Unreleased]: https://github.com/Pico-Developer/pjson/compare/3.0.0...HEAD
+[Unreleased]: https://github.com/Pico-Developer/pjson/compare/4.0.0...HEAD
+[4.0.0]: https://github.com/Pico-Developer/pjson/compare/3.0.0...4.0.0
 [3.0.0]: https://github.com/Pico-Developer/pjson/compare/2.0.0...3.0.0
 [2.0.0]: https://github.com/Pico-Developer/pjson/compare/1.0.0...2.0.0
 [1.0.0]: https://github.com/Pico-Developer/pjson/compare/release-0.0.3...1.0.0

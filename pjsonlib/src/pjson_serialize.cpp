@@ -38,7 +38,6 @@ pjson::SerializeOptions::SerializeOptions()
         , indentWidth(2)
         , indentCharacter(' ')
         , escapeNonAscii(false)
-        , keyOrder(AscendingKeys)
         , nonFinite(RejectNonFinite)
         , maxOutputBytes(size_t(64) * 1024U * 1024U) {}
 
@@ -480,10 +479,8 @@ bool pjsonImpl::_openOrEmit(Sink& aOut, const pjson* aValue, size_t aDepth,
     frame.array = frame.isObject ? nullptr : aValue->_pImpl->_pValueArray;
     frame.arrayIndex = 0;
     frame.object = frame.isObject ? aValue->_pImpl->_pValueMap : nullptr;
-    if (frame.isObject) {
+    if (frame.isObject)
         frame.objectIt = frame.object->begin();
-        frame.objectReverseIt = frame.object->rbegin();
-    }
     aFrames.push_back(frame);
     return true;
 }
@@ -505,18 +502,10 @@ bool pjsonImpl::_writeValueTo(Sink& aOut, const pjson& aValue,
         const std::string* key = nullptr;
         bool hasNext = false;
         if (frame.isObject) {
-            if (aOpts.keyOrder == pjson::SerializeOptions::DescendingKeys) {
-                hasNext = frame.objectReverseIt != frame.object->rend();
-                if (hasNext) {
-                    key = &frame.objectReverseIt->first;
-                    child = frame.objectReverseIt->second;
-                }
-            } else {
-                hasNext = frame.objectIt != frame.object->end();
-                if (hasNext) {
-                    key = &frame.objectIt->first;
-                    child = frame.objectIt->second;
-                }
+            hasNext = frame.objectIt != frame.object->end();
+            if (hasNext) {
+                key = &frame.objectIt->first;
+                child = frame.objectIt->second;
             }
         } else {
             hasNext = frame.arrayIndex < frame.array->size();
@@ -530,14 +519,10 @@ bool pjsonImpl::_writeValueTo(Sink& aOut, const pjson& aValue,
             frame.first = false;
             const size_t childDepth = frame.depth + 1;
             const bool isObject = frame.isObject;
-            if (isObject) {
-                if (aOpts.keyOrder == pjson::SerializeOptions::DescendingKeys)
-                    ++frame.objectReverseIt;
-                else
-                    ++frame.objectIt;
-            } else {
+            if (isObject)
+                ++frame.objectIt;
+            else
                 ++frame.arrayIndex;
-            }
             if (aOpts.pretty) {
                 aOut.put('\n');
                 if (!writeIndent(aOut, childDepth, aOpts))

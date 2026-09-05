@@ -14,7 +14,7 @@ import os
 # pkg-config metadata installed by pjsonlib/CMakeLists.txt.
 class PjsonConan(ConanFile):
     name = "pjson"
-    version = "3.0.0"
+    version = "4.0.0"
     package_type = "library"
 
     license = "Apache-2.0"

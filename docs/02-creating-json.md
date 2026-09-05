@@ -47,7 +47,7 @@ person["address"]["zip"]  = "N1";
 The first `person["address"]` creates an empty object, and `["city"]` adds a
 key inside it.
 
-## Numbers: `int64_t` and `double`
+## Numbers
 
 pjson keeps whole numbers as 64-bit integers and everything else as `double`:
 
@@ -57,8 +57,9 @@ person["score"] = double(4.5);         // jsonNumberDouble
 person["big"]   = int64_t(9000000000); // jsonNumberInt
 ```
 
-Use these exact-width APIs deliberately: `int64_t` represents whole JSON
-numbers and `double` represents fractional or exponent-form values.
+All standard non-character integer types and `float`, `double`, and `long double` are accepted
+for convenient builder syntax. Values are stored as signed or unsigned 64-bit
+integers, or as `double`; a `long double` is therefore narrowed explicitly.
 
 ## Strings
 
@@ -83,8 +84,8 @@ The most direct way to make an array:
 person["scores"] = std::vector<int64_t>({90, 82, 77});
 ```
 
-Vectors of `int64_t`, `double`, `bool`, and `std::string` are supported. Build
-arrays of other value types element by element.
+Vectors of the supported non-character numeric types, `bool`, and `std::string`
+are supported. Build arrays of other value types element by element.
 
 ### 2. By index
 
@@ -145,18 +146,16 @@ pjson::SerializeOptions options = pjson::SerializeOptions::prettyPrinted();
 options.indentWidth = 2;
 options.indentCharacter = ' ';       // a space or tab
 options.escapeNonAscii = false;      // keep UTF-8 instead of \u escapes
-options.keyOrder = pjson::SerializeOptions::AscendingKeys;
 options.maxOutputBytes = size_t(64) * 1024 * 1024;
 
 std::string text = person.toString(options);
 ```
 
 A default-constructed `SerializeOptions` produces compact output. Its other
-defaults are a two-space indent, raw non-ASCII UTF-8, ascending keys, and a
+defaults are a two-space indent, raw non-ASCII UTF-8, and a
 64 MiB output limit. Set `maxOutputBytes = 0` only when explicitly requesting
-unlimited output. Set
-`keyOrder` to `DescendingKeys` to reverse object-key output. Only space and tab
-are valid indentation characters; another value falls back to space. Stored
+unlimited output. Only space and tab are valid indentation characters; another
+value falls back to space. Stored
 strings must contain valid UTF-8: `toString()` throws `std::invalid_argument`
 for invalid bytes, while `write()` sets the destination stream's failure state.
 Crossing the output limit or overflowing indentation arithmetic instead throws
@@ -194,9 +193,8 @@ Running the example produces (abridged):
 }
 ```
 
-Remember: object insertion order is not retained. Keys print in ascending
-bytewise string order by default (or descending order when requested), and the
-skipped array index shows up as `null`.
+Remember: object insertion and output order are unspecified, and the skipped
+array index shows up as `null`.
 
 ## What you learned
 
@@ -207,7 +205,7 @@ skipped array index shows up as `null`.
 - Whole numbers are stored as int64, other numbers as double; strings are
   auto-escaped on output.
 - `SerializeOptions` controls pretty layout, indentation, non-ASCII escaping,
-  and ascending or descending key order.
+  non-finite values, and output limits.
 
 Next: [Chapter 03 — Parsing & reading](03-parsing-and-reading.md), where you go
 the other direction: text into data, and reading it back safely.

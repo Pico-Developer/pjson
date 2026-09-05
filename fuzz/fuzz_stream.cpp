@@ -153,13 +153,13 @@ namespace {
         pJsonParser::Error bufferError;
         pjson buffered = pJsonParser(options).parse(input.c_str(), input.size(), bufferError);
 
-        // Chunk boundaries must not affect DOM acceptance or serialized output.
+        // Chunk boundaries must not affect DOM acceptance or represented value.
         ChunkedStream domInput(input, chunkSize);
         pJsonParser::Error streamError;
         pjson streamed = pJsonParser(options).parseStream(domInput, streamError);
         pjson_fuzz::require(bufferError.ok == streamError.ok);
         if (bufferError.ok)
-            pjson_fuzz::require(buffered.toString() == streamed.toString());
+            pjson_fuzz::require(buffered == streamed);
 
         // Capture the SAX trace from the same contiguous baseline input.
         DigestHandler bufferHandler;

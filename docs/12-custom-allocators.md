@@ -62,10 +62,10 @@ The contract is:
 
 `ImplementationAllocation` was appended in ABI generation 3; custom allocators
 must accept every defined kind and should avoid fixed-size tables that assume only
-the original four values. The hook deliberately does not replace every allocation in the process. The
-internal buffers/nodes allocated by `std::string`, `std::vector`, and `std::map`,
-and transient parsing, serialization, pointer, patch, and validation workspaces,
-continue to use the standard allocator.
+the original four values. The hook deliberately does not replace every allocation
+in the process. The internal buffers/nodes allocated by `std::string`,
+`std::vector`, and `std::unordered_map`, and transient parsing, serialization,
+pointer, patch, and validation workspaces, continue to use the standard allocator.
 
 ## Direct roots versus parsed roots
 

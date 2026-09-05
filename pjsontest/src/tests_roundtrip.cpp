@@ -92,9 +92,9 @@ TEST(format_negative_and_zero) {
 }
 
 //===----------------------------------------------------------------------===//
-// Compact round-trip: parse(serialize(x)) reproduces serialize(x)
+// Compact round-trip: parse(serialize(x)) preserves the JSON value.
 //===----------------------------------------------------------------------===//
-TEST(compact_round_trip_reproduces) {
+TEST(compact_round_trip_preserves_value) {
     pjson o;
     o["s"] = std::string("text with \"quotes\" and \\slash");
     o["i"] = static_cast<int64_t>(-42);
@@ -107,17 +107,14 @@ TEST(compact_round_trip_reproduces) {
     std::string compact = o.toString();
     pjson_test::Parsed p1 = pjson_test::parse(compact);
     CHECK(p1 != nullptr);
-    CHECK_EQ(p1->toString(), compact);
-    // A second generation is identical (idempotent).
-    pjson_test::Parsed p2 = pjson_test::parse(p1->toString());
-    CHECK(p2 != nullptr);
-    CHECK_EQ(p2->toString(), compact);
+    if (p1 != nullptr)
+        CHECK(*p1 == o);
 }
 
 //===----------------------------------------------------------------------===//
-// Pretty output: re-parses to the same compact form and is idempotent
+// Pretty output re-parses to the same value.
 //===----------------------------------------------------------------------===//
-TEST(pretty_reparses_to_same_compact) {
+TEST(pretty_reparses_to_same_value) {
     pjson o;
     o["a"] = static_cast<int64_t>(1);
     o["b"]["c"] = std::vector<std::string>({"x", "y"});
@@ -133,8 +130,8 @@ TEST(pretty_reparses_to_same_compact) {
 
     pjson_test::Parsed pp = pjson_test::parse(pretty);
     CHECK(pp != nullptr);
-    CHECK_EQ(pp->toString(), compact);          // same data
-    CHECK_EQ(pp->toString(prettyOpts), pretty); // pretty is idempotent
+    if (pp != nullptr)
+        CHECK(*pp == o);
 }
 
 //===----------------------------------------------------------------------===//
@@ -167,7 +164,8 @@ TEST(nested_empty_containers_round_trip) {
     std::string compact = p->toString();
     pjson_test::Parsed p2 = pjson_test::parse(compact);
     CHECK(p2 != nullptr);
-    CHECK_EQ(p2->toString(), compact);
+    if (p2 != nullptr)
+        CHECK(*p2 == *p);
 }
 
 //===----------------------------------------------------------------------===//
@@ -287,28 +285,26 @@ namespace {
 
 } // namespace
 
-TEST(fuzz_round_trip_is_stable) {
+TEST(fuzz_round_trip_preserves_value) {
     std::mt19937 rng(0xC0FFEE); // fixed seed -> deterministic, reproducible
     const pjson::SerializeOptions prettyOpts = prettyOptions();
     for (int iter = 0; iter < 500; ++iter) {
         pjson doc;
         build_random(doc, rng, 4);
 
-        // Compact: parse(serialize(x)) must reproduce serialize(x) exactly.
+        // Compact: parse(serialize(x)) must preserve the represented value.
         std::string compact = doc.toString();
         pjson_test::Parsed rc = pjson_test::parse(compact);
         CHECK(rc != nullptr);
-        if (rc) {
-            CHECK_EQ(rc->toString(), compact);
-        }
+        if (rc)
+            CHECK(*rc == doc);
 
-        // Pretty: must re-parse to the same compact form.
+        // Pretty: must re-parse to the same represented value.
         std::string pretty = doc.toString(prettyOpts);
         pjson_test::Parsed rp = pjson_test::parse(pretty);
         CHECK(rp != nullptr);
-        if (rp) {
-            CHECK_EQ(rp->toString(), compact);
-        }
+        if (rp)
+            CHECK(*rp == doc);
     }
 }
 
@@ -330,9 +326,8 @@ TEST(fuzz_never_throws_on_arbitrary_bytes) {
             std::string out = p->toString();
             pjson_test::Parsed p2 = pjson_test::parse(out);
             CHECK(p2 != nullptr);
-            if (p2) {
-                CHECK_EQ(p2->toString(), out);
-            }
+            if (p2)
+                CHECK(*p2 == *p);
         }
         ++handled;
     }

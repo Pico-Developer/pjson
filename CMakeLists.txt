@@ -3,7 +3,7 @@
 
 cmake_minimum_required (VERSION 3.21)
 
-project(pjson VERSION 3.0.0 DESCRIPTION "Praveen's JSON library for C++" LANGUAGES CXX)
+project(pjson VERSION 4.0.0 DESCRIPTION "Praveen's JSON library for C++" LANGUAGES CXX)
 
 # Keep package/runtime version authorities synchronized at configure time. The
 # release process updates them together; a mismatch is a hard configuration

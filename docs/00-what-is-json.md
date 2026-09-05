@@ -159,16 +159,16 @@ pjson mirrors this model with a single C++ class, `ByteDance::pjson`. One
 | number    | `jsonNumberInt` or `jsonNumberDouble` | `int64_t` (whole numbers) or `double` |
 | boolean   | `jsonBoolean`     | `bool` |
 | array     | `jsonArray`       | list of `pjson` |
-| object    | `jsonObject`      | map of `string -> pjson` |
+| object    | `jsonObject`      | unique `string -> pjson` members |
 
 Two pjson-specific details worth knowing early:
 
 - **Numbers split into two types.** A whole number like `42` is kept as a 64-bit
   integer; anything with a fraction or exponent like `3.14` is kept as a
   `double`. Read either representation with the matching `tryGet()` overload.
-- **Objects keep keys sorted.** pjson stores object keys in alphabetical order
-  (it uses a `std::map`), so when you print a document the keys come out sorted,
-  not in the order you added them. This keeps output predictable.
+- **Object member order is unspecified.** pjson stores members in a private hash
+  table for fast lookup. `keys()`, callback traversal, and serialization expose
+  its unspecified native order; JSON objects are unordered collections.
 
 ## What you learned
 
@@ -176,7 +176,7 @@ Two pjson-specific details worth knowing early:
 - A JSON value is one of: string, number, boolean, null, array, or object.
 - Values nest freely, which lets JSON describe complex data.
 - pjson represents any JSON value with one class, `pjson`, storing whole numbers
-  as `int64` and other numbers as `double`, and keeping object keys sorted.
+  as `int64` and other numbers as `double`, with unspecified object-member order.
 
 Next: [Chapter 01 — Getting started](01-getting-started.md), where you compile
 and run your first pjson program.

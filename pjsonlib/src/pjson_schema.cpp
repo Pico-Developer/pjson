@@ -1572,9 +1572,6 @@ namespace {
                 if (l.size() != r.size())
                     return true;
                 const std::vector<std::string> lk = l.keys();
-                const std::vector<std::string> rk = r.keys();
-                if (lk != rk)
-                    return true; // key sets (sorted) differ
                 for (size_t i = 0; i < lk.size(); ++i) {
                     if (!chargeLoopWork(ctx, errors, path, lk[i].size() + size_t(1)))
                         return false;

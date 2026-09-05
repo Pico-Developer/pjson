@@ -48,7 +48,8 @@
  *
  * getType() distinguishes jsonNumberInt, jsonNumberUInt, and jsonNumberDouble
  * and reports objects as jsonObject. Numeric assignment and append overloads
- * accept int64_t, uint64_t, or double. Configure serialization through
+ * accept the standard non-character integral and floating-point types.
+ * Configure serialization through
  * SerializeOptions; the compact toString() and write() overloads take no
  * formatting boolean, and SerializeOptions::maxOutputBytes bounds generated
  * output. A stored non-finite double fails serialization by default; select an

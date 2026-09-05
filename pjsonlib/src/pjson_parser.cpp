@@ -12,6 +12,7 @@
 #include <new>
 #include <sstream>
 #include <streambuf>
+#include <unordered_set>
 #include <utility>
 
 using namespace ByteDance;
@@ -956,7 +957,7 @@ namespace {
 
             bool expectMember = false;
             bool any = false;
-            std::map<std::string, bool> seenKeys;
+            std::unordered_set<std::string, pjsonImpl::ObjectHash> seenKeys;
             while (true) {
                 if (!skipWhitespace())
                     return false;
@@ -1004,7 +1005,7 @@ namespace {
                     return failAt(keyOffset, keyLine, keyColumn, "duplicate object key");
                 }
                 if (!duplicate && opts.duplicateKeys != pJsonParser::Options::KeepLastDuplicate)
-                    seenKeys[key] = true;
+                    seenKeys.insert(key);
 
                 const bool emitValue =
                     emit &&

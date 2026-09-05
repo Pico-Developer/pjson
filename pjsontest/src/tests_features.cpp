@@ -22,6 +22,7 @@
 #include "test_harness.h"
 #include "test_util.h"
 
+#include <cmath>
 #include <sstream>
 #include <string>
 #include <vector>
